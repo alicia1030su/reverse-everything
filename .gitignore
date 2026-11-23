@@ -11,6 +11,7 @@ test-results/
 !.env.example
 .DS_Store
 coverage/
+*.tsbuildinfo
 *.tgz
 *.zip
 !examples/**/*.zip
