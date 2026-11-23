@@ -9,7 +9,7 @@
   "workspaces": ["apps/*", "packages/*"],
   "scripts": {
     "dev": "node scripts/start.mjs",
-    "build": "npm run build -w @reverse/contracts && npm run build -w @reverse/evidence && npm run build -w @reverse/security && npm run build -w @reverse/ai && npm run build -w @reverse/workflow && npm run build -w @reverse/core && npm run build -w @reverse/api && npm run build -w @reverse/cli && npm run build -w @reverse/web",
+    "build": "npm run build -w @reverse/contracts && npm run build -w @reverse/evidence && npm run build -w @reverse/security && npm run build -w @reverse/ai && npm run build -w @reverse/workflow && npm run build -w @reverse/core && npm run build -w @reverse/api && npm run build -w @reverse/worker && npm run build -w @reverse/cli && npm run build -w @reverse/web",
     "start": "node scripts/start.mjs",
     "test": "vitest run",
     "test:unit": "vitest run tests/unit",

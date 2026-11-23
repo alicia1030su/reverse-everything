@@ -18,7 +18,7 @@ COPY --from=build /app/examples ./examples
 COPY --from=build /app/scripts ./scripts
 COPY package.json package-lock.json ./
 COPY --from=build /ms-playwright /ms-playwright
-RUN npx playwright install-deps chromium >/dev/null && useradd --create-home --uid 10001 re && mkdir -p /data && chown -R re:re /data /app
+RUN node node_modules/playwright/cli.js install-deps chromium >/dev/null && useradd --create-home --uid 10001 re && mkdir -p /data && chown -R re:re /data /app
 USER re
 EXPOSE 4173
 HEALTHCHECK --interval=15s --timeout=5s --start-period=15s --retries=5 CMD node -e "fetch('http://127.0.0.1:4173/api/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"
