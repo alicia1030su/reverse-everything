@@ -9,7 +9,7 @@
 - 仓库：`alicia1030su/reverse-everything`（Public，已创建）
 - 版本：v0.0.1
 - 技术栈：TypeScript、React/Vite、Fastify、Node 22、SQLite、Playwright、npm workspaces
-- 当前阶段：Phase 12 综合验收与发布
+- 当前阶段：Phase 12 门禁通过，待创建 v0.0.1 Tag/Release
 - 架构决策：模块化单体 API + 独立 Worker；默认 AI 关闭；本地令牌；证据四分类；规则型兼容服务
 - 里程碑：本地功能与测试 → GitHub CI（含 Docker）→ main → v0.0.1 Tag/Release
 
@@ -29,7 +29,7 @@
 | 9 安全 MVP | 完成（基础范围） | 被动头检查、静态规则、正常样本误报检查、SARIF |
 | 10 重建与验证 | 部分完成 | 游戏兼容服务已导出；网页克隆/多页面重建不在 v0.0.1 |
 | 11 CLI/MCP/Skill | 部分完成 | CLI/MCP 已完成；独立 Skill 包未发布，使用说明已提供 |
-| 12 验收与发布 | 进行中 | 本地门禁、依赖/秘密/许可证检查、GitHub CI 与 Docker、正式 Release |
+| 12 验收与发布 | 门禁通过 | 本地门禁、依赖/秘密/许可证检查、GitHub CI 与 Docker 全绿；待 Tag/Release |
 
 ## 已完成产出
 

@@ -7,7 +7,7 @@
 3. 审查 `npm audit --omit=dev` 高危结果；修复或明确阻塞。
 4. 记录空闲/峰值内存、启动耗时、网页与游戏任务耗时。
 5. 初始化 Git，设置本地身份，创建 `alicia1030su/reverse-everything` Public 仓库。
-6. 推送 main，确认 Windows/Ubuntu/Docker CI 全绿。
+6. 已推送 main，Windows/Ubuntu/Docker CI 全绿（run 45218799874）。
 7. 创建不可覆盖的 `v0.0.1` Tag，由 release workflow 发布正式 Release。
 8. 核对源码归档、SHA256SUMS、Release 下载地址与 main SHA。
 

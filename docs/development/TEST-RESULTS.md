@@ -49,7 +49,7 @@
 
 ## Docker
 
-本机未安装 Docker，**本机容器验证未执行**。GitHub Actions `docker` job 将执行 compose build、健康检查、Web 页面与容器内 CLI；只有该 job 通过才作为发布证据。
+本机未安装 Docker，因此本机容器验证未执行。GitHub Actions `docker` job 已实际执行并**通过**：compose build、健康检查、Web 页面、容器内 CLI。证据：<https://github.com/alicia1030su/reverse-everything/actions/runs/45218799874>。Windows 与 Ubuntu 的 build/lint/secret/license/23 项测试/2 项 E2E 同一 run 全部通过。
 
 ## 依赖与安全扫描
 

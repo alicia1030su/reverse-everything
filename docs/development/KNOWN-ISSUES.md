@@ -4,8 +4,7 @@
 
 ## 发布阻塞
 
-- 本机未安装 Docker；容器 build/run 必须由 GitHub Actions 验证，未通过前不得发布正式版。
-- GitHub 仓库已创建；CI（含 Docker）结果待确认。
+无。GitHub Actions Windows/Ubuntu/Docker 门禁已通过；本机未安装 Docker，但容器 build/run 已在 GitHub runner 实测。
 
 ## 功能限制
 
