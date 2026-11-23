@@ -1,0 +1,16 @@
+.workbuddy/
+node_modules/
+dist/
+data/
+playwright-report/
+test-results/
+*.sqlite
+*.sqlite-*
+.env
+.env.*
+!.env.example
+.DS_Store
+coverage/
+*.tgz
+*.zip
+!examples/**/*.zip

@@ -1,0 +1,14 @@
+Reverse Everything
+Copyright 2026 Reverse Everything contributors
+
+Licensed under the Apache License, Version 2.0. See LICENSE.
+
+This product includes or interoperates with third-party open-source components, including:
+- Node.js and npm ecosystem packages (individual licenses in package-lock.json / node_modules)
+- React, Vite, Fastify, Playwright, Monaco Editor, TanStack Query, React Flow
+- yauzl, ws, lucide-react
+- OWASP Web Security Testing Guide concepts (CC BY-SA 4.0); no wholesale guide text copied
+- Ghidra is an optional future external provider and is not bundled in v0.0.1
+
+No commercial reverse-engineering license, commercial game resource, or third-party credential is bundled.
+Third-party copyright and license notices remain with their respective packages.

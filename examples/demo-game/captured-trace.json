@@ -1,0 +1,101 @@
+{
+  "format": "replay-trace/v1",
+  "target": {
+    "name": "星港远征（自编写演示）",
+    "engine": "unknown / custom HTML5 demo",
+    "authorization": "Project-owned fixture"
+  },
+  "messages": [
+    {
+      "seq": 1,
+      "at": "2026-11-23T15:45:43.083Z",
+      "direction": "client",
+      "type": "hello",
+      "payload": {
+        "protocol": 1
+      }
+    },
+    {
+      "seq": 2,
+      "at": "2026-11-23T15:45:43.111Z",
+      "direction": "server",
+      "type": "welcome",
+      "payload": {
+        "type": "welcome",
+        "server": "starbay-legacy",
+        "protocol": 1
+      }
+    },
+    {
+      "seq": 3,
+      "at": "2026-11-23T15:45:43.111Z",
+      "direction": "client",
+      "type": "login",
+      "payload": {
+        "username": "tester"
+      }
+    },
+    {
+      "seq": 4,
+      "at": "2026-11-23T15:45:43.127Z",
+      "direction": "server",
+      "type": "login_ok",
+      "payload": {
+        "type": "login_ok",
+        "playerId": "p-1",
+        "displayName": "tester"
+      }
+    },
+    {
+      "seq": 5,
+      "at": "2026-11-23T15:45:43.127Z",
+      "direction": "server",
+      "type": "player_state",
+      "payload": {
+        "type": "player_state",
+        "id": "p-1",
+        "name": "tester",
+        "xp": 0,
+        "room": "town"
+      }
+    },
+    {
+      "seq": 6,
+      "at": "2026-11-23T15:45:43.127Z",
+      "direction": "client",
+      "type": "move",
+      "payload": {
+        "dx": 1
+      }
+    },
+    {
+      "seq": 7,
+      "at": "2026-11-23T15:45:43.143Z",
+      "direction": "server",
+      "type": "player_state",
+      "payload": {
+        "type": "player_state",
+        "id": "p-1",
+        "name": "tester",
+        "xp": 10,
+        "room": "town"
+      }
+    },
+    {
+      "seq": 8,
+      "at": "2026-11-23T15:45:43.143Z",
+      "direction": "client",
+      "type": "logout",
+      "payload": {}
+    },
+    {
+      "seq": 9,
+      "at": "2026-11-23T15:45:43.158Z",
+      "direction": "server",
+      "type": "logout_ok",
+      "payload": {
+        "type": "logout_ok"
+      }
+    }
+  ]
+}

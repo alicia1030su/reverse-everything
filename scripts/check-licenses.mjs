@@ -1,0 +1,12 @@
+import { readFile, realpath } from 'node:fs/promises';
+import { createRequire } from 'node:module';
+import path from 'node:path';
+const root=process.cwd();const workspaceDirs=['apps/api','apps/worker','apps/cli','apps/web','packages/core','packages/security','packages/workflow','packages/evidence','packages/ai','packages/contracts'];
+const queue=[];for(const dir of workspaceDirs){const pkg=JSON.parse(await readFile(path.join(root,dir,'package.json'),'utf8'));for(const name of Object.keys(pkg.dependencies??{}))queue.push({name,from:path.join(root,dir)});}
+const seen=new Set();const records=[];const disallowed=[];
+async function findPackage(name,from){const require=createRequire(path.join(from,'package.json'));let entry;try{entry=require.resolve(name);}catch{try{entry=require.resolve(`${name}/package.json`);}catch{return null;}}let dir=path.dirname(entry);while(dir!==path.dirname(dir)){try{const pkg=JSON.parse(await readFile(path.join(dir,'package.json'),'utf8'));if(pkg.name===name)return {dir,pkg};}catch{}dir=path.dirname(dir);}return null;}
+while(queue.length&&seen.size<5000){const item=queue.shift();const found=await findPackage(item.name,item.from);if(!found)continue;const key=await realpath(found.dir);if(seen.has(key))continue;seen.add(key);const license=typeof found.pkg.license==='string'?found.pkg.license:found.pkg.license?.type??found.pkg.licenses?.map(x=>typeof x==='string'?x:x.type).join(' OR ')??'UNKNOWN';records.push({name:found.pkg.name,version:found.pkg.version,license});if(/(?:^|[ (])(?:A?GPL|LGPL|SSPL|BUSL|Commons-Clause|UNLICENSED)/i.test(license))disallowed.push({name:found.pkg.name,license});for(const dep of Object.keys(found.pkg.dependencies??{}))queue.push({name:dep,from:found.dir});for(const dep of Object.keys(found.pkg.optionalDependencies??{}))queue.push({name:dep,from:found.dir});}
+const summary={};for(const record of records)summary[record.license]=(summary[record.license]??0)+1;
+console.log(JSON.stringify({packages:records.length,licenses:summary,disallowed},null,2));
+if(disallowed.length){console.error('License compatibility review failed');process.exit(1);}
+if(records.some(r=>r.license==='UNKNOWN')){console.error('Unknown licenses require review');process.exit(1);}

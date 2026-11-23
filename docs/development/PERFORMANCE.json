@@ -1,0 +1,57 @@
+{
+  "measuredAt": "2026-11-23T16:17:22.881Z",
+  "platform": "win32",
+  "node": "v22.22.2",
+  "startupMs": 27,
+  "idleApi": {
+    "rssMB": 113,
+    "heapUsedMB": 50,
+    "uptimeSec": 1
+  },
+  "results": {
+    "file": {
+      "taskId": "a8738c9f-0f8d-4bb2-b8c4-e68852172c2b",
+      "durationMs": 229,
+      "peakApiRssMB": 113,
+      "evidence": 9,
+      "artifacts": 7,
+      "workerResource": {
+        "rssMB": 91,
+        "maxRssMB": 91,
+        "heapUsedMB": 37,
+        "sampledAt": "2026-11-23T16:17:20.402Z"
+      }
+    },
+    "website": {
+      "taskId": "4acacd0c-c112-40b4-9ecf-d4515f198979",
+      "durationMs": 1110,
+      "peakApiRssMB": 115,
+      "evidence": 11,
+      "artifacts": 8,
+      "workerResource": {
+        "rssMB": 106,
+        "maxRssMB": 106,
+        "heapUsedMB": 47,
+        "sampledAt": "2026-11-23T16:17:22.271Z"
+      }
+    },
+    "game": {
+      "taskId": "e586203e-dc96-4b0b-8542-317a6cb332aa",
+      "durationMs": 583,
+      "peakApiRssMB": 117,
+      "evidence": 9,
+      "artifacts": 10,
+      "workerResource": {
+        "rssMB": 106,
+        "maxRssMB": 106,
+        "heapUsedMB": 47,
+        "sampledAt": "2026-11-23T16:17:22.271Z"
+      }
+    }
+  },
+  "notes": [
+    "RSS is Node process self-report; Chromium child process memory is not included.",
+    "Budgets are observations, not guarantees.",
+    "Single Worker, sequential tasks."
+  ]
+}
