@@ -11,7 +11,8 @@ export class Database {
   constructor(file: string) {
     if (file !== ':memory:') mkdirSync(path.dirname(file), { recursive: true });
     this.raw = new DatabaseSync(file);
-    this.raw.exec('PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;');
+    this.raw.exec('PRAGMA busy_timeout=10000; PRAGMA foreign_keys=ON;');
+    for(let attempt=0;attempt<10;attempt++){try{this.raw.exec('PRAGMA journal_mode=WAL;');break;}catch(error){if(attempt===9||!(error instanceof Error)||!error.message.includes('locked'))throw error;Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,100);}}
     this.migration = migrateDatabase(this.raw, file);
   }
   close() { this.raw.close(); }

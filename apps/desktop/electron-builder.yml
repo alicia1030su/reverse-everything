@@ -24,13 +24,12 @@ extraResources:
   - from: ../../scripts/start.mjs
     to: scripts/start.mjs
 win:
+  artifactName: Reverse-Everything-Setup-${version}-win-${arch}.${ext}
   target:
     - target: nsis
       arch: [x64]
-      artifactName: Reverse-Everything-Setup-${version}-win-${arch}.${ext}
     - target: zip
       arch: [x64]
-      artifactName: Reverse-Everything-Portable-${version}-win-${arch}.${ext}
 nsis:
   oneClick: false
   perMachine: false

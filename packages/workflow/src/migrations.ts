@@ -91,13 +91,15 @@ export function migrateDatabase(raw: DatabaseSync, file: string): MigrationResul
   const applied: number[] = [];
   try {
     raw.exec('BEGIN IMMEDIATE');
+    const actualVersion=Number((raw.prepare('PRAGMA user_version').get() as {user_version:number}).user_version);
+    if(actualVersion>=SCHEMA_VERSION){raw.exec('COMMIT');return {previousVersion,version:SCHEMA_VERSION,...(backupPath?{backupPath}:{}),applied:[]};}
     raw.exec(BASE_SCHEMA);
     raw.exec(`CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL, backup_path TEXT)`);
-    if (previousVersion < 1) {
+    if (actualVersion < 1) {
       raw.prepare('INSERT OR REPLACE INTO schema_migrations (version,applied_at,backup_path) VALUES (?,?,?)').run(1,new Date().toISOString(),backupPath??null);
       applied.push(1);
     }
-    if (previousVersion < 2) {
+    if (actualVersion < 2) {
       raw.exec(PLATFORM_SCHEMA);
       raw.prepare('INSERT OR REPLACE INTO schema_migrations (version,applied_at,backup_path) VALUES (?,?,?)').run(2,new Date().toISOString(),backupPath??null);
       applied.push(2);
