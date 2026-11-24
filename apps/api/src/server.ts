@@ -14,7 +14,7 @@ import { redactSecrets } from '@reverse/ai';
 import { AppError, VERSION, SCHEMA_VERSION, EVIDENCE_MODEL_VERSION, SECURITY_POLICY_VERSION, type AdapterName, type AiSettings, type CreateProjectInput, type ErrorCode, type Page, type ProjectKind, type RetentionPolicy } from '@reverse/contracts';
 import { cookieValue, decryptSecret, encryptSecret, encryptionKey, localToken } from './security.js';
 
-export interface ServerOptions { dataDir?: string; db?: Database; token?: string; webDir?: string; logger?: boolean; backgroundResources?: boolean }
+export interface ServerOptions { dataDir?: string; db?: Database; token?: string; webDir?: string; logger?: boolean; backgroundResources?: boolean; rateLimitPerMinute?: number }
 const KINDS: ProjectKind[] = ['website','software','game','security'];
 const ADAPTERS: AdapterName[] = ['website','file','security','game'];
 const ACTIVE = new Set(['RUNNING','QUEUED','PAUSED']);
@@ -31,7 +31,7 @@ export async function buildServer(options:ServerOptions={}) {
   app.addHook('onRequest',async(req,reply)=>{
     reply.header('x-request-id',req.id);
     if(req.url==='/api/health'||(req.method==='GET'&&!req.url.startsWith('/api/')))return;
-    const bucketKey=`${req.ip}:${req.url.startsWith('/api/projects/')&&req.url.endsWith('/uploads')?'upload':'general'}`;const now=Date.now();const bucket=buckets.get(bucketKey);const limit=bucketKey.endsWith('upload')?15:180;
+    const bucketKey=`${req.ip}:${req.url.startsWith('/api/projects/')&&req.url.endsWith('/uploads')?'upload':'general'}`;const now=Date.now();const bucket=buckets.get(bucketKey);const limit=bucketKey.endsWith('upload')?15:(options.rateLimitPerMinute??Number(process.env.RE_RATE_LIMIT_PER_MIN??180));
     if(!bucket||bucket.reset<now)buckets.set(bucketKey,{count:1,reset:now+60000});else{bucket.count++;if(bucket.count>limit)throw new AppError('RATE_LIMITED','Too many requests',429,{retryAfterSec:Math.ceil((bucket.reset-now)/1000)});}
     const host=req.headers.host??'';const configured=process.env.RE_ALLOWED_HOSTS?.split(',').map(s=>s.trim()).filter(Boolean);const local=/^(127\.0\.0\.1|localhost)(:\d+)?$/.test(host);if(!local&&!configured?.includes(host))throw new AppError('FORBIDDEN','Host is not allowed',403);
     const origin=req.headers.origin;if(origin){try{const url=new URL(origin);if(url.host!==host)throw new Error();}catch{throw new AppError('FORBIDDEN','Cross-origin requests are forbidden',403);}}
