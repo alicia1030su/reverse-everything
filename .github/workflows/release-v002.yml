@@ -87,6 +87,7 @@ jobs:
         with: {node-version: 22, cache: npm}
       - run: npm ci --no-audit --no-fund
       - run: npm run build
+      - run: node scripts/package-runtime.mjs
       - run: npm run dist -w @reverse/desktop
       - name: Normalize portable artifact name
         shell: pwsh
