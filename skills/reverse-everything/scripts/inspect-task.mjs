@@ -1,0 +1,4 @@
+#!/usr/bin/env node
+import { readFile } from 'node:fs/promises';
+import path from 'node:path';
+const taskId=process.argv[2];if(!taskId){console.error('Usage: node inspect-task.mjs <task-id>');process.exit(1);}const token=process.env.RE_API_TOKEN??(await readFile(path.resolve(process.env.RE_DATA_DIR??'data','local-token'),'utf8')).trim();const base=(process.env.RE_API_URL??'http://127.0.0.1:4173').replace(/\/$/,'');const response=await fetch(`${base}/api/tasks/${encodeURIComponent(taskId)}`,{headers:{authorization:`Bearer ${token}`}});if(!response.ok){console.error(await response.text());process.exit(2);}const task=await response.json();console.log(JSON.stringify({id:task.id,status:task.status,stage:task.currentStage,progress:task.progress,evidence:task.evidence?.map(e=>({id:e.id,kind:e.kind,title:e.title})),findings:task.findings,artifacts:task.artifacts,report:task.report},null,2));

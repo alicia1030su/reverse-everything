@@ -3,55 +3,16 @@ import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { STAGES, type Artifact, type CreateProjectInput, type CreateTaskInput, type Evidence, type Finding, type LogEntry, type Project, type Stage, type Task, type TaskDetail, type TaskStage, type Upload } from '@reverse/contracts';
+import { migrateDatabase, type MigrationResult } from './migrations.js';
 
 export class Database {
   readonly raw: DatabaseSync;
+  readonly migration: MigrationResult;
   constructor(file: string) {
     if (file !== ':memory:') mkdirSync(path.dirname(file), { recursive: true });
     this.raw = new DatabaseSync(file);
-    this.raw.exec(`PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;
-      CREATE TABLE IF NOT EXISTS projects (
-        id TEXT PRIMARY KEY, name TEXT NOT NULL, kind TEXT NOT NULL, target TEXT NOT NULL DEFAULT '',
-        authorization_confirmed INTEGER NOT NULL, created_at TEXT NOT NULL);
-      CREATE TABLE IF NOT EXISTS uploads (
-        id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-        name TEXT NOT NULL, stored_name TEXT NOT NULL, mime TEXT NOT NULL, size INTEGER NOT NULL,
-        sha256 TEXT NOT NULL, created_at TEXT NOT NULL);
-      CREATE TABLE IF NOT EXISTS tasks (
-        id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-        adapter TEXT NOT NULL, status TEXT NOT NULL, current_stage TEXT NOT NULL, progress INTEGER NOT NULL DEFAULT 0,
-        current_tool TEXT, attempt INTEGER NOT NULL DEFAULT 0, input_hash TEXT NOT NULL,
-        options_json TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
-        started_at TEXT, ended_at TEXT, error TEXT, pause_requested INTEGER NOT NULL DEFAULT 0,
-        cancel_requested INTEGER NOT NULL DEFAULT 0);
-      CREATE TABLE IF NOT EXISTS stages (
-        task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE, name TEXT NOT NULL,
-        status TEXT NOT NULL, attempt INTEGER NOT NULL DEFAULT 0, started_at TEXT, ended_at TEXT,
-        error TEXT, cache_key TEXT, output_json TEXT, PRIMARY KEY(task_id,name));
-      CREATE TABLE IF NOT EXISTS evidence (
-        id TEXT PRIMARY KEY, task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
-        kind TEXT NOT NULL, title TEXT NOT NULL, source TEXT NOT NULL, locator TEXT NOT NULL,
-        content_json TEXT NOT NULL, sha256 TEXT NOT NULL, created_at TEXT NOT NULL);
-      CREATE TABLE IF NOT EXISTS findings (
-        id TEXT PRIMARY KEY, task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
-        title TEXT NOT NULL, category TEXT NOT NULL, severity TEXT NOT NULL, confidence REAL NOT NULL,
-        evidence_ids_json TEXT NOT NULL, details TEXT NOT NULL, recommendation TEXT NOT NULL, status TEXT NOT NULL);
-      CREATE TABLE IF NOT EXISTS logs (
-        id INTEGER PRIMARY KEY AUTOINCREMENT, task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
-        level TEXT NOT NULL, message TEXT NOT NULL, tool TEXT, created_at TEXT NOT NULL);
-      CREATE TABLE IF NOT EXISTS artifacts (
-        id TEXT PRIMARY KEY, task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
-        name TEXT NOT NULL, stored_path TEXT NOT NULL, size INTEGER NOT NULL, sha256 TEXT NOT NULL,
-        mime TEXT NOT NULL, created_at TEXT NOT NULL, UNIQUE(task_id,name));
-      CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
-      CREATE TABLE IF NOT EXISTS events (
-        id INTEGER PRIMARY KEY AUTOINCREMENT, task_id TEXT, type TEXT NOT NULL,
-        payload_json TEXT NOT NULL, created_at TEXT NOT NULL);
-      CREATE INDEX IF NOT EXISTS idx_events_id ON events(id);
-      CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status,created_at);
-      CREATE INDEX IF NOT EXISTS idx_evidence_task ON evidence(task_id);
-      CREATE INDEX IF NOT EXISTS idx_logs_task ON logs(task_id);
-    `);
+    this.raw.exec('PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;');
+    this.migration = migrateDatabase(this.raw, file);
   }
   close() { this.raw.close(); }
   project(input: CreateProjectInput): Project {
@@ -63,7 +24,7 @@ export class Database {
     const r = this.raw.prepare('SELECT * FROM projects WHERE id=?').get(id) as Record<string, unknown> | undefined;
     return r ? this.mapProject(r) : undefined;
   }
-  projects(): Project[] { return (this.raw.prepare('SELECT * FROM projects ORDER BY created_at DESC').all() as Record<string, unknown>[]).map(r => this.mapProject(r)); }
+  projects(limit=200,offset=0): Project[] { return (this.raw.prepare('SELECT * FROM projects ORDER BY created_at DESC LIMIT ? OFFSET ?').all(limit,offset) as Record<string, unknown>[]).map(r => this.mapProject(r)); }
   mapProject(r: Record<string, unknown>): Project { return { id: String(r.id), name: String(r.name), kind: String(r.kind) as Project['kind'], target: String(r.target), authorizationConfirmed: Boolean(r.authorization_confirmed), createdAt: String(r.created_at) }; }
   addUpload(p: Upload) { this.raw.prepare('INSERT INTO uploads VALUES (?,?,?,?,?,?,?,?)').run(p.id,p.projectId,p.name,p.storedName,p.mime,p.size,p.sha256,p.createdAt); }
   uploads(projectId: string): Upload[] { return (this.raw.prepare('SELECT * FROM uploads WHERE project_id=? ORDER BY created_at').all(projectId) as Record<string, unknown>[]).map(r => ({ id:String(r.id),projectId:String(r.project_id),name:String(r.name),storedName:String(r.stored_name),mime:String(r.mime),size:Number(r.size),sha256:String(r.sha256),createdAt:String(r.created_at) })); }
@@ -76,7 +37,7 @@ export class Database {
     return t;
   }
   getTask(id: string): Task | undefined { const r = this.raw.prepare('SELECT * FROM tasks WHERE id=?').get(id) as Record<string, unknown> | undefined; return r ? this.mapTask(r) : undefined; }
-  tasks(): Task[] { return (this.raw.prepare('SELECT * FROM tasks ORDER BY created_at DESC LIMIT 200').all() as Record<string, unknown>[]).map(r => this.mapTask(r)); }
+  tasks(limit=200,offset=0): Task[] { return (this.raw.prepare('SELECT * FROM tasks ORDER BY created_at DESC LIMIT ? OFFSET ?').all(limit,offset) as Record<string, unknown>[]).map(r => this.mapTask(r)); }
   mapTask(r: Record<string, unknown>): Task { return { id:String(r.id),projectId:String(r.project_id),adapter:String(r.adapter) as Task['adapter'],status:String(r.status) as Task['status'],currentStage:String(r.current_stage) as Stage,progress:Number(r.progress),currentTool:r.current_tool ? String(r.current_tool) : null,attempt:Number(r.attempt),inputHash:String(r.input_hash),options:JSON.parse(String(r.options_json)) as Record<string,unknown>,createdAt:String(r.created_at),updatedAt:String(r.updated_at),...(r.started_at ? {startedAt:String(r.started_at)} : {}),...(r.ended_at ? {endedAt:String(r.ended_at)} : {}),...(r.error ? {error:String(r.error)} : {}),pauseRequested:Boolean(r.pause_requested),cancelRequested:Boolean(r.cancel_requested) }; }
   updateTask(id: string, values: Partial<Record<'status'|'current_stage'|'progress'|'current_tool'|'attempt'|'updated_at'|'started_at'|'ended_at'|'error'|'pause_requested'|'cancel_requested', SQLInputValue>>) {
     const entries = Object.entries(values).filter(([,v]) => v !== undefined);
@@ -90,7 +51,8 @@ export class Database {
   setStageOutput(taskId: string, name: Stage, output: unknown) { this.setStage(taskId,name,{output_json:JSON.stringify(output)}); }
   stageOutput(taskId: string, name: Stage): unknown { const r=this.raw.prepare('SELECT output_json FROM stages WHERE task_id=? AND name=?').get(taskId,name) as {output_json:string|null}|undefined; return r?.output_json ? JSON.parse(r.output_json) : undefined; }
   addEvidence(e: Omit<Evidence,'id'|'createdAt'>): Evidence { const item={...e,id:randomUUID(),createdAt:new Date().toISOString()}; this.raw.prepare('INSERT INTO evidence VALUES (?,?,?,?,?,?,?,?,?)').run(item.id,item.taskId,item.kind,item.title,item.source,item.locator,JSON.stringify(item.content),item.sha256,item.createdAt); return item; }
-  evidence(taskId: string): Evidence[] { return (this.raw.prepare('SELECT * FROM evidence WHERE task_id=? ORDER BY created_at,rowid').all(taskId) as Record<string,unknown>[]).map(r=>({id:String(r.id),taskId:String(r.task_id),kind:String(r.kind) as Evidence['kind'],title:String(r.title),source:String(r.source),locator:String(r.locator),content:JSON.parse(String(r.content_json)),sha256:String(r.sha256),createdAt:String(r.created_at)})); }
+  evidence(taskId: string,limit=1000,offset=0): Evidence[] { return (this.raw.prepare('SELECT * FROM evidence WHERE task_id=? ORDER BY created_at,rowid LIMIT ? OFFSET ?').all(taskId,limit,offset) as Record<string,unknown>[]).map(r=>({id:String(r.id),taskId:String(r.task_id),kind:String(r.kind) as Evidence['kind'],title:String(r.title),source:String(r.source),locator:String(r.locator),content:JSON.parse(String(r.content_json)),sha256:String(r.sha256),createdAt:String(r.created_at)})); }
+  evidenceById(id:string):Evidence|undefined{const r=this.raw.prepare('SELECT * FROM evidence WHERE id=?').get(id) as Record<string,unknown>|undefined;return r?{id:String(r.id),taskId:String(r.task_id),kind:String(r.kind) as Evidence['kind'],title:String(r.title),source:String(r.source),locator:String(r.locator),content:JSON.parse(String(r.content_json)),sha256:String(r.sha256),createdAt:String(r.created_at)}:undefined;}
   addFinding(f: Omit<Finding,'id'>): Finding { const item={...f,id:randomUUID()}; this.raw.prepare('INSERT INTO findings VALUES (?,?,?,?,?,?,?,?,?,?)').run(item.id,item.taskId,item.title,item.category,item.severity,item.confidence,JSON.stringify(item.evidenceIds),item.details,item.recommendation,item.status); return item; }
   findings(taskId: string): Finding[] { return (this.raw.prepare('SELECT * FROM findings WHERE task_id=? ORDER BY severity').all(taskId) as Record<string,unknown>[]).map(r=>({id:String(r.id),taskId:String(r.task_id),title:String(r.title),category:String(r.category),severity:String(r.severity) as Finding['severity'],confidence:Number(r.confidence),evidenceIds:JSON.parse(String(r.evidence_ids_json)) as string[],details:String(r.details),recommendation:String(r.recommendation),status:String(r.status) as Finding['status']})); }
   log(taskId: string, level: LogEntry['level'], message: string, tool?: string): LogEntry { const item:LogEntry={id:0,taskId,level,message,...(tool?{tool}:{}),createdAt:new Date().toISOString()}; const result=this.raw.prepare('INSERT INTO logs (task_id,level,message,tool,created_at) VALUES (?,?,?,?,?)').run(taskId,level,message,tool??null,item.createdAt); item.id=Number(result.lastInsertRowid); this.addEvent(taskId,'log',item); return item; }

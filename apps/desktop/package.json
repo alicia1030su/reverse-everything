@@ -1,0 +1,6 @@
+{
+  "name":"@reverse/desktop","version":"0.0.2","private":true,"type":"module","description":"Reverse Everything Windows desktop shell","author":"Reverse Everything contributors",
+  "main":"dist/main.js",
+  "scripts":{"build":"tsc -p tsconfig.json","dist":"node ../../node_modules/electron-builder/cli.js --win --x64"},
+  "devDependencies":{"electron":"38.2.0","electron-builder":"26.0.12","typescript":"5.9.3","@types/node":"22.18.6"}
+}

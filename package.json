@@ -1,15 +1,20 @@
 {
   "name": "reverse-everything",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "private": true,
   "description": "Evidence-first local reverse engineering and compatibility reconstruction workbench",
   "license": "Apache-2.0",
   "type": "module",
-  "engines": { "node": ">=22.13.0" },
-  "workspaces": ["apps/*", "packages/*"],
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
   "scripts": {
     "dev": "node scripts/start.mjs",
-    "build": "npm run build -w @reverse/contracts && npm run build -w @reverse/evidence && npm run build -w @reverse/security && npm run build -w @reverse/ai && npm run build -w @reverse/workflow && npm run build -w @reverse/core && npm run build -w @reverse/api && npm run build -w @reverse/worker && npm run build -w @reverse/cli && npm run build -w @reverse/web",
+    "build": "npm run build -w @reverse/contracts && npm run build -w @reverse/evidence && npm run build -w @reverse/security && npm run build -w @reverse/ai && npm run build -w @reverse/workflow && npm run build -w @reverse/core && npm run build -w @reverse/api && npm run build -w @reverse/worker && npm run build -w @reverse/cli && npm run build -w @reverse/desktop && npm run build -w @reverse/web",
     "start": "node scripts/start.mjs",
     "test": "vitest run",
     "test:unit": "vitest run tests/unit",
@@ -20,7 +25,13 @@
     "check": "npm run typecheck && npm run lint && npm test",
     "check:secrets": "node scripts/check-secrets.mjs",
     "licenses": "node scripts/check-licenses.mjs",
-    "assets": "npm run build -w @reverse/web"
+    "assets": "npm run build -w @reverse/web",
+    "openapi": "node scripts/generate-openapi.mjs",
+    "sbom": "node scripts/generate-sbom.mjs",
+    "package:cli": "node scripts/package-cli.mjs",
+    "package:server": "node scripts/package-server.mjs",
+    "package:skill": "node scripts/package-skill.mjs",
+    "validate:skill": "node scripts/validate-skill.mjs"
   },
   "devDependencies": {
     "@eslint/js": "9.39.1",
@@ -38,5 +49,10 @@
     "typescript": "5.9.3",
     "typescript-eslint": "8.46.2",
     "vite": "6.4.5",
-    "vitest": "3.2.4", "yazl": "3.3.1"  }
+    "vitest": "3.2.4",
+    "yazl": "3.3.1"
+  },
+  "dependencies": {
+    "7zip-bin": "^5.2.0"
+  }
 }

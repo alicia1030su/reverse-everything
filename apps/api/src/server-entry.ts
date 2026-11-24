@@ -6,6 +6,8 @@ const webCandidates=[path.resolve('apps/web/dist'),path.resolve('../web/dist')];
 const webDir=webCandidates.find(existsSync)??webCandidates[0]!;
 const {app,db}=await buildServer({dataDir,webDir,logger:process.env.NODE_ENV!=='test'});
 const host=process.env.RE_HOST??'127.0.0.1'; const port=Number(process.env.RE_PORT??4173);
+if(!['127.0.0.1','localhost'].includes(host)&&process.env.RE_ALLOW_REMOTE!=='true')throw new Error('Remote listening requires RE_ALLOW_REMOTE=true and RE_ALLOWED_HOSTS');
+if(process.env.RE_ALLOW_REMOTE==='true'&&!process.env.RE_ALLOWED_HOSTS)throw new Error('RE_ALLOWED_HOSTS is required for remote listening');
 await app.listen({host,port});
 console.log(`[api] listening on http://${host}:${port}; data=${dataDir}`);
 let stopping=false;

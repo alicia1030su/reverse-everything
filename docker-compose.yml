@@ -8,6 +8,8 @@ services:
       - "127.0.0.1:4173:4173"
     environment:
       RE_HOST: 0.0.0.0
+      RE_ALLOW_REMOTE: "true"
+      RE_ALLOWED_HOSTS: "127.0.0.1:4173,localhost:4173"
       RE_PORT: "4173"
       RE_DATA_DIR: /data
       RE_MAX_UPLOAD_MB: "100"

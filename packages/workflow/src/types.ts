@@ -8,6 +8,7 @@ export interface TaskContext {
   stageOutputs: Partial<Record<Stage, unknown>>;
   artifactDir: string;
   dataDir: string;
+  signal: AbortSignal;
   log(level: 'info' | 'warn' | 'error', message: string, tool?: string): Promise<void>;
   evidence(kind: EvidenceKind, title: string, source: string, locator: string, content: unknown): Promise<string>;
   finding(input: { title: string; category: string; severity: Severity; confidence: number; evidenceIds: string[]; details: string; recommendation: string; status?: 'observed' | 'needs_review' | 'verified' }): Promise<string>;

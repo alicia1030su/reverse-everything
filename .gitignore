@@ -1,4 +1,5 @@
 .workbuddy/
+.ai-memory/
 node_modules/
 dist/
 data/
