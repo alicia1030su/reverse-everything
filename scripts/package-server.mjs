@@ -1,0 +1,1 @@
+@scripts/package-server.mjs

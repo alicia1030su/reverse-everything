@@ -1,6 +1,1 @@
-{
-  "name": "@reverse/contracts", "version": "0.0.1", "private": true, "type": "module",
-  "exports": { ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" } },
-  "scripts": { "build": "tsc -p tsconfig.json" },
-  "devDependencies": { "typescript": "5.9.3" }
-}
+@packages/contracts/package.json

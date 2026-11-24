@@ -1,0 +1,1 @@
+@skills/reverse-everything/scripts/inspect-task.mjs

@@ -1,0 +1,1 @@
+@scripts/package-cli.mjs

@@ -1,0 +1,1 @@
+@scripts/generate-sbom.mjs

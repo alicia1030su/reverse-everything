@@ -1,0 +1,1 @@
+@packages/workflow/src/resources.ts
