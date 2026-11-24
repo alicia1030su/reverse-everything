@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { createServer } from 'node:http';
 import { createConnection } from 'node:net';
 import { existsSync } from 'node:fs';
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
@@ -14,7 +14,7 @@ const dirs:string[]=[];const cleanups:(()=>Promise<void>)[]=[];
 afterEach(async()=>{vi.restoreAllMocks();for(const cleanup of cleanups.splice(0).reverse())await cleanup();for(const dir of dirs.splice(0))await rm(dir,{recursive:true,force:true});});
 async function setup(){const dataDir=await mkdtemp(path.join(os.tmpdir(),'re-api-safety-'));dirs.push(dataDir);const built=await buildServer({dataDir,token,backgroundResources:false});cleanups.push(async()=>{await built.app.close();built.db.close();});return {...built,dataDir};}
 async function withEnv<T>(values:Record<string,string>,operation:()=>Promise<T>){const previous=Object.fromEntries(Object.keys(values).map(name=>[name,process.env[name]]));Object.assign(process.env,values);try{return await operation();}finally{for(const [name,value] of Object.entries(previous)){if(value===undefined)delete process.env[name];else process.env[name]=value;}}}
-function within(parent:string,child:string){const relative=path.relative(path.resolve(parent),path.resolve(child));return relative!=='..'&&!relative.startsWith(`..${path.sep}`)&&!path.isAbsolute(relative);}
+async function within(parent:string,child:string){const canonicalParent=await realpath(parent).catch(()=>path.resolve(parent));const canonicalChild=await realpath(child).catch(()=>path.resolve(child));const relative=path.relative(canonicalParent,canonicalChild);return relative!=='..'&&!relative.startsWith(`..${path.sep}`)&&!path.isAbsolute(relative);}
 
 describe('API safety and recovery boundaries',()=>{
   it('keeps public health minimal and protects resource details',async()=>{
@@ -102,10 +102,10 @@ describe('API safety and recovery boundaries',()=>{
     const verified=await app.inject({method:'GET',url:`/api/backups/${backup.id}/verify`,headers:auth});expect(verified.statusCode).toBe(200);expect(verified.json().valid).toBe(true);
     const events=await app.inject({method:'GET',url:`/api/backups/${backup.id}/events`,headers:auth});expect(events.statusCode).toBe(200);expect(events.json().map((event:{action:string})=>event.action)).toContain('backup.created');
     expect((await app.inject({method:'POST',url:`/api/backups/${backup.id}/preview`,headers:{...auth,'content-type':'application/json'},body:JSON.stringify({targetDir:path.join(dataDir,'unsafe')})})).statusCode).toBe(400);
-    const preview=await app.inject({method:'POST',url:`/api/backups/${backup.id}/preview`,headers:{...auth,'content-type':'application/json'},body:'{}'});expect(preview.statusCode).toBe(200);expect(within(path.join(dataDir,'restores'),preview.json().targetDir)).toBe(true);
+    const preview=await app.inject({method:'POST',url:`/api/backups/${backup.id}/preview`,headers:{...auth,'content-type':'application/json'},body:'{}'});expect(preview.statusCode).toBe(200);expect(await within(path.join(dataDir,'restores'),preview.json().targetDir)).toBe(true);
     expect((await app.inject({method:'POST',url:`/api/backups/${backup.id}/restore`,headers:{...auth,'content-type':'application/json'},body:'{}'})).statusCode).toBe(400);
     expect((await app.inject({method:'POST',url:`/api/backups/${backup.id}/restore`,headers:{...auth,'content-type':'application/json'},body:JSON.stringify({confirm:'RESTORE_BACKUP',targetDir:path.join(dataDir,'unsafe')})})).statusCode).toBe(400);
-    const restored=await app.inject({method:'POST',url:`/api/backups/${backup.id}/restore`,headers:{...auth,'content-type':'application/json'},body:JSON.stringify({confirm:'RESTORE_BACKUP'})});expect(restored.statusCode,`status=${restored.statusCode} body=${restored.body}`).toBe(200);expect(within(path.join(dataDir,'restores'),restored.json().targetDir),`parent=${path.join(dataDir,'restores')} child=${restored.json().targetDir} status=${restored.statusCode} body=${restored.body}`).toBe(true);
+    const restored=await app.inject({method:'POST',url:`/api/backups/${backup.id}/restore`,headers:{...auth,'content-type':'application/json'},body:JSON.stringify({confirm:'RESTORE_BACKUP'})});expect(restored.statusCode,`status=${restored.statusCode} body=${restored.body}`).toBe(200);expect(await within(path.join(dataDir,'restores'),restored.json().targetDir),`parent=${path.join(dataDir,'restores')} child=${restored.json().targetDir} status=${restored.statusCode} body=${restored.body}`).toBe(true);
     expect(db.getProject(project.id)?.name).toBe('backup source');expect(db.getTask(task.id)?.inputHash).toBe('backup-task-hash');
     const targetFile=restored.json().files[0].path as string;const target=new DatabaseSync(targetFile,{readOnly:true});try{expect(target.prepare('SELECT name FROM projects WHERE id=?').get(project.id)).toEqual({name:'backup source'});expect(target.prepare('SELECT input_hash FROM tasks WHERE id=?').get(task.id)).toEqual({input_hash:'backup-task-hash'});}finally{target.close();}
     await writeFile(backup.path as string,'corrupt');const corrupt=await app.inject({method:'POST',url:`/api/backups/${backup.id}/preview`,headers:{...auth,'content-type':'application/json'},body:'{}'});expect(corrupt.statusCode).toBe(409);
