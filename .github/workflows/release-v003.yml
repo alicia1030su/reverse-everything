@@ -173,8 +173,14 @@ jobs:
       - name: Normalize portable name
         shell: pwsh
         run: |
+          $ErrorActionPreference = 'Stop'
           $version = node -p "require('./package.json').version"
-          Rename-Item "dist/desktop/Reverse-Everything-Setup-$version-win-x64.zip" "dist/desktop/Reverse-Everything-Portable-$version-win-x64.zip"
+          $source = Join-Path (Get-Location) "dist/desktop/Reverse-Everything-Setup-$version-win-x64.zip"
+          $target = Join-Path (Get-Location) "dist/desktop/Reverse-Everything-Portable-$version-win-x64.zip"
+          if (-not (Test-Path -LiteralPath $source -PathType Leaf)) { throw "Portable source not found: $source" }
+          if (Test-Path -LiteralPath $target) { throw "Portable target already exists: $target" }
+          [System.IO.File]::Move($source, $target)
+          if (-not (Test-Path -LiteralPath $target -PathType Leaf)) { throw "Portable target missing after move: $target" }
       - name: Silent install smoke
         shell: pwsh
         run: |
