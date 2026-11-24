@@ -1,7 +1,7 @@
 name: Release v0.0.2
 on:
   push:
-    tags: ['v0.0.2']
+    tags: ['v0.0.2*']
   workflow_dispatch:
     inputs:
       publish:
@@ -127,7 +127,7 @@ jobs:
         docker compose logs; exit 1
       - run: docker compose down -v
   release:
-    if: github.ref_name == 'v0.0.2' || inputs.publish
+    if: github.ref_name == 'v0.0.2' || startsWith(github.ref_name, 'v0.0.2-preflight') || inputs.publish
     needs: [package, skill, windows-desktop, docker]
     runs-on: ubuntu-latest
     steps:
