@@ -1,5 +1,5 @@
 import { DatabaseSync } from 'node:sqlite';
-import { appendFile, mkdir, mkdtemp, readdir, rename, rm, symlink, writeFile } from 'node:fs/promises';
+import { appendFile, mkdir, mkdtemp, readdir, realpath, rename, rm, symlink, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -267,7 +267,7 @@ describe('BackupService', () => {
     expect(preview.files[0]?.sizeBytes).toBe(info.sizeBytes);
     expect(preview.warnings.length).toBeGreaterThan(0);
     const restored = await service.restore(info.id, target);
-    expect(restored.targetDir).toBe(target);
+    expect(await realpath(restored.targetDir)).toBe(await realpath(target));
     const restoredDb = open(restored.files[0]!.path);
     expect(restoredDb.allTasks()).toHaveLength(205);
     expect(restoredDb.projectTasks(project.id)).toHaveLength(205);
