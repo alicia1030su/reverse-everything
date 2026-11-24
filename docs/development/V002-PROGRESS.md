@@ -5,7 +5,7 @@
 - 仓库：`alicia1030su/reverse-everything`
 - 开发分支：待 Phase 0 文档提交后创建 `feat/v0.0.2-platform`
 - 基线：main `4c7a46f71248515fdade72f28d473f06327442fd`
-- 当前阶段：Phase 0–10 本地实现完成，Phase 11 CI 验收中
+- 当前阶段：Phase 0–11 完成，发行工作流预演后合并发布
 
 | Phase | 状态 | 证据 / 说明 |
 |---|---|---|
@@ -20,7 +20,7 @@
 | 8 Skill | 本地完成 | 标准目录/脚本；ZIP CI 待验证 |
 | 9 Windows EXE | 本地完成 | Electron NSIS/便携配置；安装 smoke 待 CI |
 | 10 Web 整合 | 完成 | 系统/资源/缓存/保留/开发者/诊断 |
-| 11 完整验收 | 进行中 | 30 测试 + 2 E2E 本地通过 |
+| 11 完整验收 | 完成 | 30 测试 + 2 E2E；Windows/Ubuntu/Docker PR 检查全绿 |
 | 12 正式发布 | 待开始 | 全部门禁通过后执行 |
 
 ## 检查点

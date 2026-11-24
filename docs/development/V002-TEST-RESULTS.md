@@ -20,5 +20,6 @@
 - `npm run test:e2e`：2 项通过。
 - CLI TGZ 干净 prefix 安装：`--version`/`--help` 通过。
 - Skill 结构与脚本：待 CI ZIP 解压复验。
+- PR CI：Windows、Ubuntu、Docker 三项检查全部通过。
 - Windows EXE：本机 Electron 下载网络失败，未伪造结果；由 windows-desktop job 构建并执行安装/便携版 smoke。
 - 服务端 TGZ Linux 解压安装启动：由 package job 验证。
