@@ -14,7 +14,7 @@ const dirs:string[]=[];const cleanups:(()=>Promise<void>)[]=[];
 afterEach(async()=>{vi.restoreAllMocks();for(const cleanup of cleanups.splice(0).reverse())await cleanup();for(const dir of dirs.splice(0))await rm(dir,{recursive:true,force:true});});
 async function setup(){const dataDir=await mkdtemp(path.join(os.tmpdir(),'re-api-safety-'));dirs.push(dataDir);const built=await buildServer({dataDir,token,backgroundResources:false});cleanups.push(async()=>{await built.app.close();built.db.close();});return {...built,dataDir};}
 async function withEnv<T>(values:Record<string,string>,operation:()=>Promise<T>){const previous=Object.fromEntries(Object.keys(values).map(name=>[name,process.env[name]]));Object.assign(process.env,values);try{return await operation();}finally{for(const [name,value] of Object.entries(previous)){if(value===undefined)delete process.env[name];else process.env[name]=value;}}}
-function within(parent:string,child:string){const relative=path.relative(parent,child);return relative!=='..'&&!relative.startsWith(`..${path.sep}`)&&!path.isAbsolute(relative);}
+function within(parent:string,child:string){const relative=path.relative(path.resolve(parent),path.resolve(child));return relative!=='..'&&!relative.startsWith(`..${path.sep}`)&&!path.isAbsolute(relative);}
 
 describe('API safety and recovery boundaries',()=>{
   it('keeps public health minimal and protects resource details',async()=>{
