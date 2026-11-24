@@ -435,7 +435,8 @@ export class BackupService {
     const targetFile = path.join(target, this.databaseName());
     await this.validateTarget(targetFile);
     for (const suffix of SIDECAR_SUFFIXES) await inspectPath(`${targetFile}${suffix}`, 'file', true);
-    const active = this.db.file !== ':memory:' && samePath(await realpath(this.db.file), await realpath(targetFile));
+    const activeFile = this.db.file !== ':memory:' ? await realpath(this.db.file).catch(() => this.db.file) : this.db.file;
+    const active = activeFile !== ':memory:' && samePath(activeFile, await realpath(targetFile).catch(() => targetFile));
     const activeTasks = active ? this.db.raw.prepare("SELECT id FROM tasks WHERE status IN ('QUEUED','RUNNING','PAUSED') LIMIT 1").get() as {id:string}|undefined : undefined;
     if (activeTasks) throw new Error('Restore refused while tasks are active');
     const stage = path.join(target, `.restore-${randomUUID()}`);
