@@ -137,5 +137,6 @@ jobs:
           name: 逆向万物 ${{ github.ref_name }}
           draft: false
           prerelease: false
+          body_path: docs/development/V002-RELEASE-NOTES.md
           files: artifacts/*
           fail_on_unmatched_files: true

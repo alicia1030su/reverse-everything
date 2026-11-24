@@ -1,0 +1,146 @@
+{
+  "measuredAt": "2026-11-24T02:43:07.694Z",
+  "platform": "win32",
+  "node": "v22.22.2",
+  "startupMs": 34,
+  "idleApi": {
+    "sampledAt": "2026-11-24T02:43:04.776Z",
+    "source": "api",
+    "treeRssMB": 124,
+    "selfRssMB": 124,
+    "childRssMB": 0,
+    "heapUsedMB": 52,
+    "cpuPercent": 0,
+    "handles": 5,
+    "processes": [
+      {
+        "pid": 3852,
+        "ppid": 18068,
+        "rssMB": 124.19140625,
+        "cpuSeconds": 1.390625,
+        "name": "node.exe"
+      }
+    ],
+    "systemFreeMemoryMB": 17869,
+    "systemTotalMemoryMB": 32233,
+    "dataDirBytes": 259480,
+    "diskAvailableBytes": 159677919232,
+    "queuedTasks": 0,
+    "runningTasks": 0,
+    "peakTreeRssMB": 175,
+    "pressure": "normal",
+    "limitations": []
+  },
+  "results": {
+    "file": {
+      "taskId": "f3375300-195a-4dc4-b3a8-55ec95113a71",
+      "durationMs": 222,
+      "peakApiRssMB": 124,
+      "evidence": 9,
+      "artifacts": 7,
+      "workerResource": {
+        "sampledAt": "2026-11-24T02:43:04.971Z",
+        "source": "worker",
+        "treeRssMB": 100,
+        "selfRssMB": 100,
+        "childRssMB": 0,
+        "heapUsedMB": 41,
+        "cpuPercent": 0,
+        "handles": 7,
+        "processes": [
+          {
+            "pid": 24732,
+            "ppid": 18068,
+            "rssMB": 100.26953125,
+            "cpuSeconds": 0.8125,
+            "name": "node.exe"
+          }
+        ],
+        "systemFreeMemoryMB": 17887,
+        "systemTotalMemoryMB": 32233,
+        "dataDirBytes": 1546361,
+        "diskAvailableBytes": 159676604416,
+        "queuedTasks": 0,
+        "runningTasks": 1,
+        "peakTreeRssMB": 175,
+        "pressure": "normal",
+        "limitations": []
+      }
+    },
+    "website": {
+      "taskId": "b5635fd9-544b-44c9-bd71-18de6a0ccc7c",
+      "durationMs": 1946,
+      "peakApiRssMB": 126,
+      "evidence": 11,
+      "artifacts": 8,
+      "workerResource": {
+        "sampledAt": "2026-11-24T02:43:06.921Z",
+        "source": "worker",
+        "treeRssMB": 111,
+        "selfRssMB": 111,
+        "childRssMB": 0,
+        "heapUsedMB": 52,
+        "cpuPercent": 2,
+        "handles": 6,
+        "processes": [
+          {
+            "pid": 24732,
+            "ppid": 18068,
+            "rssMB": 110.66796875,
+            "cpuSeconds": 1.359375,
+            "name": "node.exe"
+          }
+        ],
+        "systemFreeMemoryMB": 17876,
+        "systemTotalMemoryMB": 32233,
+        "dataDirBytes": 4490975,
+        "diskAvailableBytes": 159672700928,
+        "queuedTasks": 0,
+        "runningTasks": 1,
+        "peakTreeRssMB": 175,
+        "pressure": "normal",
+        "limitations": []
+      }
+    },
+    "game": {
+      "taskId": "11b1f936-6f68-4778-a4f1-227dfa433ed1",
+      "durationMs": 666,
+      "peakApiRssMB": 126,
+      "evidence": 9,
+      "artifacts": 10,
+      "workerResource": {
+        "sampledAt": "2026-11-24T02:43:06.921Z",
+        "source": "worker",
+        "treeRssMB": 111,
+        "selfRssMB": 111,
+        "childRssMB": 0,
+        "heapUsedMB": 52,
+        "cpuPercent": 2,
+        "handles": 6,
+        "processes": [
+          {
+            "pid": 24732,
+            "ppid": 18068,
+            "rssMB": 110.66796875,
+            "cpuSeconds": 1.359375,
+            "name": "node.exe"
+          }
+        ],
+        "systemFreeMemoryMB": 17876,
+        "systemTotalMemoryMB": 32233,
+        "dataDirBytes": 4490975,
+        "diskAvailableBytes": 159672700928,
+        "queuedTasks": 0,
+        "runningTasks": 1,
+        "peakTreeRssMB": 175,
+        "pressure": "normal",
+        "limitations": []
+      }
+    }
+  },
+  "notes": [
+    "Process-tree RSS includes active Chromium/analyzer children and excludes the sampler process itself.",
+    "Budgets are observations, not guarantees.",
+    "Single Worker, sequential tasks."
+  ]
+}
