@@ -1,0 +1,1964 @@
+{
+  "schemaVersion": 1,
+  "product": "reverse-everything",
+  "productVersion": "0.0.3",
+  "measuredAt": "2026-11-24T08:07:48.318Z",
+  "commit": "38a781c1f88b46f0a5a658046f1a9b426eecedda",
+  "environment": {
+    "platform": "win32",
+    "arch": "x64",
+    "os": "Windows_NT 10.0.26300",
+    "node": "v22.22.2",
+    "v8": "12.4.254.21-node.39",
+    "cpu": "Intel(R) Core(TM) Ultra 5 125H",
+    "logicalCores": 18,
+    "totalMemoryMB": 32233.48046875,
+    "freeMemoryMB": 17601.2890625,
+    "execArgv": [],
+    "concurrency": 1
+  },
+  "workload": {
+    "adapter": "file",
+    "adapterVersion": "1.1.0",
+    "database": ":memory:",
+    "fixture": "JSON package with one dependency",
+    "concurrency": 1,
+    "samplesPerPhase": 7,
+    "warmupColdTasks": 2,
+    "warmupHotTasks": 1,
+    "totalTasks": 17,
+    "stages": [
+      "INTAKE",
+      "CLASSIFY",
+      "AUTHORIZATION_CHECK",
+      "PLAN",
+      "PREPARE",
+      "ANALYZE",
+      "COLLECT_EVIDENCE",
+      "MODEL_BEHAVIOR",
+      "RECONSTRUCT",
+      "VALIDATE",
+      "REPORT",
+      "EXPORT",
+      "COMPLETED"
+    ]
+  },
+  "methodology": [
+    "Cold samples use a new project-scoped cache namespace per task.",
+    "Hot samples reuse one project and input after one unmeasured cache-populating task.",
+    "Stage durations are persisted stage started_at/ended_at intervals and include engine, cache and SQLite overhead.",
+    "Memory is sampled in-process every 5 ms during measured tasks; short sub-interval peaks may be missed.",
+    "GC metrics are PerformanceObserver events; no forced GC is performed."
+  ],
+  "thresholds": {
+    "maxTaskP95Ms": 2500,
+    "maxStageP95Ms": 1500,
+    "minTasksPerSecond": 0.2,
+    "maxColdCacheHitRate": 0.05,
+    "minHotCacheHitRate": 0.95,
+    "maxPeakRssMB": 768,
+    "maxPeakHeapMB": 512,
+    "maxGcPauseP95Ms": 500,
+    "minArtifactsPerTask": 1
+  },
+  "checks": [
+    {
+      "name": "failedTasks",
+      "actual": 0,
+      "operator": "===",
+      "limit": 0,
+      "passed": true
+    },
+    {
+      "name": "coldTaskP95Ms",
+      "actual": 66.85329999999999,
+      "operator": "<=",
+      "limit": 2500,
+      "passed": true
+    },
+    {
+      "name": "hotTaskP95Ms",
+      "actual": 68.24649999999997,
+      "operator": "<=",
+      "limit": 2500,
+      "passed": true
+    },
+    {
+      "name": "coldTasksPerSecond",
+      "actual": 14.73563533428525,
+      "operator": ">=",
+      "limit": 0.2,
+      "passed": true
+    },
+    {
+      "name": "hotTasksPerSecond",
+      "actual": 15.57768625516205,
+      "operator": ">=",
+      "limit": 0.2,
+      "passed": true
+    },
+    {
+      "name": "coldCacheHitRate",
+      "actual": 0,
+      "operator": "<=",
+      "limit": 0.05,
+      "passed": true
+    },
+    {
+      "name": "hotCacheHitRate",
+      "actual": 1,
+      "operator": ">=",
+      "limit": 0.95,
+      "passed": true
+    },
+    {
+      "name": "peakRssMB",
+      "actual": 144.9296875,
+      "operator": "<=",
+      "limit": 768,
+      "passed": true
+    },
+    {
+      "name": "peakHeapUsedMB",
+      "actual": 50.16615295410156,
+      "operator": "<=",
+      "limit": 512,
+      "passed": true
+    },
+    {
+      "name": "gcPauseP95Ms",
+      "actual": 0.006197500005364418,
+      "operator": "<=",
+      "limit": 500,
+      "passed": true
+    },
+    {
+      "name": "artifactsPerTaskP50",
+      "actual": 7,
+      "operator": ">=",
+      "limit": 1,
+      "passed": true
+    },
+    {
+      "name": "stageP95Ms:INTAKE",
+      "actual": 4,
+      "operator": "<=",
+      "limit": 1500,
+      "passed": true
+    },
+    {
+      "name": "stageP95Ms:CLASSIFY",
+      "actual": 10,
+      "operator": "<=",
+      "limit": 1500,
+      "passed": true
+    },
+    {
+      "name": "stageP95Ms:AUTHORIZATION_CHECK",
+      "actual": 1,
+      "operator": "<=",
+      "limit": 1500,
+      "passed": true
+    },
+    {
+      "name": "stageP95Ms:PLAN",
+      "actual": 1,
+      "operator": "<=",
+      "limit": 1500,
+      "passed": true
+    },
+    {
+      "name": "stageP95Ms:PREPARE",
+      "actual": 15,
+      "operator": "<=",
+      "limit": 1500,
+      "passed": true
+    },
+    {
+      "name": "stageP95Ms:ANALYZE",
+      "actual": 11,
+      "operator": "<=",
+      "limit": 1500,
+      "passed": true
+    },
+    {
+      "name": "stageP95Ms:COLLECT_EVIDENCE",
+      "actual": 10,
+      "operator": "<=",
+      "limit": 1500,
+      "passed": true
+    },
+    {
+      "name": "stageP95Ms:MODEL_BEHAVIOR",
+      "actual": 1,
+      "operator": "<=",
+      "limit": 1500,
+      "passed": true
+    },
+    {
+      "name": "stageP95Ms:RECONSTRUCT",
+      "actual": 1,
+      "operator": "<=",
+      "limit": 1500,
+      "passed": true
+    },
+    {
+      "name": "stageP95Ms:VALIDATE",
+      "actual": 1,
+      "operator": "<=",
+      "limit": 1500,
+      "passed": true
+    },
+    {
+      "name": "stageP95Ms:REPORT",
+      "actual": 5,
+      "operator": "<=",
+      "limit": 1500,
+      "passed": true
+    },
+    {
+      "name": "stageP95Ms:EXPORT",
+      "actual": 12,
+      "operator": "<=",
+      "limit": 1500,
+      "passed": true
+    },
+    {
+      "name": "stageP95Ms:COMPLETED",
+      "actual": 0,
+      "operator": "<=",
+      "limit": 1500,
+      "passed": true
+    }
+  ],
+  "passed": true,
+  "warmup": {
+    "coldTasks": [
+      {
+        "status": "COMPLETED",
+        "durationMs": 75.93389999999994
+      },
+      {
+        "status": "COMPLETED",
+        "durationMs": 62.2582000000001
+      }
+    ],
+    "hotTasks": [
+      {
+        "status": "COMPLETED",
+        "durationMs": 57.015499999999975
+      }
+    ]
+  },
+  "cold": {
+    "sampleCount": 7,
+    "elapsedMs": 475.0389000000001,
+    "tasksPerSecond": 14.73563533428525,
+    "durationMs": {
+      "samples": 7,
+      "p50": 62.38469999999995,
+      "p95": 66.85329999999999,
+      "min": 56.18169999999998,
+      "max": 66.85329999999999,
+      "mean": 61.563828571428544
+    },
+    "artifactsPerTask": {
+      "samples": 7,
+      "p50": 7,
+      "p95": 7,
+      "min": 7,
+      "max": 7,
+      "mean": 7
+    },
+    "evidencePerTask": {
+      "samples": 7,
+      "p50": 9,
+      "p95": 9,
+      "min": 9,
+      "max": 9,
+      "mean": 9
+    },
+    "peakRssMB": 129.828125,
+    "peakHeapUsedMB": 44.87034606933594,
+    "cache": {
+      "hits": 0,
+      "misses": 21,
+      "writes": 21,
+      "corrupt": 0,
+      "evictions": 0,
+      "hitRate": 0
+    },
+    "samples": [
+      {
+        "taskNumber": 1,
+        "taskId": "3cd8ea9b-685a-4277-a7a1-bc88268aeb13",
+        "status": "COMPLETED",
+        "durationMs": 56.18169999999998,
+        "stages": [
+          {
+            "name": "INTAKE",
+            "status": "SUCCEEDED",
+            "durationMs": 2,
+            "cacheHit": false
+          },
+          {
+            "name": "CLASSIFY",
+            "status": "SUCCEEDED",
+            "durationMs": 8,
+            "cacheHit": false
+          },
+          {
+            "name": "AUTHORIZATION_CHECK",
+            "status": "SUCCEEDED",
+            "durationMs": 0,
+            "cacheHit": false
+          },
+          {
+            "name": "PLAN",
+            "status": "SUCCEEDED",
+            "durationMs": 0,
+            "cacheHit": false
+          },
+          {
+            "name": "PREPARE",
+            "status": "SUCCEEDED",
+            "durationMs": 7,
+            "cacheHit": false
+          },
+          {
+            "name": "ANALYZE",
+            "status": "SUCCEEDED",
+            "durationMs": 9,
+            "cacheHit": false
+          },
+          {
+            "name": "COLLECT_EVIDENCE",
+            "status": "SUCCEEDED",
+            "durationMs": 7,
+            "cacheHit": false
+          },
+          {
+            "name": "MODEL_BEHAVIOR",
+            "status": "SUCCEEDED",
+            "durationMs": 1,
+            "cacheHit": false
+          },
+          {
+            "name": "RECONSTRUCT",
+            "status": "SUCCEEDED",
+            "durationMs": 1,
+            "cacheHit": false
+          },
+          {
+            "name": "VALIDATE",
+            "status": "SUCCEEDED",
+            "durationMs": 0,
+            "cacheHit": false
+          },
+          {
+            "name": "REPORT",
+            "status": "SUCCEEDED",
+            "durationMs": 4,
+            "cacheHit": false
+          },
+          {
+            "name": "EXPORT",
+            "status": "SUCCEEDED",
+            "durationMs": 7,
+            "cacheHit": false
+          },
+          {
+            "name": "COMPLETED",
+            "status": "SUCCEEDED",
+            "durationMs": 0,
+            "cacheHit": false
+          }
+        ],
+        "evidence": 9,
+        "artifacts": 7,
+        "artifactBytes": 18964,
+        "cache": {
+          "hits": 0,
+          "misses": 3,
+          "writes": 3,
+          "corrupt": 0,
+          "evictions": 0,
+          "hitRate": 0
+        },
+        "memory": {
+          "peakRssMB": 119.65234375,
+          "peakHeapTotalMB": 65.11328125,
+          "peakHeapUsedMB": 43.57323455810547,
+          "peakExternalMB": 4.5200700759887695,
+          "peakArrayBuffersMB": 0.7402639389038086,
+          "samplingIntervalMs": 5
+        }
+      },
+      {
+        "taskNumber": 2,
+        "taskId": "fcb852a0-71ca-46a6-bd99-d43a5f770d1b",
+        "status": "COMPLETED",
+        "durationMs": 62.38469999999995,
+        "stages": [
+          {
+            "name": "INTAKE",
+            "status": "SUCCEEDED",
+            "durationMs": 2,
+            "cacheHit": false
+          },
+          {
+            "name": "CLASSIFY",
+            "status": "SUCCEEDED",
+            "durationMs": 10,
+            "cacheHit": false
+          },
+          {
+            "name": "AUTHORIZATION_CHECK",
+            "status": "SUCCEEDED",
+            "durationMs": 1,
+            "cacheHit": false
+          },
+          {
+            "name": "PLAN",
+            "status": "SUCCEEDED",
+            "durationMs": 0,
+            "cacheHit": false
+          },
+          {
+            "name": "PREPARE",
+            "status": "SUCCEEDED",
+            "durationMs": 8,
+            "cacheHit": false
+          },
+          {
+            "name": "ANALYZE",
+            "status": "SUCCEEDED",
+            "durationMs": 10,
+            "cacheHit": false
+          },
+          {
+            "name": "COLLECT_EVIDENCE",
+            "status": "SUCCEEDED",
+            "durationMs": 8,
+            "cacheHit": false
+          },
+          {
+            "name": "MODEL_BEHAVIOR",
+            "status": "SUCCEEDED",
+            "durationMs": 1,
+            "cacheHit": false
+          },
+          {
+            "name": "RECONSTRUCT",
+            "status": "SUCCEEDED",
+            "durationMs": 1,
+            "cacheHit": false
+          },
+          {
+            "name": "VALIDATE",
+            "status": "SUCCEEDED",
+            "durationMs": 1,
+            "cacheHit": false
+          },
+          {
+            "name": "REPORT",
+            "status": "SUCCEEDED",
+            "durationMs": 4,
+            "cacheHit": false
+          },
+          {
+            "name": "EXPORT",
+            "status": "SUCCEEDED",
+            "durationMs": 8,
+            "cacheHit": false
+          },
+          {
+            "name": "COMPLETED",
+            "status": "SUCCEEDED",
+            "durationMs": 0,
+            "cacheHit": false
+          }
+        ],
+        "evidence": 9,
+        "artifacts": 7,
+        "artifactBytes": 18964,
+        "cache": {
+          "hits": 0,
+          "misses": 3,
+          "writes": 3,
+          "corrupt": 0,
+          "evictions": 0,
+          "hitRate": 0
+        },
+        "memory": {
+          "peakRssMB": 122.61328125,
+          "peakHeapTotalMB": 65.36328125,
+          "peakHeapUsedMB": 44.628639221191406,
+          "peakExternalMB": 4.679989814758301,
+          "peakArrayBuffersMB": 0.9001836776733398,
+          "samplingIntervalMs": 5
+        }
+      },
+      {
+        "taskNumber": 3,
+        "taskId": "9d7c9707-672e-4f44-b48b-08aa326c9cd9",
+        "status": "COMPLETED",
+        "durationMs": 66.85329999999999,
+        "stages": [
+          {
+            "name": "INTAKE",
+            "status": "SUCCEEDED",
+            "durationMs": 2,
+            "cacheHit": false
+          },
+          {
+            "name": "CLASSIFY",
+            "status": "SUCCEEDED",
+            "durationMs": 8,
+            "cacheHit": false
+          },
+          {
+            "name": "AUTHORIZATION_CHECK",
+            "status": "SUCCEEDED",
+            "durationMs": 1,
+            "cacheHit": false
+          },
+          {
+            "name": "PLAN",
+            "status": "SUCCEEDED",
+            "durationMs": 0,
+            "cacheHit": false
+          },
+          {
+            "name": "PREPARE",
+            "status": "SUCCEEDED",
+            "durationMs": 15,
+            "cacheHit": false
+          },
+          {
+            "name": "ANALYZE",
+            "status": "SUCCEEDED",
+            "durationMs": 9,
+            "cacheHit": false
+          },
+          {
+            "name": "COLLECT_EVIDENCE",
+            "status": "SUCCEEDED",
+            "durationMs": 8,
+            "cacheHit": false
+          },
+          {
+            "name": "MODEL_BEHAVIOR",
+            "status": "SUCCEEDED",
+            "durationMs": 0,
+            "cacheHit": false
+          },
+          {
+            "name": "RECONSTRUCT",
+            "status": "SUCCEEDED",
+            "durationMs": 1,
+            "cacheHit": false
+          },
+          {
+            "name": "VALIDATE",
+            "status": "SUCCEEDED",
+            "durationMs": 0,
+            "cacheHit": false
+          },
+          {
+            "name": "REPORT",
+            "status": "SUCCEEDED",
+            "durationMs": 5,
+            "cacheHit": false
+          },
+          {
+            "name": "EXPORT",
+            "status": "SUCCEEDED",
+            "durationMs": 10,
+            "cacheHit": false
+          },
+          {
+            "name": "COMPLETED",
+            "status": "SUCCEEDED",
+            "durationMs": 0,
+            "cacheHit": false
+          }
+        ],
+        "evidence": 9,
+        "artifacts": 7,
+        "artifactBytes": 18964,
+        "cache": {
+          "hits": 0,
+          "misses": 3,
+          "writes": 3,
+          "corrupt": 0,
+          "evictions": 0,
+          "hitRate": 0
+        },
+        "memory": {
+          "peakRssMB": 123.41015625,
+          "peakHeapTotalMB": 71.86328125,
+          "peakHeapUsedMB": 44.87034606933594,
+          "peakExternalMB": 4.807416915893555,
+          "peakArrayBuffersMB": 1.0274200439453125,
+          "samplingIntervalMs": 5
+        }
+      },
+      {
+        "taskNumber": 4,
+        "taskId": "bf7e2f43-6c7d-48f1-9906-540008c5d673",
+        "status": "COMPLETED",
+        "durationMs": 58.369699999999966,
+        "stages": [
+          {
+            "name": "INTAKE",
+            "status": "SUCCEEDED",
+            "durationMs": 2,
+            "cacheHit": false
+          },
+          {
+            "name": "CLASSIFY",
+            "status": "SUCCEEDED",
+            "durationMs": 8,
+            "cacheHit": false
+          },
+          {
+            "name": "AUTHORIZATION_CHECK",
+            "status": "SUCCEEDED",
+            "durationMs": 0,
+            "cacheHit": false
+          },
+          {
+            "name": "PLAN",
+            "status": "SUCCEEDED",
+            "durationMs": 0,
+            "cacheHit": false
+          },
+          {
+            "name": "PREPARE",
+            "status": "SUCCEEDED",
+            "durationMs": 8,
+            "cacheHit": false
+          },
+          {
+            "name": "ANALYZE",
+            "status": "SUCCEEDED",
+            "durationMs": 8,
+            "cacheHit": false
+          },
+          {
+            "name": "COLLECT_EVIDENCE",
+            "status": "SUCCEEDED",
+            "durationMs": 8,
+            "cacheHit": false
+          },
+          {
+            "name": "MODEL_BEHAVIOR",
+            "status": "SUCCEEDED",
+            "durationMs": 0,
+            "cacheHit": false
+          },
+          {
+            "name": "RECONSTRUCT",
+            "status": "SUCCEEDED",
+            "durationMs": 0,
+            "cacheHit": false
+          },
+          {
+            "name": "VALIDATE",
+            "status": "SUCCEEDED",
+            "durationMs": 0,
+            "cacheHit": false
+          },
+          {
+            "name": "REPORT",
+            "status": "SUCCEEDED",
+            "durationMs": 4,
+            "cacheHit": false
+          },
+          {
+            "name": "EXPORT",
+            "status": "SUCCEEDED",
+            "durationMs": 9,
+            "cacheHit": false
+          },
+          {
+            "name": "COMPLETED",
+            "status": "SUCCEEDED",
+            "durationMs": 0,
+            "cacheHit": false
+          }
+        ],
+        "evidence": 9,
+        "artifacts": 7,
+        "artifactBytes": 18964,
+        "cache": {
+          "hits": 0,
+          "misses": 3,
+          "writes": 3,
+          "corrupt": 0,
+          "evictions": 0,
+          "hitRate": 0
+        },
+        "memory": {
+          "peakRssMB": 123.65625,
+          "peakHeapTotalMB": 71.86328125,
+          "peakHeapUsedMB": 40.49420928955078,
+          "peakExternalMB": 4.069857597351074,
+          "peakArrayBuffersMB": 0.2900514602661133,
+          "samplingIntervalMs": 5
+        }
+      },
+      {
+        "taskNumber": 5,
+        "taskId": "9baf8b43-7adf-40bc-bb7b-a0eba65533b5",
+        "status": "COMPLETED",
+        "durationMs": 62.649099999999976,
+        "stages": [
+          {
+            "name": "INTAKE",
+            "status": "SUCCEEDED",
+            "durationMs": 3,
+            "cacheHit": false
+          },
+          {
+            "name": "CLASSIFY",
+            "status": "SUCCEEDED",
+            "durationMs": 9,
+            "cacheHit": false
+          },
+          {
+            "name": "AUTHORIZATION_CHECK",
+            "status": "SUCCEEDED",
+            "durationMs": 0,
+            "cacheHit": false
+          },
+          {
+            "name": "PLAN",
+            "status": "SUCCEEDED",
+            "durationMs": 0,
+            "cacheHit": false
+          },
+          {
+            "name": "PREPARE",
+            "status": "SUCCEEDED",
+            "durationMs": 9,
+            "cacheHit": false
+          },
+          {
+            "name": "ANALYZE",
+            "status": "SUCCEEDED",
+            "durationMs": 9,
+            "cacheHit": false
+          },
+          {
+            "name": "COLLECT_EVIDENCE",
+            "status": "SUCCEEDED",
+            "durationMs": 9,
+            "cacheHit": false
+          },
+          {
+            "name": "MODEL_BEHAVIOR",
+            "status": "SUCCEEDED",
+            "durationMs": 1,
+            "cacheHit": false
+          },
+          {
+            "name": "RECONSTRUCT",
+            "status": "SUCCEEDED",
+            "durationMs": 0,
+            "cacheHit": false
+          },
+          {
+            "name": "VALIDATE",
+            "status": "SUCCEEDED",
+            "durationMs": 0,
+            "cacheHit": false
+          },
+          {
+            "name": "REPORT",
+            "status": "SUCCEEDED",
+            "durationMs": 4,
+            "cacheHit": false
+          },
+          {
+            "name": "EXPORT",
+            "status": "SUCCEEDED",
+            "durationMs": 9,
+            "cacheHit": false
+          },
+          {
+            "name": "COMPLETED",
+            "status": "SUCCEEDED",
+            "durationMs": 0,
+            "cacheHit": false
+          }
+        ],
+        "evidence": 9,
+        "artifacts": 7,
+        "artifactBytes": 18964,
+        "cache": {
+          "hits": 0,
+          "misses": 3,
+          "writes": 3,
+          "corrupt": 0,
+          "evictions": 0,
+          "hitRate": 0
+        },
+        "memory": {
+          "peakRssMB": 125.49609375,
+          "peakHeapTotalMB": 71.86328125,
+          "peakHeapUsedMB": 41.52105712890625,
+          "peakExternalMB": 4.2297773361206055,
+          "peakArrayBuffersMB": 0.44997119903564453,
+          "samplingIntervalMs": 5
+        }
+      },
+      {
+        "taskNumber": 6,
+        "taskId": "59b0d78d-e561-4d14-a387-54a06fa39bdd",
+        "status": "COMPLETED",
+        "durationMs": 62.587600000000066,
+        "stages": [
+          {
+            "name": "INTAKE",
+            "status": "SUCCEEDED",
+            "durationMs": 4,
+            "cacheHit": false
+          },
+          {
+            "name": "CLASSIFY",
+            "status": "SUCCEEDED",
+            "durationMs": 8,
+            "cacheHit": false
+          },
+          {
+            "name": "AUTHORIZATION_CHECK",
+            "status": "SUCCEEDED",
+            "durationMs": 1,
+            "cacheHit": false
+          },
+          {
+            "name": "PLAN",
+            "status": "SUCCEEDED",
+            "durationMs": 0,
+            "cacheHit": false
+          },
+          {
+            "name": "PREPARE",
+            "status": "SUCCEEDED",
+            "durationMs": 9,
+            "cacheHit": false
+          },
+          {
+            "name": "ANALYZE",
+            "status": "SUCCEEDED",
+            "durationMs": 9,
+            "cacheHit": false
+          },
+          {
+            "name": "COLLECT_EVIDENCE",
+            "status": "SUCCEEDED",
+            "durationMs": 7,
+            "cacheHit": false
+          },
+          {
+            "name": "MODEL_BEHAVIOR",
+            "status": "SUCCEEDED",
+            "durationMs": 1,
+            "cacheHit": false
+          },
+          {
+            "name": "RECONSTRUCT",
+            "status": "SUCCEEDED",
+            "durationMs": 0,
+            "cacheHit": false
+          },
+          {
+            "name": "VALIDATE",
+            "status": "SUCCEEDED",
+            "durationMs": 0,
+            "cacheHit": false
+          },
+          {
+            "name": "REPORT",
+            "status": "SUCCEEDED",
+            "durationMs": 5,
+            "cacheHit": false
+          },
+          {
+            "name": "EXPORT",
+            "status": "SUCCEEDED",
+            "durationMs": 10,
+            "cacheHit": false
+          },
+          {
+            "name": "COMPLETED",
+            "status": "SUCCEEDED",
+            "durationMs": 0,
+            "cacheHit": false
+          }
+        ],
+        "evidence": 9,
+        "artifacts": 7,
+        "artifactBytes": 18964,
+        "cache": {
+          "hits": 0,
+          "misses": 3,
+          "writes": 3,
+          "corrupt": 0,
+          "evictions": 0,
+          "hitRate": 0
+        },
+        "memory": {
+          "peakRssMB": 127.92578125,
+          "peakHeapTotalMB": 71.86328125,
+          "peakHeapUsedMB": 42.63972473144531,
+          "peakExternalMB": 4.397509574890137,
+          "peakArrayBuffersMB": 0.6177034378051758,
+          "samplingIntervalMs": 5
+        }
+      },
+      {
+        "taskNumber": 7,
+        "taskId": "247005da-31f8-4c75-863e-704648a1db38",
+        "status": "COMPLETED",
+        "durationMs": 61.9206999999999,
+        "stages": [
+          {
+            "name": "INTAKE",
+            "status": "SUCCEEDED",
+            "durationMs": 2,
+            "cacheHit": false
+          },
+          {
+            "name": "CLASSIFY",
+            "status": "SUCCEEDED",
+            "durationMs": 7,
+            "cacheHit": false
+          },
+          {
+            "name": "AUTHORIZATION_CHECK",
+            "status": "SUCCEEDED",
+            "durationMs": 0,
+            "cacheHit": false
+          },
+          {
+            "name": "PLAN",
+            "status": "SUCCEEDED",
+            "durationMs": 1,
+            "cacheHit": false
+          },
+          {
+            "name": "PREPARE",
+            "status": "SUCCEEDED",
+            "durationMs": 8,
+            "cacheHit": false
+          },
+          {
+            "name": "ANALYZE",
+            "status": "SUCCEEDED",
+            "durationMs": 9,
+            "cacheHit": false
+          },
+          {
+            "name": "COLLECT_EVIDENCE",
+            "status": "SUCCEEDED",
+            "durationMs": 8,
+            "cacheHit": false
+          },
+          {
+            "name": "MODEL_BEHAVIOR",
+            "status": "SUCCEEDED",
+            "durationMs": 1,
+            "cacheHit": false
+          },
+          {
+            "name": "RECONSTRUCT",
+            "status": "SUCCEEDED",
+            "durationMs": 0,
+            "cacheHit": false
+          },
+          {
+            "name": "VALIDATE",
+            "status": "SUCCEEDED",
+            "durationMs": 0,
+            "cacheHit": false
+          },
+          {
+            "name": "REPORT",
+            "status": "SUCCEEDED",
+            "durationMs": 4,
+            "cacheHit": false
+          },
+          {
+            "name": "EXPORT",
+            "status": "SUCCEEDED",
+            "durationMs": 9,
+            "cacheHit": false
+          },
+          {
+            "name": "COMPLETED",
+            "status": "SUCCEEDED",
+            "durationMs": 0,
+            "cacheHit": false
+          }
+        ],
+        "evidence": 9,
+        "artifacts": 7,
+        "artifactBytes": 18964,
+        "cache": {
+          "hits": 0,
+          "misses": 3,
+          "writes": 3,
+          "corrupt": 0,
+          "evictions": 0,
+          "hitRate": 0
+        },
+        "memory": {
+          "peakRssMB": 129.828125,
+          "peakHeapTotalMB": 71.86328125,
+          "peakHeapUsedMB": 43.67558288574219,
+          "peakExternalMB": 4.565241813659668,
+          "peakArrayBuffersMB": 0.785435676574707,
+          "samplingIntervalMs": 5
+        }
+      }
+    ]
+  },
+  "hot": {
+    "sampleCount": 7,
+    "elapsedMs": 449.3607000000002,
+    "tasksPerSecond": 15.57768625516205,
+    "durationMs": {
+      "samples": 7,
+      "p50": 62.45249999999987,
+      "p95": 68.24649999999997,
+      "min": 59.66579999999999,
+      "max": 68.24649999999997,
+      "mean": 63.21841428571429
+    },
+    "artifactsPerTask": {
+      "samples": 7,
+      "p50": 7,
+      "p95": 7,
+      "min": 7,
+      "max": 7,
+      "mean": 7
+    },
+    "evidencePerTask": {
+      "samples": 7,
+      "p50": 8,
+      "p95": 8,
+      "min": 8,
+      "max": 8,
+      "mean": 8
+    },
+    "peakRssMB": 144.9296875,
+    "peakHeapUsedMB": 50.16615295410156,
+    "cache": {
+      "hits": 21,
+      "misses": 0,
+      "writes": 21,
+      "corrupt": 0,
+      "evictions": 0,
+      "hitRate": 1
+    },
+    "samples": [
+      {
+        "taskNumber": 1,
+        "taskId": "bbbe2a85-6666-463c-9dab-0825d742bd8b",
+        "status": "COMPLETED",
+        "durationMs": 66.74260000000004,
+        "stages": [
+          {
+            "name": "INTAKE",
+            "status": "SUCCEEDED",
+            "durationMs": 2,
+            "cacheHit": false
+          },
+          {
+            "name": "CLASSIFY",
+            "status": "SUCCEEDED",
+            "durationMs": 9,
+            "cacheHit": true
+          },
+          {
+            "name": "AUTHORIZATION_CHECK",
+            "status": "SUCCEEDED",
+            "durationMs": 0,
+            "cacheHit": false
+          },
+          {
+            "name": "PLAN",
+            "status": "SUCCEEDED",
+            "durationMs": 1,
+            "cacheHit": false
+          },
+          {
+            "name": "PREPARE",
+            "status": "SUCCEEDED",
+            "durationMs": 10,
+            "cacheHit": true
+          },
+          {
+            "name": "ANALYZE",
+            "status": "SUCCEEDED",
+            "durationMs": 9,
+            "cacheHit": true
+          },
+          {
+            "name": "COLLECT_EVIDENCE",
+            "status": "SUCCEEDED",
+            "durationMs": 10,
+            "cacheHit": false
+          },
+          {
+            "name": "MODEL_BEHAVIOR",
+            "status": "SUCCEEDED",
+            "durationMs": 0,
+            "cacheHit": false
+          },
+          {
+            "name": "RECONSTRUCT",
+            "status": "SUCCEEDED",
+            "durationMs": 1,
+            "cacheHit": false
+          },
+          {
+            "name": "VALIDATE",
+            "status": "SUCCEEDED",
+            "durationMs": 0,
+            "cacheHit": false
+          },
+          {
+            "name": "REPORT",
+            "status": "SUCCEEDED",
+            "durationMs": 4,
+            "cacheHit": false
+          },
+          {
+            "name": "EXPORT",
+            "status": "SUCCEEDED",
+            "durationMs": 12,
+            "cacheHit": false
+          },
+          {
+            "name": "COMPLETED",
+            "status": "SUCCEEDED",
+            "durationMs": 0,
+            "cacheHit": false
+          }
+        ],
+        "evidence": 8,
+        "artifacts": 7,
+        "artifactBytes": 17715,
+        "cache": {
+          "hits": 3,
+          "misses": 0,
+          "writes": 3,
+          "corrupt": 0,
+          "evictions": 0,
+          "hitRate": 1
+        },
+        "memory": {
+          "peakRssMB": 132.04296875,
+          "peakHeapTotalMB": 71.86328125,
+          "peakHeapUsedMB": 44.623191833496094,
+          "peakExternalMB": 4.723358154296875,
+          "peakArrayBuffersMB": 0.9435520172119141,
+          "samplingIntervalMs": 5
+        }
+      },
+      {
+        "taskNumber": 2,
+        "taskId": "35963453-afa5-4e25-92d9-b7e050cf6dc9",
+        "status": "COMPLETED",
+        "durationMs": 59.86350000000016,
+        "stages": [
+          {
+            "name": "INTAKE",
+            "status": "SUCCEEDED",
+            "durationMs": 1,
+            "cacheHit": false
+          },
+          {
+            "name": "CLASSIFY",
+            "status": "SUCCEEDED",
+            "durationMs": 8,
+            "cacheHit": true
+          },
+          {
+            "name": "AUTHORIZATION_CHECK",
+            "status": "SUCCEEDED",
+            "durationMs": 0,
+            "cacheHit": false
+          },
+          {
+            "name": "PLAN",
+            "status": "SUCCEEDED",
+            "durationMs": 0,
+            "cacheHit": false
+          },
+          {
+            "name": "PREPARE",
+            "status": "SUCCEEDED",
+            "durationMs": 8,
+            "cacheHit": true
+          },
+          {
+            "name": "ANALYZE",
+            "status": "SUCCEEDED",
+            "durationMs": 8,
+            "cacheHit": true
+          },
+          {
+            "name": "COLLECT_EVIDENCE",
+            "status": "SUCCEEDED",
+            "durationMs": 9,
+            "cacheHit": false
+          },
+          {
+            "name": "MODEL_BEHAVIOR",
+            "status": "SUCCEEDED",
+            "durationMs": 1,
+            "cacheHit": false
+          },
+          {
+            "name": "RECONSTRUCT",
+            "status": "SUCCEEDED",
+            "durationMs": 0,
+            "cacheHit": false
+          },
+          {
+            "name": "VALIDATE",
+            "status": "SUCCEEDED",
+            "durationMs": 0,
+            "cacheHit": false
+          },
+          {
+            "name": "REPORT",
+            "status": "SUCCEEDED",
+            "durationMs": 4,
+            "cacheHit": false
+          },
+          {
+            "name": "EXPORT",
+            "status": "SUCCEEDED",
+            "durationMs": 9,
+            "cacheHit": false
+          },
+          {
+            "name": "COMPLETED",
+            "status": "SUCCEEDED",
+            "durationMs": 0,
+            "cacheHit": false
+          }
+        ],
+        "evidence": 8,
+        "artifacts": 7,
+        "artifactBytes": 17715,
+        "cache": {
+          "hits": 3,
+          "misses": 0,
+          "writes": 3,
+          "corrupt": 0,
+          "evictions": 0,
+          "hitRate": 1
+        },
+        "memory": {
+          "peakRssMB": 134.35546875,
+          "peakHeapTotalMB": 71.86328125,
+          "peakHeapUsedMB": 45.55946350097656,
+          "peakExternalMB": 4.889286994934082,
+          "peakArrayBuffersMB": 1.109480857849121,
+          "samplingIntervalMs": 5
+        }
+      },
+      {
+        "taskNumber": 3,
+        "taskId": "8292be0b-bb01-4925-8711-bd58d49a55f9",
+        "status": "COMPLETED",
+        "durationMs": 68.24649999999997,
+        "stages": [
+          {
+            "name": "INTAKE",
+            "status": "SUCCEEDED",
+            "durationMs": 1,
+            "cacheHit": false
+          },
+          {
+            "name": "CLASSIFY",
+            "status": "SUCCEEDED",
+            "durationMs": 9,
+            "cacheHit": true
+          },
+          {
+            "name": "AUTHORIZATION_CHECK",
+            "status": "SUCCEEDED",
+            "durationMs": 1,
+            "cacheHit": false
+          },
+          {
+            "name": "PLAN",
+            "status": "SUCCEEDED",
+            "durationMs": 1,
+            "cacheHit": false
+          },
+          {
+            "name": "PREPARE",
+            "status": "SUCCEEDED",
+            "durationMs": 8,
+            "cacheHit": true
+          },
+          {
+            "name": "ANALYZE",
+            "status": "SUCCEEDED",
+            "durationMs": 11,
+            "cacheHit": true
+          },
+          {
+            "name": "COLLECT_EVIDENCE",
+            "status": "SUCCEEDED",
+            "durationMs": 10,
+            "cacheHit": false
+          },
+          {
+            "name": "MODEL_BEHAVIOR",
+            "status": "SUCCEEDED",
+            "durationMs": 0,
+            "cacheHit": false
+          },
+          {
+            "name": "RECONSTRUCT",
+            "status": "SUCCEEDED",
+            "durationMs": 0,
+            "cacheHit": false
+          },
+          {
+            "name": "VALIDATE",
+            "status": "SUCCEEDED",
+            "durationMs": 0,
+            "cacheHit": false
+          },
+          {
+            "name": "REPORT",
+            "status": "SUCCEEDED",
+            "durationMs": 5,
+            "cacheHit": false
+          },
+          {
+            "name": "EXPORT",
+            "status": "SUCCEEDED",
+            "durationMs": 10,
+            "cacheHit": false
+          },
+          {
+            "name": "COMPLETED",
+            "status": "SUCCEEDED",
+            "durationMs": 0,
+            "cacheHit": false
+          }
+        ],
+        "evidence": 8,
+        "artifacts": 7,
+        "artifactBytes": 17715,
+        "cache": {
+          "hits": 3,
+          "misses": 0,
+          "writes": 3,
+          "corrupt": 0,
+          "evictions": 0,
+          "hitRate": 1
+        },
+        "memory": {
+          "peakRssMB": 136.44140625,
+          "peakHeapTotalMB": 71.86328125,
+          "peakHeapUsedMB": 46.51355743408203,
+          "peakExternalMB": 5.055215835571289,
+          "peakArrayBuffersMB": 1.2754096984863281,
+          "samplingIntervalMs": 5
+        }
+      },
+      {
+        "taskNumber": 4,
+        "taskId": "93c3dce6-9d3a-4850-9d85-890713319c0c",
+        "status": "COMPLETED",
+        "durationMs": 62.45249999999987,
+        "stages": [
+          {
+            "name": "INTAKE",
+            "status": "SUCCEEDED",
+            "durationMs": 1,
+            "cacheHit": false
+          },
+          {
+            "name": "CLASSIFY",
+            "status": "SUCCEEDED",
+            "durationMs": 8,
+            "cacheHit": true
+          },
+          {
+            "name": "AUTHORIZATION_CHECK",
+            "status": "SUCCEEDED",
+            "durationMs": 1,
+            "cacheHit": false
+          },
+          {
+            "name": "PLAN",
+            "status": "SUCCEEDED",
+            "durationMs": 0,
+            "cacheHit": false
+          },
+          {
+            "name": "PREPARE",
+            "status": "SUCCEEDED",
+            "durationMs": 8,
+            "cacheHit": true
+          },
+          {
+            "name": "ANALYZE",
+            "status": "SUCCEEDED",
+            "durationMs": 9,
+            "cacheHit": true
+          },
+          {
+            "name": "COLLECT_EVIDENCE",
+            "status": "SUCCEEDED",
+            "durationMs": 9,
+            "cacheHit": false
+          },
+          {
+            "name": "MODEL_BEHAVIOR",
+            "status": "SUCCEEDED",
+            "durationMs": 1,
+            "cacheHit": false
+          },
+          {
+            "name": "RECONSTRUCT",
+            "status": "SUCCEEDED",
+            "durationMs": 0,
+            "cacheHit": false
+          },
+          {
+            "name": "VALIDATE",
+            "status": "SUCCEEDED",
+            "durationMs": 0,
+            "cacheHit": false
+          },
+          {
+            "name": "REPORT",
+            "status": "SUCCEEDED",
+            "durationMs": 4,
+            "cacheHit": false
+          },
+          {
+            "name": "EXPORT",
+            "status": "SUCCEEDED",
+            "durationMs": 11,
+            "cacheHit": false
+          },
+          {
+            "name": "COMPLETED",
+            "status": "SUCCEEDED",
+            "durationMs": 0,
+            "cacheHit": false
+          }
+        ],
+        "evidence": 8,
+        "artifacts": 7,
+        "artifactBytes": 17715,
+        "cache": {
+          "hits": 3,
+          "misses": 0,
+          "writes": 3,
+          "corrupt": 0,
+          "evictions": 0,
+          "hitRate": 1
+        },
+        "memory": {
+          "peakRssMB": 138.35546875,
+          "peakHeapTotalMB": 71.86328125,
+          "peakHeapUsedMB": 47.43285369873047,
+          "peakExternalMB": 5.213332176208496,
+          "peakArrayBuffersMB": 1.4335260391235352,
+          "samplingIntervalMs": 5
+        }
+      },
+      {
+        "taskNumber": 5,
+        "taskId": "e8a67bbf-223a-4fd3-a98a-76cf7858d32f",
+        "status": "COMPLETED",
+        "durationMs": 64.54430000000002,
+        "stages": [
+          {
+            "name": "INTAKE",
+            "status": "SUCCEEDED",
+            "durationMs": 2,
+            "cacheHit": false
+          },
+          {
+            "name": "CLASSIFY",
+            "status": "SUCCEEDED",
+            "durationMs": 9,
+            "cacheHit": true
+          },
+          {
+            "name": "AUTHORIZATION_CHECK",
+            "status": "SUCCEEDED",
+            "durationMs": 0,
+            "cacheHit": false
+          },
+          {
+            "name": "PLAN",
+            "status": "SUCCEEDED",
+            "durationMs": 1,
+            "cacheHit": false
+          },
+          {
+            "name": "PREPARE",
+            "status": "SUCCEEDED",
+            "durationMs": 10,
+            "cacheHit": true
+          },
+          {
+            "name": "ANALYZE",
+            "status": "SUCCEEDED",
+            "durationMs": 9,
+            "cacheHit": true
+          },
+          {
+            "name": "COLLECT_EVIDENCE",
+            "status": "SUCCEEDED",
+            "durationMs": 9,
+            "cacheHit": false
+          },
+          {
+            "name": "MODEL_BEHAVIOR",
+            "status": "SUCCEEDED",
+            "durationMs": 0,
+            "cacheHit": false
+          },
+          {
+            "name": "RECONSTRUCT",
+            "status": "SUCCEEDED",
+            "durationMs": 1,
+            "cacheHit": false
+          },
+          {
+            "name": "VALIDATE",
+            "status": "SUCCEEDED",
+            "durationMs": 0,
+            "cacheHit": false
+          },
+          {
+            "name": "REPORT",
+            "status": "SUCCEEDED",
+            "durationMs": 4,
+            "cacheHit": false
+          },
+          {
+            "name": "EXPORT",
+            "status": "SUCCEEDED",
+            "durationMs": 9,
+            "cacheHit": false
+          },
+          {
+            "name": "COMPLETED",
+            "status": "SUCCEEDED",
+            "durationMs": 0,
+            "cacheHit": false
+          }
+        ],
+        "evidence": 8,
+        "artifacts": 7,
+        "artifactBytes": 17715,
+        "cache": {
+          "hits": 3,
+          "misses": 0,
+          "writes": 3,
+          "corrupt": 0,
+          "evictions": 0,
+          "hitRate": 1
+        },
+        "memory": {
+          "peakRssMB": 140.4296875,
+          "peakHeapTotalMB": 71.86328125,
+          "peakHeapUsedMB": 48.34442138671875,
+          "peakExternalMB": 5.379261016845703,
+          "peakArrayBuffersMB": 1.5994548797607422,
+          "samplingIntervalMs": 5
+        }
+      },
+      {
+        "taskNumber": 6,
+        "taskId": "79e15cf7-e730-4ce0-ae8f-f8d03c42eadf",
+        "status": "COMPLETED",
+        "durationMs": 59.66579999999999,
+        "stages": [
+          {
+            "name": "INTAKE",
+            "status": "SUCCEEDED",
+            "durationMs": 1,
+            "cacheHit": false
+          },
+          {
+            "name": "CLASSIFY",
+            "status": "SUCCEEDED",
+            "durationMs": 9,
+            "cacheHit": true
+          },
+          {
+            "name": "AUTHORIZATION_CHECK",
+            "status": "SUCCEEDED",
+            "durationMs": 0,
+            "cacheHit": false
+          },
+          {
+            "name": "PLAN",
+            "status": "SUCCEEDED",
+            "durationMs": 0,
+            "cacheHit": false
+          },
+          {
+            "name": "PREPARE",
+            "status": "SUCCEEDED",
+            "durationMs": 8,
+            "cacheHit": true
+          },
+          {
+            "name": "ANALYZE",
+            "status": "SUCCEEDED",
+            "durationMs": 9,
+            "cacheHit": true
+          },
+          {
+            "name": "COLLECT_EVIDENCE",
+            "status": "SUCCEEDED",
+            "durationMs": 8,
+            "cacheHit": false
+          },
+          {
+            "name": "MODEL_BEHAVIOR",
+            "status": "SUCCEEDED",
+            "durationMs": 0,
+            "cacheHit": false
+          },
+          {
+            "name": "RECONSTRUCT",
+            "status": "SUCCEEDED",
+            "durationMs": 0,
+            "cacheHit": false
+          },
+          {
+            "name": "VALIDATE",
+            "status": "SUCCEEDED",
+            "durationMs": 0,
+            "cacheHit": false
+          },
+          {
+            "name": "REPORT",
+            "status": "SUCCEEDED",
+            "durationMs": 5,
+            "cacheHit": false
+          },
+          {
+            "name": "EXPORT",
+            "status": "SUCCEEDED",
+            "durationMs": 8,
+            "cacheHit": false
+          },
+          {
+            "name": "COMPLETED",
+            "status": "SUCCEEDED",
+            "durationMs": 0,
+            "cacheHit": false
+          }
+        ],
+        "evidence": 8,
+        "artifacts": 7,
+        "artifactBytes": 17715,
+        "cache": {
+          "hits": 3,
+          "misses": 0,
+          "writes": 3,
+          "corrupt": 0,
+          "evictions": 0,
+          "hitRate": 1
+        },
+        "memory": {
+          "peakRssMB": 142.6171875,
+          "peakHeapTotalMB": 71.86328125,
+          "peakHeapUsedMB": 49.255943298339844,
+          "peakExternalMB": 5.54518985748291,
+          "peakArrayBuffersMB": 1.7653837203979492,
+          "samplingIntervalMs": 5
+        }
+      },
+      {
+        "taskNumber": 7,
+        "taskId": "b9b8a5a7-25e0-4c9f-8d34-25e63bc8b200",
+        "status": "COMPLETED",
+        "durationMs": 61.01369999999997,
+        "stages": [
+          {
+            "name": "INTAKE",
+            "status": "SUCCEEDED",
+            "durationMs": 1,
+            "cacheHit": false
+          },
+          {
+            "name": "CLASSIFY",
+            "status": "SUCCEEDED",
+            "durationMs": 7,
+            "cacheHit": true
+          },
+          {
+            "name": "AUTHORIZATION_CHECK",
+            "status": "SUCCEEDED",
+            "durationMs": 0,
+            "cacheHit": false
+          },
+          {
+            "name": "PLAN",
+            "status": "SUCCEEDED",
+            "durationMs": 1,
+            "cacheHit": false
+          },
+          {
+            "name": "PREPARE",
+            "status": "SUCCEEDED",
+            "durationMs": 8,
+            "cacheHit": true
+          },
+          {
+            "name": "ANALYZE",
+            "status": "SUCCEEDED",
+            "durationMs": 8,
+            "cacheHit": true
+          },
+          {
+            "name": "COLLECT_EVIDENCE",
+            "status": "SUCCEEDED",
+            "durationMs": 9,
+            "cacheHit": false
+          },
+          {
+            "name": "MODEL_BEHAVIOR",
+            "status": "SUCCEEDED",
+            "durationMs": 0,
+            "cacheHit": false
+          },
+          {
+            "name": "RECONSTRUCT",
+            "status": "SUCCEEDED",
+            "durationMs": 1,
+            "cacheHit": false
+          },
+          {
+            "name": "VALIDATE",
+            "status": "SUCCEEDED",
+            "durationMs": 0,
+            "cacheHit": false
+          },
+          {
+            "name": "REPORT",
+            "status": "SUCCEEDED",
+            "durationMs": 4,
+            "cacheHit": false
+          },
+          {
+            "name": "EXPORT",
+            "status": "SUCCEEDED",
+            "durationMs": 9,
+            "cacheHit": false
+          },
+          {
+            "name": "COMPLETED",
+            "status": "SUCCEEDED",
+            "durationMs": 0,
+            "cacheHit": false
+          }
+        ],
+        "evidence": 8,
+        "artifacts": 7,
+        "artifactBytes": 17715,
+        "cache": {
+          "hits": 3,
+          "misses": 0,
+          "writes": 3,
+          "corrupt": 0,
+          "evictions": 0,
+          "hitRate": 1
+        },
+        "memory": {
+          "peakRssMB": 144.9296875,
+          "peakHeapTotalMB": 71.86328125,
+          "peakHeapUsedMB": 50.16615295410156,
+          "peakExternalMB": 5.703306198120117,
+          "peakArrayBuffersMB": 1.9235000610351562,
+          "samplingIntervalMs": 5
+        }
+      }
+    ]
+  },
+  "stages": {
+    "INTAKE": {
+      "samples": 14,
+      "p50": 2,
+      "p95": 4,
+      "min": 1,
+      "max": 4,
+      "mean": 1.8571428571428572
+    },
+    "CLASSIFY": {
+      "samples": 14,
+      "p50": 8,
+      "p95": 10,
+      "min": 7,
+      "max": 10,
+      "mean": 8.357142857142858
+    },
+    "AUTHORIZATION_CHECK": {
+      "samples": 14,
+      "p50": 0,
+      "p95": 1,
+      "min": 0,
+      "max": 1,
+      "mean": 0.35714285714285715
+    },
+    "PLAN": {
+      "samples": 14,
+      "p50": 0,
+      "p95": 1,
+      "min": 0,
+      "max": 1,
+      "mean": 0.35714285714285715
+    },
+    "PREPARE": {
+      "samples": 14,
+      "p50": 8,
+      "p95": 15,
+      "min": 7,
+      "max": 15,
+      "mean": 8.857142857142858
+    },
+    "ANALYZE": {
+      "samples": 14,
+      "p50": 9,
+      "p95": 11,
+      "min": 8,
+      "max": 11,
+      "mean": 9
+    },
+    "COLLECT_EVIDENCE": {
+      "samples": 14,
+      "p50": 8,
+      "p95": 10,
+      "min": 7,
+      "max": 10,
+      "mean": 8.5
+    },
+    "MODEL_BEHAVIOR": {
+      "samples": 14,
+      "p50": 0,
+      "p95": 1,
+      "min": 0,
+      "max": 1,
+      "mean": 0.5
+    },
+    "RECONSTRUCT": {
+      "samples": 14,
+      "p50": 0,
+      "p95": 1,
+      "min": 0,
+      "max": 1,
+      "mean": 0.42857142857142855
+    },
+    "VALIDATE": {
+      "samples": 14,
+      "p50": 0,
+      "p95": 1,
+      "min": 0,
+      "max": 1,
+      "mean": 0.07142857142857142
+    },
+    "REPORT": {
+      "samples": 14,
+      "p50": 4,
+      "p95": 5,
+      "min": 4,
+      "max": 5,
+      "mean": 4.285714285714286
+    },
+    "EXPORT": {
+      "samples": 14,
+      "p50": 9,
+      "p95": 12,
+      "min": 7,
+      "max": 12,
+      "mean": 9.285714285714286
+    },
+    "COMPLETED": {
+      "samples": 14,
+      "p50": 0,
+      "p95": 0,
+      "min": 0,
+      "max": 0,
+      "mean": 0
+    }
+  },
+  "resources": {
+    "peakRssMB": 144.9296875,
+    "peakHeapUsedMB": 50.16615295410156,
+    "heapStatistics": {
+      "total_heap_size": 75354112,
+      "total_heap_size_executable": 1310720,
+      "total_physical_size": 75354112,
+      "total_available_size": 4291126416,
+      "used_heap_size": 53298840,
+      "heap_size_limit": 4345298944,
+      "malloced_memory": 548912,
+      "peak_malloced_memory": 11677976,
+      "does_zap_garbage": 0,
+      "number_of_native_contexts": 2,
+      "number_of_detached_contexts": 0,
+      "total_global_handles_size": 155648,
+      "used_global_handles_size": 152256,
+      "external_memory": 5980391
+    },
+    "gc": {
+      "supported": true,
+      "count": 1,
+      "pauseMs": {
+        "samples": 1,
+        "p50": 0.006197500005364418,
+        "p95": 0.006197500005364418,
+        "min": 0.006197500005364418,
+        "max": 0.006197500005364418,
+        "mean": 0.006197500005364418
+      },
+      "byKind": {
+        "1": 1
+      },
+      "forcedGc": false
+    },
+    "finalCache": {
+      "id": 1,
+      "hits": 21,
+      "misses": 30,
+      "writes": 51,
+      "corrupt": 0,
+      "evictions": 0,
+      "sizeBytes": 11870,
+      "entries": 30,
+      "hitRate": 0.4117647058823529
+    },
+    "sqliteQuickCheck": [
+      "ok"
+    ]
+  },
+  "failures": [],
+  "dataDir": "C:\\Users\\root\\AppData\\Local\\Temp\\re-benchmark-dqTaY0",
+  "retainedData": false
+}

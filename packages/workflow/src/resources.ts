@@ -1,26 +1,360 @@
 import { spawn } from 'node:child_process';
-import { readdir, readFile, statfs } from 'node:fs/promises';
+import { lstat, readdir, readFile, statfs } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import type { ResourceProcess, ResourceSnapshot } from '@reverse/contracts';
 import type { Database } from './database.js';
-export interface ResourceThresholds { softRssMb:number; hardRssMb:number }
-export const DEFAULT_RESOURCE_THRESHOLDS:ResourceThresholds={softRssMb:700,hardRssMb:950};
+
+export interface ResourceThresholds { softRssMb:number; hardRssMb:number; minSystemFreeMemoryMB?:number; minDiskFreeBytes?:number; maxCpuPercent?:number }
+export interface ResourceMonitorOptions {
+  processSampler?: () => Promise<ResourceProcess[]>;
+  diskSampler?: () => Promise<DiskSample>;
+  systemSampler?: () => SystemSample;
+  now?: () => number;
+  sampleTtlMs?: number;
+  diskSampleTtlMs?: number;
+  hysteresis?: { pressureSamples?: number; dangerSamples?: number };
+  circuitDedupWindowMs?: number;
+  resourceRetention?: { days?:number; maxRows?:number };
+}
+export interface DiskSample { dataDirBytes:number; diskAvailableBytes:number; limitations:string[] }
+export interface SystemSample { systemFreeMemoryMB:number; systemTotalMemoryMB:number }
+export const DEFAULT_RESOURCE_THRESHOLDS:ResourceThresholds={softRssMb:700,hardRssMb:950,minSystemFreeMemoryMB:1024,minDiskFreeBytes:1024*1024*1024,maxCpuPercent:90};
+export const PROCESS_SAMPLING_LIMITATION = 'Process-tree sampling unavailable; reporting Node self RSS only';
+export const DEFAULT_RESOURCE_SAMPLE_RETENTION = { days:7, maxRows:10000 } as const;
+
 interface ProcRow { ProcessId:number; ParentProcessId:number; WorkingSetSize:number; Name:string; KernelModeTime:number; UserModeTime:number }
-async function windowsProcesses():Promise<ResourceProcess[]>{const script="$p=Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId,WorkingSetSize,Name,KernelModeTime,UserModeTime; $p | ConvertTo-Json -Compress";return new Promise((resolve,reject)=>{const child=spawn('powershell.exe',['-NoProfile','-NonInteractive','-Command',script],{windowsHide:true});let stdout='';child.stdout.on('data',b=>stdout+=b.toString());child.on('error',reject);const timer=setTimeout(()=>{child.kill();reject(new Error('Process sampling timeout'));},8000);child.on('close',()=>{clearTimeout(timer);try{const parsed=JSON.parse(stdout) as ProcRow|ProcRow[];resolve((Array.isArray(parsed)?parsed:[parsed]).filter(p=>Number(p.ProcessId)!==child.pid).map(p=>({pid:Number(p.ProcessId),ppid:Number(p.ParentProcessId),rssMB:Number(p.WorkingSetSize)/1048576,cpuSeconds:(Number(p.KernelModeTime)+Number(p.UserModeTime))/10000000,name:p.Name})));}catch(error){reject(error);}});});}
-async function linuxProcesses():Promise<ResourceProcess[]>{const rows:ResourceProcess[]=[];for(const entry of await readdir('/proc')){if(!/^\d+$/.test(entry))continue;try{const pid=Number(entry);const stat=await readFile(`/proc/${pid}/stat`,'utf8');const close=stat.lastIndexOf(')');const fields=stat.slice(close+2).split(' ');const status=await readFile(`/proc/${pid}/status`,'utf8');const rss=Number(status.match(/^VmRSS:\s+(\d+)/m)?.[1]??0)/1024;rows.push({pid,ppid:Number(fields[1]),rssMB:rss,cpuSeconds:(Number(fields[11])+Number(fields[12]))/100,name:stat.slice(stat.indexOf('(')+1,close)});}catch{/* process exited during sampling */}}return rows;}
-export function descendants(processes:ResourceProcess[],rootPid:number){const byParent=new Map<number,ResourceProcess[]>();for(const process of processes){const list=byParent.get(process.ppid)??[];list.push(process);byParent.set(process.ppid,list);}const result:ResourceProcess[]=[];const queue=[rootPid];const seen=new Set<number>();while(queue.length){const parent=queue.shift()!;for(const child of byParent.get(parent)??[]){if(seen.has(child.pid))continue;seen.add(child.pid);result.push(child);queue.push(child.pid);}}return result;}
+export interface ResourceSampleOptions { fresh?:boolean; rootPids?:number[] }
+interface PressureState { level:ResourceSnapshot['pressure']; normalSamples:number }
+interface PressureMetrics { treeRssMB:number; systemFreeMemoryMB:number; diskAvailableBytes:number; cpuPercent:number }
+interface PeakMetrics { treeRssMB:number; cpuPercent:number; dataDirBytes:number }
+
+async function windowsProcesses():Promise<ResourceProcess[]> {
+  const script="$p=Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId,WorkingSetSize,Name,KernelModeTime,UserModeTime; $p | ConvertTo-Json -Compress";
+  return new Promise((resolve,reject) => {
+    const child=spawn('powershell.exe',['-NoProfile','-NonInteractive','-Command',script],{windowsHide:true});
+    let stdout='';
+    let settled=false;
+    const finish=(error?:Error,rows?:ResourceProcess[]) => {
+      if (settled) return;
+      settled=true;
+      clearTimeout(timer);
+      if (error) reject(error); else resolve(rows ?? []);
+    };
+    const timer=setTimeout(() => {
+      child.kill();
+      finish(new Error('Process sampling timeout'));
+    },8000);
+    child.stdout.on('data',b => stdout+=b.toString());
+    child.on('error',error => finish(error));
+    child.on('close',code => {
+      if (code !== 0) { finish(new Error(`Process sampling exited with code ${code ?? 'unknown'}`)); return; }
+      try {
+        const parsed=JSON.parse(stdout) as ProcRow | ProcRow[] | null;
+        const items=parsed ? (Array.isArray(parsed)?parsed:[parsed]) : [];
+        const rows=items.filter(p => p && Number.isFinite(Number(p.ProcessId))).map(p => ({pid:Number(p.ProcessId),ppid:Number(p.ParentProcessId),rssMB:Number(p.WorkingSetSize)/1048576,cpuSeconds:(Number(p.KernelModeTime)+Number(p.UserModeTime))/10000000,name:p.Name}));
+        if(typeof child.pid!=='number')throw new Error('Process sampler PID is unavailable');
+        const samplerPids=new Set([child.pid,...descendants(rows,child.pid).map(row=>row.pid)]);
+        const filtered=rows.filter(row=>!samplerPids.has(row.pid));
+        if (!filtered.length) throw new Error('Process sampling returned no processes');
+        finish(undefined,filtered);
+      } catch (error) { finish(error instanceof Error?error:new Error(String(error))); }
+    });
+  });
+}
+
+async function linuxProcesses():Promise<ResourceProcess[]> {
+  const rows:ResourceProcess[]=[];
+  for (const entry of await readdir('/proc')) {
+    if (!/^\d+$/.test(entry)) continue;
+    try {
+      const pid=Number(entry);
+      const processStat=await readFile(`/proc/${pid}/stat`,'utf8');
+      const close=processStat.lastIndexOf(')');
+      const fields=processStat.slice(close+2).split(' ');
+      const status=await readFile(`/proc/${pid}/status`,'utf8');
+      const rss=Number(status.match(/^VmRSS:\s+(\d+)/m)?.[1]??0)/1024;
+      rows.push({pid,ppid:Number(fields[1]),rssMB:rss,cpuSeconds:(Number(fields[11])+Number(fields[12]))/100,name:processStat.slice(processStat.indexOf('(')+1,close)});
+    } catch { /* process exited during sampling */ }
+  }
+  if (!rows.length) throw new Error('Process sampling returned no processes');
+  return rows;
+}
+
+export function descendants(processes:ResourceProcess[],rootPid:number) {
+  const byParent=new Map<number,ResourceProcess[]>();
+  for (const item of processes) {
+    const list=byParent.get(item.ppid)??[];
+    list.push(item);
+    byParent.set(item.ppid,list);
+  }
+  const result:ResourceProcess[]=[];
+  const queue=[rootPid];
+  const seen=new Set<number>();
+  while (queue.length) {
+    const parent=queue.shift()!;
+    for (const child of byParent.get(parent)??[]) {
+      if (seen.has(child.pid)) continue;
+      seen.add(child.pid);
+      result.push(child);
+      queue.push(child.pid);
+    }
+  }
+  return result;
+}
+
 export class ResourceMonitor {
   private previous=new Map<number,{time:number;cpu:number}>();
   private lastSample=new Map<string,number>();
-  constructor(private db:Database,private dataDir:string,private thresholds:ResourceThresholds=DEFAULT_RESOURCE_THRESHOLDS){}
-  async sample(source:'api'|'worker'|'desktop'):Promise<ResourceSnapshot>{const last=this.lastSample.get(source)??0;if(Date.now()-last<2000){const stored=this.stored(source);if(stored)return stored;}this.lastSample.set(source,Date.now());const limitations:string[]=[];let processes:ResourceProcess[]=[];try{processes=process.platform==='win32'?await windowsProcesses():await linuxProcesses();}catch{limitations.push('Process-tree sampling unavailable; reporting Node self RSS only');}
-    const self=processes.find(p=>p.pid===process.pid);const children=descendants(processes,process.pid);const all=[...(self?[self]:[]),...children];const selfRss=self?.rssMB??process.memoryUsage().rss/1048576;const treeRss=all.reduce((n,p)=>n+p.rssMB,0);const now=Date.now();let cpuDelta=0;let elapsed=0;for(const p of all){const prev=this.previous.get(p.pid);if(prev&&now>prev.time){cpuDelta+=Math.max(0,p.cpuSeconds-prev.cpu);elapsed=Math.max(elapsed,(now-prev.time)/1000);}this.previous.set(p.pid,{time:now,cpu:p.cpuSeconds});}
-    const cpuPercent=elapsed>0?Math.max(0,Math.min(100*os.cpus().length,cpuDelta/elapsed/os.cpus().length*100)):0;
-    let dataDirBytes=0,diskAvailableBytes=0;try{const info=await statfs(this.dataDir);diskAvailableBytes=Number(info.bavail)*Number(info.bsize);const walk=async(dir:string,depth=0)=>{if(depth>3)return;for(const e of await readdir(dir,{withFileTypes:true}).catch(()=>[])){if(e.isSymbolicLink())continue;const file=path.join(dir,e.name);if(e.isDirectory())await walk(file,depth+1);else{const s=await lstatSafe(file);dataDirBytes+=s?.size??0;}}};await walk(this.dataDir);}catch{limitations.push('Disk usage sampling incomplete');}
-    const queued=Number((this.db.raw.prepare("SELECT COUNT(*) n FROM tasks WHERE status='QUEUED'").get() as {n:number}).n);const running=Number((this.db.raw.prepare("SELECT COUNT(*) n FROM tasks WHERE status='RUNNING'").get() as {n:number}).n);const previousPeak=Number(JSON.parse(this.db.settings().resource_peak??'{}').treeRssMB??0);const peak=Math.max(previousPeak,treeRss);this.db.setSetting('resource_peak',JSON.stringify({treeRssMB:peak}));const pressure=treeRss>=this.thresholds.hardRssMb?'danger':treeRss>=this.thresholds.softRssMb?'pressure':'normal';const snapshot:ResourceSnapshot={sampledAt:new Date().toISOString(),source,treeRssMB:Math.round(treeRss),selfRssMB:Math.round(selfRss),childRssMB:Math.round(treeRss-selfRss),heapUsedMB:Math.round(process.memoryUsage().heapUsed/1048576),cpuPercent:Math.round(cpuPercent),handles:process.getActiveResourcesInfo().length,processes:all,systemFreeMemoryMB:Math.round(os.freemem()/1048576),systemTotalMemoryMB:Math.round(os.totalmem()/1048576),dataDirBytes,diskAvailableBytes,queuedTasks:queued,runningTasks:running,peakTreeRssMB:Math.round(peak),pressure,limitations};this.db.raw.prepare('INSERT INTO resource_samples (source,snapshot_json,created_at) VALUES (?,?,?)').run(source,JSON.stringify(snapshot),snapshot.sampledAt);this.db.setSetting(`resource_snapshot_${source}`,JSON.stringify(snapshot));return snapshot;
+  private readonly inFlight=new Map<string,Promise<ResourceSnapshot>>();
+  private readonly pressureStates=new Map<string,PressureState>();
+  private readonly circuitTimes=new Map<string,number>();
+  private diskCache?: {at:number;value:DiskSample};
+  private diskInFlight: Promise<DiskSample> | undefined;
+  private readonly now:() => number;
+  private readonly sampleTtlMs:number;
+  private readonly diskSampleTtlMs:number;
+  private readonly processSampler:() => Promise<ResourceProcess[]>;
+  private readonly diskSampler:() => Promise<DiskSample>;
+  private readonly systemSampler:() => SystemSample;
+  private readonly pressureRecoverySamples:number;
+  private readonly dangerRecoverySamples:number;
+  private readonly circuitDedupWindowMs:number;
+  private readonly resourceRetentionDays:number;
+  private readonly resourceRetentionMaxRows:number;
+
+  constructor(private db:Database,private dataDir:string,private thresholds:ResourceThresholds=DEFAULT_RESOURCE_THRESHOLDS,options:ResourceMonitorOptions={}) {
+    this.now=options.now??Date.now;
+    this.sampleTtlMs=options.sampleTtlMs??2000;
+    this.diskSampleTtlMs=options.diskSampleTtlMs??30000;
+    this.processSampler=options.processSampler??(process.platform==='win32'?windowsProcesses:linuxProcesses);
+    this.diskSampler=options.diskSampler??(() => this.scanDisk());
+    this.systemSampler=options.systemSampler??(() => ({systemFreeMemoryMB:os.freemem()/1048576,systemTotalMemoryMB:os.totalmem()/1048576}));
+    this.pressureRecoverySamples=Math.max(1,options.hysteresis?.pressureSamples??2);
+    this.dangerRecoverySamples=Math.max(1,options.hysteresis?.dangerSamples??3);
+    this.circuitDedupWindowMs=options.circuitDedupWindowMs??30000;
+    this.resourceRetentionDays=this.retentionNumber(options.resourceRetention?.days,DEFAULT_RESOURCE_SAMPLE_RETENTION.days,0);
+    this.resourceRetentionMaxRows=this.retentionNumber(options.resourceRetention?.maxRows,DEFAULT_RESOURCE_SAMPLE_RETENTION.maxRows,1);
   }
-  stored(source:'api'|'worker'|'desktop'):ResourceSnapshot|undefined{const value=this.db.settings()[`resource_snapshot_${source}`];if(!value)return;try{return JSON.parse(value) as ResourceSnapshot;}catch{return;}}
-  circuit(level:'pressure'|'danger',reason:string,taskId?:string,snapshot?:ResourceSnapshot){this.db.raw.prepare('INSERT INTO circuit_events (task_id,level,reason,snapshot_json,created_at) VALUES (?,?,?,?,?)').run(taskId??null,level,reason,JSON.stringify(snapshot??null),new Date().toISOString());}
+
+  private retentionNumber(value:number|undefined,fallback:number,minimum:number):number {
+    return value===undefined||!Number.isFinite(value)?fallback:Math.max(minimum,Math.floor(value));
+  }
+
+  sample(source:'api'|'worker'|'desktop', options:ResourceSampleOptions={}): Promise<ResourceSnapshot> {
+    const roots=[...new Set((options.rootPids??[]).filter(pid=>Number.isSafeInteger(pid)&&pid>0))].sort((a,b)=>a-b);
+    const key=`${source}:${roots.join(',')}`;
+    const active=this.inFlight.get(key);
+    if (active) return active;
+    const at=this.now();
+    const last=this.lastSample.get(source);
+    if (!options.fresh && roots.length===0 && last!==undefined && at-last<this.sampleTtlMs) {
+      const stored=this.stored(source);
+      if (stored && this.samplingHealthy(stored)) return Promise.resolve(stored);
+    }
+    const pending=this.performSample(source,roots).then(snapshot => {
+      // Unhealthy fallback snapshots remain observable but are not allowed to
+      // suppress the next sampling attempt.
+      if (roots.length===0 && this.samplingHealthy(snapshot)) this.lastSample.set(source,this.now());
+      return snapshot;
+    }).finally(() => {
+      if (this.inFlight.get(key)===pending) this.inFlight.delete(key);
+    });
+    this.inFlight.set(key,pending);
+    return pending;
+  }
+
+  async sampleOrThrow(source:'api'|'worker'|'desktop', options:ResourceSampleOptions={}): Promise<ResourceSnapshot> {
+    const snapshot=await this.sample(source,options);
+    if (!this.samplingHealthy(snapshot)) throw new Error(`Resource sampling failed closed: ${snapshot.limitations.join('; ')}`);
+    return snapshot;
+  }
+
+  samplingHealthy(snapshot?:ResourceSnapshot): boolean {
+    return Boolean(snapshot && !snapshot.limitations.includes(PROCESS_SAMPLING_LIMITATION));
+  }
+
+  private async performSample(source:'api'|'worker'|'desktop', rootPids:number[]=[]): Promise<ResourceSnapshot> {
+    const limitations:string[]=[];
+    let processes:ResourceProcess[]=[];
+    try { processes=await this.processSampler(); }
+    catch { limitations.push(PROCESS_SAMPLING_LIMITATION); }
+    const sampledAt=this.now();
+    const self=processes.find(p => p.pid===process.pid);
+    const fallbackSelf:ResourceProcess={pid:process.pid,ppid:process.ppid,rssMB:process.memoryUsage().rss/1048576,cpuSeconds:0,name:process.platform};
+    const byPid=new Map<number,ResourceProcess>([[process.pid,self??fallbackSelf]]);
+    for(const pid of [process.pid,...rootPids]){
+      const root=processes.find(item=>item.pid===pid);if(root)byPid.set(pid,root);
+      for(const child of descendants(processes,pid))byPid.set(child.pid,child);
+    }
+    const all=[...byPid.values()];
+    const selfRss=self?.rssMB??fallbackSelf.rssMB;
+    const treeRss=all.reduce((n,p) => n+p.rssMB,0);
+    let cpuDelta=0;
+    let elapsed=0;
+    const seen=new Set<number>();
+    for (const item of all) {
+      seen.add(item.pid);
+      const prev=this.previous.get(item.pid);
+      if (prev && sampledAt>prev.time) {
+        cpuDelta+=Math.max(0,item.cpuSeconds-prev.cpu);
+        elapsed=Math.max(elapsed,(sampledAt-prev.time)/1000);
+      }
+      this.previous.set(item.pid,{time:sampledAt,cpu:item.cpuSeconds});
+    }
+    for (const pid of this.previous.keys()) if (!seen.has(pid)) this.previous.delete(pid);
+    const cores=Math.max(1,os.cpus().length);
+    const cpuPercent=elapsed>0?Math.max(0,Math.min(100*cores,cpuDelta/elapsed/cores*100)):0;
+    const disk=await this.measureDisk();
+    const system=this.systemSampler();
+    for (const limitation of disk.limitations) if (!limitations.includes(limitation)) limitations.push(limitation);
+    const queued=Number((this.db.raw.prepare("SELECT COUNT(*) n FROM tasks WHERE status='QUEUED'").get() as {n:number}).n);
+    const running=Number((this.db.raw.prepare("SELECT COUNT(*) n FROM tasks WHERE status='RUNNING'").get() as {n:number}).n);
+    const pressure=this.nextPressure(source,{treeRssMB:treeRss,systemFreeMemoryMB:system.systemFreeMemoryMB,diskAvailableBytes:disk.diskAvailableBytes,cpuPercent});
+    return this.transaction(() => {
+      const previousPeak=this.readPeak();
+      const peak:PeakMetrics={treeRssMB:Math.max(previousPeak.treeRssMB,treeRss),cpuPercent:Math.max(previousPeak.cpuPercent,cpuPercent),dataDirBytes:Math.max(previousPeak.dataDirBytes,disk.dataDirBytes)};
+      const snapshot:ResourceSnapshot={sampledAt:new Date(sampledAt).toISOString(),source,treeRssMB:Math.round(treeRss),selfRssMB:Math.round(selfRss),childRssMB:Math.round(treeRss-selfRss),heapUsedMB:Math.round(process.memoryUsage().heapUsed/1048576),cpuPercent:Math.round(cpuPercent),handles:process.getActiveResourcesInfo().length,processes:all,systemFreeMemoryMB:Math.round(system.systemFreeMemoryMB),systemTotalMemoryMB:Math.round(system.systemTotalMemoryMB),dataDirBytes:disk.dataDirBytes,diskAvailableBytes:disk.diskAvailableBytes,queuedTasks:queued,runningTasks:running,peakTreeRssMB:Math.round(peak.treeRssMB),pressure,limitations};
+      this.db.raw.prepare('INSERT INTO resource_samples (source,snapshot_json,created_at) VALUES (?,?,?)').run(source,JSON.stringify(snapshot),snapshot.sampledAt);
+      this.db.setSetting('resource_peak',JSON.stringify(peak));
+      this.db.setSetting(`resource_snapshot_${source}`,JSON.stringify(snapshot));
+      const cutoff=new Date(sampledAt-this.resourceRetentionDays*86400000).toISOString();
+      this.db.raw.prepare('DELETE FROM resource_samples WHERE created_at<? AND id NOT IN (SELECT MAX(id) FROM resource_samples GROUP BY source)').run(cutoff);
+      this.db.raw.prepare('DELETE FROM resource_samples WHERE id NOT IN (SELECT id FROM resource_samples ORDER BY id DESC LIMIT ?)').run(this.resourceRetentionMaxRows);
+      return snapshot;
+    });
+  }
+
+  private nextPressure(source:'api'|'worker'|'desktop',metrics:PressureMetrics): ResourceSnapshot['pressure'] {
+    const previous=this.pressureStates.get(source)??{level:'normal' as const,normalSamples:0};
+    let severity=0;
+    const escalate=(level:ResourceSnapshot['pressure']) => {
+      severity=Math.max(severity,level==='danger'?2:1);
+    };
+    if (metrics.treeRssMB>=this.thresholds.hardRssMb) escalate('danger');
+    else if (metrics.treeRssMB>=this.thresholds.softRssMb) escalate('pressure');
+    const memoryFloor=this.thresholds.minSystemFreeMemoryMB;
+    if (memoryFloor!==undefined && memoryFloor>0) {
+      if (metrics.systemFreeMemoryMB<=memoryFloor/2) escalate('danger');
+      else if (metrics.systemFreeMemoryMB<=memoryFloor) escalate('pressure');
+    }
+    const diskFloor=this.thresholds.minDiskFreeBytes;
+    if (diskFloor!==undefined && diskFloor>0) {
+      if (metrics.diskAvailableBytes<=diskFloor/2) escalate('danger');
+      else if (metrics.diskAvailableBytes<=diskFloor) escalate('pressure');
+    }
+    const cpuCeiling=this.thresholds.maxCpuPercent;
+    if (cpuCeiling!==undefined && cpuCeiling>0) {
+      if (metrics.cpuPercent>=Math.min(100,cpuCeiling*1.1)) escalate('danger');
+      else if (metrics.cpuPercent>=cpuCeiling) escalate('pressure');
+    }
+    const candidate:ResourceSnapshot['pressure']=severity===2?'danger':severity===1?'pressure':'normal';
+    let level=previous.level;
+    let normalSamples=previous.normalSamples;
+    if (candidate==='danger') {
+      level='danger';
+      normalSamples=0;
+    } else if (candidate==='pressure') {
+      if (level==='normal') level='pressure';
+      normalSamples=0;
+    } else if (level==='normal') {
+      normalSamples=0;
+    } else {
+      normalSamples++;
+      const required=level==='danger'?this.dangerRecoverySamples:this.pressureRecoverySamples;
+      if (normalSamples>=required) {
+        level='normal';
+        normalSamples=0;
+      }
+    }
+    this.pressureStates.set(source,{level,normalSamples});
+    return level;
+  }
+
+  private readPeak(): PeakMetrics {
+    try {
+      const value=JSON.parse(this.db.settings().resource_peak??'{}') as Partial<PeakMetrics>;
+      return {treeRssMB:Number(value.treeRssMB??0),cpuPercent:Number(value.cpuPercent??0),dataDirBytes:Number(value.dataDirBytes??0)};
+    } catch { return {treeRssMB:0,cpuPercent:0,dataDirBytes:0}; }
+  }
+
+  private measureDisk(): Promise<DiskSample> {
+    if (this.diskCache && this.now()-this.diskCache.at<this.diskSampleTtlMs) return Promise.resolve(this.diskCache.value);
+    if (this.diskInFlight) return this.diskInFlight;
+    const pending=this.diskSampler().then(value => {
+      this.diskCache={at:this.now(),value};
+      return value;
+    }).finally(() => {
+      if (this.diskInFlight===pending) this.diskInFlight=undefined;
+    });
+    this.diskInFlight=pending;
+    return pending;
+  }
+
+  private async scanDisk(): Promise<DiskSample> {
+    const limitations:string[]=[];
+    let dataDirBytes=0;
+    let diskAvailableBytes=0;
+    try {
+      const info=await statfs(this.dataDir);
+      diskAvailableBytes=Number(info.bavail)*Number(info.bsize);
+    } catch { limitations.push('Disk usage sampling incomplete'); }
+    let entries=0;
+    let truncated=false;
+    const walk=async(dir:string,depth:number) => {
+      if (depth>2 || truncated) return;
+      let children;
+      try { children=await readdir(dir,{withFileTypes:true}); }
+      catch {
+        if (depth===0) limitations.push('Disk usage sampling incomplete');
+        return;
+      }
+      for (const entry of children) {
+        if (++entries>10000) { truncated=true; return; }
+        if (entry.isSymbolicLink()) continue;
+        const file=path.join(dir,entry.name);
+        if (entry.isDirectory()) await walk(file,depth+1);
+        else if (entry.isFile()) {
+          const info=await lstat(file).catch(() => undefined);
+          dataDirBytes+=info?.size??0;
+        }
+      }
+    };
+    await walk(this.dataDir,0);
+    if (truncated) limitations.push('Data-directory scan truncated after 10000 entries');
+    return {dataDirBytes,diskAvailableBytes,limitations};
+  }
+
+  stored(source:'api'|'worker'|'desktop'):ResourceSnapshot | undefined {
+    const value=this.db.settings()[`resource_snapshot_${source}`];
+    if (!value) return;
+    try { return JSON.parse(value) as ResourceSnapshot; } catch { return; }
+  }
+
+  circuit(level:'pressure'|'danger',reason:string,taskId?:string,snapshot?:ResourceSnapshot): boolean {
+    const at=this.now();
+    const key=`${level}\u0000${reason}`;
+    const last=this.circuitTimes.get(key);
+    if (last!==undefined && at-last<this.circuitDedupWindowMs) return false;
+    const inserted=this.transaction(() => {
+      const latest=this.db.raw.prepare('SELECT created_at FROM circuit_events WHERE level=? AND reason=? ORDER BY id DESC LIMIT 1').get(level,reason) as {created_at:string} | undefined;
+      if (latest && at-Date.parse(latest.created_at)<this.circuitDedupWindowMs) return false;
+      this.db.raw.prepare('INSERT INTO circuit_events (task_id,level,reason,snapshot_json,created_at) VALUES (?,?,?,?,?)').run(taskId??null,level,reason,JSON.stringify(snapshot??null),new Date(at).toISOString());
+      return true;
+    });
+    if (inserted) this.circuitTimes.set(key,at);
+    return inserted;
+  }
+
+  private transaction<T>(work:() => T): T {
+    this.db.raw.exec('BEGIN IMMEDIATE');
+    try {
+      const result=work();
+      this.db.raw.exec('COMMIT');
+      return result;
+    } catch (error) {
+      try { this.db.raw.exec('ROLLBACK'); } catch { /* preserve the original error */ }
+      throw error;
+    }
+  }
 }
-async function lstatSafe(file:string){try{const {lstat}=await import('node:fs/promises');return await lstat(file);}catch{return undefined;}}

@@ -1,9 +1,58 @@
 import { cp, mkdir, readFile, rm } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import path from 'node:path';
-const root=process.cwd();const out=path.join(root,'dist/desktop-runtime/node_modules');await rm(path.dirname(out),{recursive:true,force:true});await mkdir(out,{recursive:true});
-const workspaceDirs=['apps/api','apps/worker','packages/core','packages/security','packages/workflow','packages/evidence','packages/ai','packages/contracts'];const queue=[];for(const dir of workspaceDirs){const pkg=JSON.parse(await readFile(path.join(root,dir,'package.json'),'utf8'));for(const name of Object.keys(pkg.dependencies??{}))queue.push({name,from:path.join(root,dir)});}
-const seen=new Set();let count=0;
-async function findPackage(name,from){if(name.startsWith('@reverse/')){const dir=path.join(root,'packages',name.slice('@reverse/'.length));try{const pkg=JSON.parse(await readFile(path.join(dir,'package.json'),'utf8'));return {dir,pkg,workspace:true};}catch{return null;}}const require=createRequire(path.join(from,'package.json'));let entry;try{entry=require.resolve(name);}catch{try{entry=require.resolve(`${name}/package.json`);}catch{return null;}}let dir=path.dirname(entry);while(dir!==path.dirname(dir)){try{const pkg=JSON.parse(await readFile(path.join(dir,'package.json'),'utf8'));if(pkg.name===name)return {dir,pkg,workspace:false};}catch{}dir=path.dirname(dir);}return null;}
-while(queue.length){const item=queue.shift();const found=await findPackage(item.name,item.from);if(!found)continue;const key=found.workspace?found.pkg.name:found.dir;if(seen.has(key))continue;seen.add(key);const dest=path.join(out,...found.pkg.name.split('/'));await mkdir(path.dirname(dest),{recursive:true});if(found.workspace){await mkdir(dest,{recursive:true});await cp(path.join(found.dir,'dist'),path.join(dest,'dist'),{recursive:true});await cp(path.join(found.dir,'package.json'),path.join(dest,'package.json'));}else await cp(found.dir,dest,{recursive:true,filter:source=>!source.includes(`${path.sep}.git${path.sep}`)&&!source.endsWith('.map')});count++;for(const dep of Object.keys(found.pkg.dependencies??{}))queue.push({name:dep,from:found.dir});for(const dep of Object.keys(found.pkg.optionalDependencies??{}))queue.push({name:dep,from:found.dir});}
-console.log(`Desktop runtime: ${count} production packages`);
+const root=process.cwd();
+const out=path.join(root,'dist/desktop-runtime/node_modules');
+await rm(path.dirname(out),{recursive:true,force:true});
+await mkdir(out,{recursive:true});
+const workspaceDirs=['apps/api','apps/worker','packages/core','packages/security','packages/workflow','packages/evidence','packages/ai','packages/contracts'];
+const queue=[];
+for(const dir of workspaceDirs){
+  const pkg=JSON.parse(await readFile(path.join(root,dir,'package.json'),'utf8'));
+  for(const name of Object.keys(pkg.dependencies??{}))queue.push({name,from:path.join(root,dir)});
+}
+const seen=new Set();
+let count=0;
+async function findPackage(name,from){
+  if(name.startsWith('@reverse/')){
+    const dir=path.join(root,'packages',name.slice('@reverse/'.length));
+    try{
+      const pkg=JSON.parse(await readFile(path.join(dir,'package.json'),'utf8'));
+      return {dir,pkg,workspace:true};
+    }catch{
+      throw new Error('Missing workspace dependency: '+name);
+    }
+  }
+  const require=createRequire(path.join(from,'package.json'));
+  let entry;
+  try{entry=require.resolve(name);}catch{try{entry=require.resolve(name+'/package.json');}catch{throw new Error('Missing production dependency: '+name+' from '+from);}}
+  let dir=path.dirname(entry);
+  while(dir!==path.dirname(dir)){
+    try{
+      const pkg=JSON.parse(await readFile(path.join(dir,'package.json'),'utf8'));
+      if(pkg.name===name)return {dir,pkg,workspace:false};
+    }catch{}
+    dir=path.dirname(dir);
+  }
+  throw new Error('Cannot locate package manifest for '+name);
+}
+while(queue.length){
+  const item=queue.shift();
+  const found=await findPackage(item.name,item.from);
+  const key=found.workspace?found.pkg.name:found.dir;
+  if(seen.has(key))continue;
+  seen.add(key);
+  const dest=path.join(out,...found.pkg.name.split('/'));
+  await mkdir(path.dirname(dest),{recursive:true});
+  if(found.workspace){
+    await mkdir(dest,{recursive:true});
+    await cp(path.join(found.dir,'dist'),path.join(dest,'dist'),{recursive:true});
+    await cp(path.join(found.dir,'package.json'),path.join(dest,'package.json'));
+  }else{
+    await cp(found.dir,dest,{recursive:true,filter:source=>!source.includes(path.sep+'.git'+path.sep)&&!source.endsWith('.map')});
+  }
+  count++;
+  for(const dep of Object.keys(found.pkg.dependencies??{}))queue.push({name:dep,from:found.dir});
+  for(const dep of Object.keys(found.pkg.optionalDependencies??{}))queue.push({name:dep,from:found.dir});
+}
+console.log('Desktop runtime: '+count+' production packages');

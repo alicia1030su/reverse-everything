@@ -1,4 +1,7 @@
 export { Database } from './database.js';
+export type { WorkflowEvent } from './database.js';
+export { BackupService } from './backups.js';
+export type { BackupEvent, BackupVerification } from './backups.js';
 export { WorkflowEngine } from './engine.js';
 export type { EngineOptions, AiRuntimeConfig } from './engine.js';
 export type { AdapterDefinition, Detection, TaskContext } from './types.js';
@@ -6,7 +9,7 @@ export { AnalysisCache } from './cache.js';
 export type { CacheIdentity, CacheOptions } from './cache.js';
 export { RetentionService } from './retention.js';
 export { ResourceMonitor, DEFAULT_RESOURCE_THRESHOLDS, descendants } from './resources.js';
-export type { ResourceThresholds } from './resources.js';
+export type { ResourceThresholds, ResourceSampleOptions } from './resources.js';
 export { migrateDatabase } from './migrations.js';
 export type { MigrationResult } from './migrations.js';
 export { TaskExecutionError } from './engine.js';

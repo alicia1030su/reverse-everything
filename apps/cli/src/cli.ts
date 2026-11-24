@@ -1,14 +1,15 @@
 #!/usr/bin/env node
 import { writeFile } from 'node:fs/promises';
-import { api, apiUrl, CliError, token } from './client.js';
+import { VERSION } from './version.js';
+import { api, apiUrl, CliError, redactToken, token } from './client.js';
 const raw=process.argv.slice(2);const flags=new Set<string>();const values=new Map<string,string>();const args:string[]=[];
 for(let i=0;i<raw.length;i++){const arg=raw[i]!;if(arg==='--json'||arg==='--quiet'||arg==='--authorized'||arg==='--no-wait'||arg==='--wait'||arg==='--confirm-local'||arg==='--port')flags.add(arg);else if(arg==='--api-url'||arg==='--timeout'||arg==='--name'){values.set(arg,raw[++i]??'');}else if(arg==='--version'||arg==='-v')flags.add(arg);else if(arg==='--help'||arg==='-h')flags.add(arg);else args.push(arg);}
 if(values.has('--api-url'))process.env.RE_API_URL=values.get('--api-url');if(values.has('--timeout'))process.env.RE_CLI_TIMEOUT_MS=values.get('--timeout')!;
 const quiet=flags.has('--quiet');const out=(value:unknown)=>{if(!quiet)console.log(JSON.stringify(value,null,2));};
-const help={product:'reverse-everything',version:'0.0.2',usage:['reverse-everything --version','reverse-everything --help','reverse-everything health','reverse-everything capabilities','reverse-everything projects list','reverse-everything projects create <name> <kind> [target] --authorized','reverse-everything projects upload <projectId> <file>','reverse-everything analyze file <file> [--name <name>] [--no-wait]','reverse-everything analyze web <url> [--name <name>] --authorized [--confirm-local]','reverse-everything tasks list','reverse-everything tasks get <taskId>','reverse-everything tasks logs <taskId>','reverse-everything tasks action <taskId> <pause|resume|cancel|retry>','reverse-everything report export <taskId> [out.md]','reverse-everything config show','reverse-everything resources','reverse-everything cache stats','reverse-everything retention show','reverse-everything mcp stdio','reverse-everything mcp http [--port 4174]'],globalFlags:['--json','--quiet','--timeout <ms>','--api-url <url>']};
+const help={product:'reverse-everything',version:VERSION,usage:['reverse-everything --version','reverse-everything --help','reverse-everything health','reverse-everything capabilities','reverse-everything projects list','reverse-everything projects create <name> <kind> [target] --authorized','reverse-everything projects upload <projectId> <file>','reverse-everything analyze file <file> [--name <name>] --authorized [--no-wait]','reverse-everything analyze web <url> [--name <name>] --authorized [--confirm-local]','reverse-everything tasks list','reverse-everything tasks get <taskId>','reverse-everything tasks logs <taskId>','reverse-everything tasks action <taskId> <pause|resume|cancel|retry>','reverse-everything report export <taskId> [out.md]','reverse-everything config show','reverse-everything resources','reverse-everything cache stats','reverse-everything retention show','reverse-everything mcp stdio','reverse-everything mcp http [--port 4174]'],globalFlags:['--json','--quiet','--timeout <ms>','--api-url <url>']};
 async function waitTask(id:string){const deadline=Date.now()+Number(process.env.RE_CLI_TIMEOUT_MS??120000);while(Date.now()<deadline){const task=await api<{id:string;status:string;error?:string}>(`/api/tasks/${id}`);if(['COMPLETED','FAILED','BLOCKED','CANCELLED'].includes(task.status))return task;await new Promise(r=>setTimeout(r,500));}throw new CliError(4,'Timed out waiting for task; task was not cancelled');}
 async function main(){
-  if(flags.has('--version'))return out({product:'reverse-everything',version:'0.0.2'});
+  if(flags.has('--version'))return out({product:'reverse-everything',version:VERSION});
   const [command='help',sub='',...rest]=args;
   if(command==='help'||flags.has('--help')||raw.length===0)return out(help);
   switch(`${command} ${sub}`.trim()){
@@ -25,7 +26,7 @@ async function main(){
     case 'tasks get':return out(await api(`/api/tasks/${rest[0]}`));
     case 'tasks logs':{const task=await api<{logs:unknown[]}>(`/api/tasks/${rest[0]}`);return out(task.logs);}
     case 'tasks action':{const id=rest[0],action=rest[1];if(!['pause','resume','cancel','retry'].includes(action??''))throw new CliError(1,'Action must be pause, resume, cancel or retry');return out(await api(`/api/tasks/${id}/${action}`,{method:'POST'}));}
-    case 'report export':{const id=rest[0],destination=rest[1]??`report-${id}.md`;const response=await fetch(`${apiUrl()}/api/tasks/${id}/report`,{headers:{authorization:`Bearer ${await token()}`}});if(!response.ok)throw new CliError(response.status,await response.text());await writeFile(destination,await response.text());return out({saved:destination});}
+    case 'report export':{const id=rest[0],destination=rest[1]??`report-${id}.md`;const response=await fetch(`${apiUrl()}/api/tasks/${id}/report`,{headers:{authorization:`Bearer ${await token()}`}});if(!response.ok)throw new CliError(response.status,redactToken(await response.text(),await token()));await writeFile(destination,await response.text());return out({saved:destination});}
     case 'cache stats':return out(await api('/api/cache/stats'));
     case 'retention show':return out(await api('/api/retention'));
     case 'mcp stdio':await import('./mcp.js');return;

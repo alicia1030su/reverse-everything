@@ -1,14 +1,14 @@
-export const VERSION = '0.0.2' as const;
-export const SCHEMA_VERSION = 2 as const;
-export const EVIDENCE_MODEL_VERSION = '2.0.0' as const;
-export const SECURITY_POLICY_VERSION = '2.0.0' as const;
-export const CACHE_POLICY_VERSION = '2.0.0' as const;
+export const VERSION = '0.0.3' as const;
+export const SCHEMA_VERSION = 3 as const;
+export const EVIDENCE_MODEL_VERSION = '3.0.0' as const;
+export const SECURITY_POLICY_VERSION = '3.0.0' as const;
+export const CACHE_POLICY_VERSION = '3.0.0' as const;
 export const STAGES = ['INTAKE','CLASSIFY','AUTHORIZATION_CHECK','PLAN','PREPARE','ANALYZE','COLLECT_EVIDENCE','MODEL_BEHAVIOR','RECONSTRUCT','VALIDATE','REPORT','EXPORT','COMPLETED'] as const;
 export type Stage = typeof STAGES[number];
 export type TaskStatus = 'CREATED' | 'QUEUED' | 'RUNNING' | 'PAUSED' | 'BLOCKED' | 'FAILED' | 'CANCELLED' | 'PARTIAL_SUCCESS' | 'COMPLETED';
 export type StageStatus = 'PENDING' | 'RUNNING' | 'SUCCEEDED' | 'FAILED' | 'SKIPPED';
-export type ProjectKind = 'website' | 'software' | 'game' | 'security';
-export type AdapterName = 'website' | 'file' | 'security' | 'game';
+export type ProjectKind = 'website' | 'software' | 'game' | 'security' | 'protocol';
+export type AdapterName = 'website' | 'file' | 'security' | 'game' | 'network' | 'apk' | 'ghidra';
 export type EvidenceKind = 'EVIDENCE' | 'INFERENCE' | 'UNKNOWN' | 'VERIFIED';
 export type Severity = 'info' | 'low' | 'medium' | 'high' | 'critical';
 export interface JsonObject { [key: string]: unknown }
@@ -35,8 +35,11 @@ export class AppError extends Error {
 export interface TaskBudget { timeoutMs?: number; maxMemoryMB?: number; maxDiskMB?: number }
 export interface ResourceProcess { pid: number; ppid: number; rssMB: number; cpuSeconds: number; name?: string }
 export interface ResourceSnapshot { sampledAt: string; source: 'api' | 'worker' | 'desktop'; treeRssMB: number; selfRssMB: number; childRssMB: number; heapUsedMB: number; cpuPercent: number; handles: number; processes: ResourceProcess[]; systemFreeMemoryMB: number; systemTotalMemoryMB: number; dataDirBytes: number; diskAvailableBytes: number; queuedTasks: number; runningTasks: number; peakTreeRssMB: number; pressure: 'normal' | 'pressure' | 'danger'; limitations: string[] }
-export interface CacheEntry { key: string; scope: 'project' | 'global'; projectId: string | null; adapter: AdapterName; stage: Stage; sizeBytes: number; sha256: string; hits: number; misses: number; createdAt: string; lastAccessedAt: string; expiresAt: string | null }
+export type CacheKind = 'static-analysis' | 'web-snapshot' | 'protocol' | 'ai-inference' | 'reconstruction' | 'validation';
+export interface CacheEntry { key: string; kind: CacheKind; scope: 'project' | 'global'; projectId: string | null; adapter: AdapterName; stage: Stage; sizeBytes: number; sha256: string; hits: number; misses: number; refCount: number; createdAt: string; lastAccessedAt: string; expiresAt: string | null }
 export interface CacheStatistics { entries: number; sizeBytes: number; hits: number; misses: number; writes: number; corrupt: number; evictions: number; hitRate: number }
+export interface BackupInfo { id:string; createdAt:string; kind:'manual'|'pre-migration'|'scheduled'; sizeBytes:number; fileCount:number; sha256:string; databaseSha256:string; schemaVersion:number; status:'complete'|'corrupt'; path:string }
+export interface BackupPreview { backup:BackupInfo; targetDir:string; files:{path:string;sizeBytes:number}[]; totalBytes:number; warnings:string[] }
 export type DataCategory = 'temporary' | 'browser-cache' | 'task-logs' | 'analysis-cache' | 'metrics';
 export interface RetentionPolicy { temporaryDays: number; logDays: number; cacheDays: number; cacheMaxBytes: number; taskArtifactMaxBytes: number; diskWarningFreeBytes: number }
 export const DEFAULT_RETENTION_POLICY: RetentionPolicy = { temporaryDays: 7, logDays: 30, cacheDays: 30, cacheMaxBytes: 2 * 1024 * 1024 * 1024, taskArtifactMaxBytes: 1024 * 1024 * 1024, diskWarningFreeBytes: 2 * 1024 * 1024 * 1024 };

@@ -1,6 +1,6 @@
 {
   "name": "@reverse/web",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "private": true,
   "type": "module",
   "scripts": {
@@ -10,7 +10,7 @@
   },
   "dependencies": {
     "monaco-editor": "0.58.0",
-    "@reverse/contracts": "0.0.2",
+    "@reverse/contracts": "0.0.3",
     "@tanstack/react-query": "5.90.2",
     "@xyflow/react": "12.8.6",
     "lucide-react": "0.468.0",

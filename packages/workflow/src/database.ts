@@ -5,15 +5,29 @@ import { randomUUID } from 'node:crypto';
 import { STAGES, type Artifact, type CreateProjectInput, type CreateTaskInput, type Evidence, type Finding, type LogEntry, type Project, type Stage, type Task, type TaskDetail, type TaskStage, type Upload } from '@reverse/contracts';
 import { migrateDatabase, type MigrationResult } from './migrations.js';
 
+export interface WorkflowEvent { id:number;taskId:string|null;type:string;payload:unknown;createdAt:string }
+
 export class Database {
-  readonly raw: DatabaseSync;
+  raw: DatabaseSync;
+  file: string;
   readonly migration: MigrationResult;
   constructor(file: string) {
+    this.file = file;
     if (file !== ':memory:') mkdirSync(path.dirname(file), { recursive: true });
     this.raw = new DatabaseSync(file);
+    this.configure();
+    this.migration = migrateDatabase(this.raw, file);
+  }
+  private configure() {
     this.raw.exec('PRAGMA busy_timeout=10000; PRAGMA foreign_keys=ON;');
     for(let attempt=0;attempt<10;attempt++){try{this.raw.exec('PRAGMA journal_mode=WAL;');break;}catch(error){if(attempt===9||!(error instanceof Error)||!error.message.includes('locked'))throw error;Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,100);}}
-    this.migration = migrateDatabase(this.raw, file);
+  }
+  reopen(file = this.file) {
+    if (this.raw.isOpen) this.raw.close();
+    this.file = file;
+    if (file !== ':memory:') mkdirSync(path.dirname(file), { recursive: true });
+    this.raw = new DatabaseSync(file);
+    this.configure();
   }
   close() { this.raw.close(); }
   project(input: CreateProjectInput): Project {
@@ -32,13 +46,15 @@ export class Database {
   createTask(projectId: string, adapter: string, input: CreateTaskInput, inputHash: string): Task {
     const now = new Date().toISOString();
     const t: Task = { id: randomUUID(), projectId, adapter: input.adapter, status:'QUEUED', currentStage:'INTAKE', progress:0, currentTool:null, attempt:0, inputHash, options:input.options ?? {}, createdAt:now, updatedAt:now, pauseRequested:false, cancelRequested:false };
-    this.raw.prepare('INSERT INTO tasks VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').run(t.id,t.projectId,t.adapter,t.status,t.currentStage,t.progress,t.currentTool,t.attempt,t.inputHash,JSON.stringify(t.options),t.createdAt,t.updatedAt,null,null,null,0,0);
+    this.raw.prepare('INSERT INTO tasks (id,project_id,adapter,status,current_stage,progress,current_tool,attempt,input_hash,options_json,created_at,updated_at,started_at,ended_at,error,pause_requested,cancel_requested) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').run(t.id,t.projectId,t.adapter,t.status,t.currentStage,t.progress,t.currentTool,t.attempt,t.inputHash,JSON.stringify(t.options),t.createdAt,t.updatedAt,null,null,null,0,0);
     const ins = this.raw.prepare('INSERT INTO stages (task_id,name,status,attempt) VALUES (?,?,?,?)');
     for (const name of STAGES) ins.run(t.id,name,'PENDING',0);
     return t;
   }
   getTask(id: string): Task | undefined { const r = this.raw.prepare('SELECT * FROM tasks WHERE id=?').get(id) as Record<string, unknown> | undefined; return r ? this.mapTask(r) : undefined; }
   tasks(limit=200,offset=0): Task[] { return (this.raw.prepare('SELECT * FROM tasks ORDER BY created_at DESC LIMIT ? OFFSET ?').all(limit,offset) as Record<string, unknown>[]).map(r => this.mapTask(r)); }
+  allTasks(): Task[] { return (this.raw.prepare('SELECT * FROM tasks ORDER BY created_at DESC, rowid DESC').all() as Record<string, unknown>[]).map(r => this.mapTask(r)); }
+  projectTasks(projectId: string): Task[] { return (this.raw.prepare('SELECT * FROM tasks WHERE project_id=? ORDER BY created_at DESC, rowid DESC').all(projectId) as Record<string, unknown>[]).map(r => this.mapTask(r)); }
   mapTask(r: Record<string, unknown>): Task { return { id:String(r.id),projectId:String(r.project_id),adapter:String(r.adapter) as Task['adapter'],status:String(r.status) as Task['status'],currentStage:String(r.current_stage) as Stage,progress:Number(r.progress),currentTool:r.current_tool ? String(r.current_tool) : null,attempt:Number(r.attempt),inputHash:String(r.input_hash),options:JSON.parse(String(r.options_json)) as Record<string,unknown>,createdAt:String(r.created_at),updatedAt:String(r.updated_at),...(r.started_at ? {startedAt:String(r.started_at)} : {}),...(r.ended_at ? {endedAt:String(r.ended_at)} : {}),...(r.error ? {error:String(r.error)} : {}),pauseRequested:Boolean(r.pause_requested),cancelRequested:Boolean(r.cancel_requested) }; }
   updateTask(id: string, values: Partial<Record<'status'|'current_stage'|'progress'|'current_tool'|'attempt'|'updated_at'|'started_at'|'ended_at'|'error'|'pause_requested'|'cancel_requested', SQLInputValue>>) {
     const entries = Object.entries(values).filter(([,v]) => v !== undefined);
@@ -62,7 +78,17 @@ export class Database {
   artifacts(taskId: string): Artifact[] { return (this.raw.prepare('SELECT * FROM artifacts WHERE task_id=? ORDER BY created_at').all(taskId) as Record<string,unknown>[]).map(r=>({name:String(r.name),size:Number(r.size),sha256:String(r.sha256),mime:String(r.mime),downloadPath:`/api/tasks/${taskId}/artifacts/${encodeURIComponent(String(r.name))}`})); }
   artifactPath(taskId: string, name: string): string | undefined { const r=this.raw.prepare('SELECT stored_path FROM artifacts WHERE task_id=? AND name=?').get(taskId,name) as {stored_path:string}|undefined; return r?.stored_path; }
   addEvent(taskId:string|null,type:string,payload:unknown):number { const result=this.raw.prepare('INSERT INTO events (task_id,type,payload_json,created_at) VALUES (?,?,?,?)').run(taskId,type,JSON.stringify(payload),new Date().toISOString()); return Number(result.lastInsertRowid); }
-  eventsAfter(id:number):{id:number;taskId:string|null;type:string;payload:unknown;createdAt:string}[] { return (this.raw.prepare('SELECT * FROM events WHERE id>? ORDER BY id LIMIT 200').all(id) as Record<string,unknown>[]).map(r=>({id:Number(r.id),taskId:r.task_id?String(r.task_id):null,type:String(r.type),payload:JSON.parse(String(r.payload_json)),createdAt:String(r.created_at)})); }
+  eventsAfter(id:number, limit?:number): WorkflowEvent[];
+  eventsAfter(taskId:string, id:number, limit?:number): WorkflowEvent[];
+  eventsAfter(taskIdOrId:string|number, idOrLimit?:number, limit=200): WorkflowEvent[] {
+    const taskScoped = typeof taskIdOrId === 'string';
+    const id = taskScoped ? Number(idOrLimit ?? 0) : Number(taskIdOrId);
+    const pageSize = taskScoped ? limit : Number(idOrLimit ?? 200);
+    const rows = taskScoped
+      ? this.raw.prepare('SELECT * FROM events WHERE task_id=? AND id>? ORDER BY id LIMIT ?').all(taskIdOrId,id,pageSize) as Record<string,unknown>[]
+      : this.raw.prepare('SELECT * FROM events WHERE id>? ORDER BY id LIMIT ?').all(id,pageSize) as Record<string,unknown>[];
+    return rows.map(r=>({id:Number(r.id),taskId:r.task_id?String(r.task_id):null,type:String(r.type),payload:JSON.parse(String(r.payload_json)),createdAt:String(r.created_at)}));
+  }
   settings(): Record<string,string> { return Object.fromEntries((this.raw.prepare('SELECT key,value FROM settings').all() as Record<string,unknown>[]).map(r=>[String(r.key),String(r.value)])); }
   setSetting(key: string, value: string) { this.raw.prepare('INSERT OR REPLACE INTO settings VALUES (?,?)').run(key,value); }
   detail(id: string, report?: string): TaskDetail | undefined { const t=this.getTask(id); if(!t) return; const p=this.getProject(t.projectId); if(!p) return; return {...t,stages:this.stages(id),evidence:this.evidence(id),findings:this.findings(id),logs:this.logs(id),artifacts:this.artifacts(id),...(report?{report}:{}),project:p,uploads:this.uploads(p.id)}; }

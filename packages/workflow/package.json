@@ -1,6 +1,6 @@
 {
   "name": "@reverse/workflow",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "private": true,
   "type": "module",
   "exports": {
@@ -13,8 +13,10 @@
     "build": "tsc -p tsconfig.json"
   },
   "dependencies": {
-    "@reverse/contracts": "0.0.2",
-    "@reverse/evidence": "0.0.2"
+    "@reverse/ai": "0.0.3",
+    "@reverse/contracts": "0.0.3",
+    "@reverse/evidence": "0.0.3",
+    "@reverse/security": "0.0.3"
   },
   "devDependencies": {
     "typescript": "5.9.3",

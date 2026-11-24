@@ -1,6 +1,6 @@
 {
   "name": "reverse-everything",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "private": true,
   "description": "Evidence-first local reverse engineering and compatibility reconstruction workbench",
   "license": "Apache-2.0",
@@ -30,8 +30,10 @@
     "sbom": "node scripts/generate-sbom.mjs",
     "package:cli": "node scripts/package-cli.mjs",
     "package:server": "node scripts/package-server.mjs",
+    "package:backup": "node scripts/package-backup.mjs",
     "package:skill": "node scripts/package-skill.mjs",
-    "validate:skill": "node scripts/validate-skill.mjs"
+    "validate:skill": "node scripts/validate-skill.mjs",
+    "release:provenance": "node scripts/release-provenance.mjs"
   },
   "devDependencies": {
     "@eslint/js": "9.39.1",
