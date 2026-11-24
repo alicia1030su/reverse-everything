@@ -82,7 +82,9 @@ test('真实 Electron BrowserWindow 完成文件分析、报告与证据验收',
     electronProcess = electronApp.process();
     page = await electronApp.firstWindow({ timeout: 60000 });
     await page.waitForLoadState('domcontentloaded');
-    expect(await electronApp.browserWindow(page)).not.toBeNull();
+    const browserWindow = await electronApp.browserWindow(page);
+    expect(browserWindow).not.toBeNull();
+    await browserWindow!.evaluate(window => window.setBounds({ x: 0, y: 0, width: 1440, height: 960 }));
     await expect(page.getByRole('heading', { name: '分析总览' })).toBeVisible();
     await expect(page.getByText(`v${expectedVersion} · Apache-2.0`, { exact: true })).toBeVisible();
 
