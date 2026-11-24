@@ -1,1 +1,12 @@
-@packages/workflow/src/index.ts
+export { Database } from './database.js';
+export { WorkflowEngine } from './engine.js';
+export type { EngineOptions, AiRuntimeConfig } from './engine.js';
+export type { AdapterDefinition, Detection, TaskContext } from './types.js';
+export { AnalysisCache } from './cache.js';
+export type { CacheIdentity, CacheOptions } from './cache.js';
+export { RetentionService } from './retention.js';
+export { ResourceMonitor, DEFAULT_RESOURCE_THRESHOLDS, descendants } from './resources.js';
+export type { ResourceThresholds } from './resources.js';
+export { migrateDatabase } from './migrations.js';
+export type { MigrationResult } from './migrations.js';
+export { TaskExecutionError } from './engine.js';

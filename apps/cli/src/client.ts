@@ -1,1 +1,6 @@
-@apps/cli/src/client.ts
+import { readFile } from 'node:fs/promises';
+import path from 'node:path';
+export class CliError extends Error { constructor(readonly status:number,message:string){super(message);this.name='CliError';} }
+export function apiUrl(){return (process.env.RE_API_URL??'http://127.0.0.1:4173').replace(/\/$/,'');}
+export async function token():Promise<string>{if(process.env.RE_API_TOKEN)return process.env.RE_API_TOKEN;const file=path.resolve(process.env.RE_DATA_DIR??'data','local-token');try{return (await readFile(file,'utf8')).trim();}catch{throw new CliError(2,'Local API token not found. Start Reverse Everything or set RE_API_TOKEN.');}}
+export async function api<T>(route:string,init:RequestInit={}):Promise<T>{let response:Response;try{response=await fetch(`${apiUrl()}${route}`,{...init,headers:{...(init.body&&typeof init.body==='string'?{'content-type':'application/json'}:{}),authorization:`Bearer ${await token()}`,...init.headers},signal:init.signal??AbortSignal.timeout(Number(process.env.RE_CLI_TIMEOUT_MS??120000))});}catch(error){throw new CliError(1,`Cannot reach ${apiUrl()}: ${error instanceof Error?error.message:String(error)}`);}const text=await response.text();const data:unknown=text?JSON.parse(text):{};if(!response.ok){const envelope=data as {error?:{code?:string;message?:string}};throw new CliError(response.status,envelope.error?`${envelope.error.code??'ERROR'}: ${envelope.error.message??text}`:`HTTP ${response.status}: ${text.slice(0,1000)}`);}return data as T;}

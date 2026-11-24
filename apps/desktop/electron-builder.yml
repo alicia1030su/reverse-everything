@@ -1,1 +1,41 @@
-@apps/desktop/electron-builder.yml
+appId: com.alicia1030su.reverse-everything
+productName: Reverse Everything
+electronDist: ../../node_modules/electron/dist
+directories:
+  output: ../../dist/desktop
+  buildResources: build
+files:
+  - dist/**/*
+extraResources:
+  - from: ../../apps/api/dist
+    to: apps/api/dist
+  - from: ../../apps/worker/dist
+    to: apps/worker/dist
+  - from: ../../apps/web/dist
+    to: apps/web/dist
+  - from: ../../packages
+    to: packages
+    filter: ['**/dist/**','**/package.json']
+  - from: ../../node_modules
+    to: node_modules
+    filter: ['**/*','!**/*.map','!**/test/**','!**/tests/**','!@playwright/**','!electron/**','!electron-builder/**','!typescript/**','!eslint/**','!vitest/**','!vite/**','!@types/**']
+  - from: ../../examples
+    to: examples
+  - from: ../../scripts/start.mjs
+    to: scripts/start.mjs
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+      artifactName: Reverse-Everything-Setup-${version}-win-${arch}.${ext}
+    - target: zip
+      arch: [x64]
+      artifactName: Reverse-Everything-Portable-${version}-win-${arch}.${ext}
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: Reverse Everything
+compression: maximum

@@ -1,1 +1,9 @@
-@apps/cli/src/mcp-http.ts
+import http from 'node:http';
+import { Readable } from 'node:stream';
+import { createMcpHandler } from '@modelcontextprotocol/server';
+import { token } from './client.js';
+import { createMcpServer } from './tools.js';
+const port=Number(process.env.RE_MCP_PORT??process.argv[process.argv.indexOf('--port')+1]??4174);const host=process.env.RE_MCP_HOST??'127.0.0.1';const authToken=await token();const handler=createMcpHandler(()=>createMcpServer(false),{legacy:'stateless',onerror:error=>console.error(`[mcp] ${error.message}`)});
+const server=http.createServer(async(req,res)=>{try{const hostHeader=req.headers.host??'';if(!/^(127\.0\.0\.1|localhost)(:\d+)?$/.test(hostHeader)&&host!=='127.0.0.1'){res.writeHead(403).end('Forbidden');return;}if(req.headers.origin&&new URL(String(req.headers.origin)).host!==hostHeader){res.writeHead(403).end('Forbidden');return;}if(req.headers.authorization!==`Bearer ${authToken}`){res.writeHead(401).end('Unauthorized');return;}const url=new URL(req.url??'/','http://127.0.0.1');if(url.pathname!=='/mcp'){res.writeHead(404).end('Not found');return;}const headers=new Headers();for(const [key,value] of Object.entries(req.headers))if(value)headers.set(key,Array.isArray(value)?value.join(','):value);const request=new Request(url,{method:req.method,headers,...(['POST','PUT','PATCH'].includes(req.method??'')?{body:req,duplex:'half'}:{})} as unknown as RequestInit);const response=await handler.fetch(request,{authInfo:{token:authToken,clientId:'reverse-everything-local',scopes:[]}});res.writeHead(response.status,Object.fromEntries(response.headers));if(response.body)Readable.fromWeb(response.body as import('node:stream/web').ReadableStream).pipe(res);else res.end();}catch(error){console.error(error);if(!res.headersSent)res.writeHead(500).end('MCP request failed');else res.end();}});
+server.listen(port,host,()=>console.error(`[mcp] Streamable HTTP listening on http://${host}:${port}/mcp`));
+process.on('SIGINT',()=>server.close(()=>process.exit(0)));process.on('SIGTERM',()=>server.close(()=>process.exit(0)));

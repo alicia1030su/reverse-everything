@@ -1,1 +1,19 @@
-@apps/worker/package.json
+{
+  "name": "@reverse/worker",
+  "version": "0.0.2",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/worker.js"
+  },
+  "dependencies": {
+    "@reverse/core": "0.0.2",
+    "@reverse/security": "0.0.2",
+    "@reverse/workflow": "0.0.2"
+  },
+  "devDependencies": {
+    "typescript": "5.9.3",
+    "@types/node": "22.18.6"
+  }
+}

@@ -1,1 +1,23 @@
-@packages/workflow/package.json
+{
+  "name": "@reverse/workflow",
+  "version": "0.0.2",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@reverse/contracts": "0.0.2",
+    "@reverse/evidence": "0.0.2"
+  },
+  "devDependencies": {
+    "typescript": "5.9.3",
+    "@types/node": "22.18.6"
+  }
+}
