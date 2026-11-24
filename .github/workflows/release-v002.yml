@@ -88,6 +88,9 @@ jobs:
       - run: npm ci --no-audit --no-fund
       - run: npm run build
       - run: npm run dist -w @reverse/desktop
+      - name: Normalize portable artifact name
+        shell: pwsh
+        run: Rename-Item 'dist/desktop/Reverse-Everything-Setup-0.0.2-win-x64.zip' 'Reverse-Everything-Portable-0.0.2-win-x64.zip'
       - name: Silent install and smoke test
         shell: pwsh
         run: |
