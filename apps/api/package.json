@@ -1,6 +1,6 @@
 {
   "name": "@reverse/api",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "private": true,
   "type": "module",
   "scripts": {
@@ -10,10 +10,10 @@
   "dependencies": {
     "@fastify/multipart": "10.1.9",
     "@fastify/static": "10.1.12",
-    "@reverse/ai": "0.0.2",
-    "@reverse/contracts": "0.0.2",
-    "@reverse/core": "0.0.2",
-    "@reverse/workflow": "0.0.2",
+    "@reverse/ai": "0.0.3",
+    "@reverse/contracts": "0.0.3",
+    "@reverse/core": "0.0.3",
+    "@reverse/workflow": "0.0.3",
     "fastify": "5.12.8"
   },
   "devDependencies": {

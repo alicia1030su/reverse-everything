@@ -1,6 +1,7 @@
 appId: com.alicia1030su.reverse-everything
 productName: Reverse Everything
 electronDist: ../../node_modules/electron/dist
+npmRebuild: false
 directories:
   output: ../../dist/desktop
   buildResources: build
@@ -22,7 +23,14 @@ extraResources:
     to: examples
   - from: ../../scripts/start.mjs
     to: scripts/start.mjs
+  - from: ../../docs/api
+    to: docs/api
+  - from: ../../LICENSE
+    to: LICENSE
+  - from: ../../NOTICE
+    to: NOTICE
 win:
+  signAndEditExecutable: false
   artifactName: Reverse-Everything-Setup-${version}-win-${arch}.${ext}
   target:
     - target: nsis

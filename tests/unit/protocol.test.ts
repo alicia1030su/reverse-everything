@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { describe, expect, it } from 'vitest';
-import { inferProtocol } from '@reverse/core';
+import { inferProtocol } from '../../packages/core/src/adapters/game.js';
 import { canonical, evidenceHash } from '@reverse/evidence';
 interface Trace {format:string;target:{name:string};messages:{seq:number;at:string;direction:'client'|'server';type:string;payload:Record<string,unknown>}[]}
 describe('protocol inference',()=>{

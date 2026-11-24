@@ -3,7 +3,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: reverse-everything:0.0.1
+    image: reverse-everything:0.0.3
     ports:
       - "127.0.0.1:4173:4173"
     environment:
@@ -12,6 +12,7 @@ services:
       RE_ALLOWED_HOSTS: "127.0.0.1:4173,localhost:4173"
       RE_PORT: "4173"
       RE_DATA_DIR: /data
+      RE_RESOURCE_DIR: /app
       RE_MAX_UPLOAD_MB: "100"
       RE_TASK_TIMEOUT_MS: "300000"
     volumes:

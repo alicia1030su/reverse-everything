@@ -1,6 +1,6 @@
 {
   "name": "@reverse/core",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "private": true,
   "type": "module",
   "exports": {
@@ -13,10 +13,10 @@
     "build": "tsc -p tsconfig.json"
   },
   "dependencies": {
-    "@reverse/contracts": "0.0.2",
-    "@reverse/evidence": "0.0.2",
-    "@reverse/security": "0.0.2",
-    "@reverse/workflow": "0.0.2",
+    "@reverse/contracts": "0.0.3",
+    "@reverse/evidence": "0.0.3",
+    "@reverse/security": "0.0.3",
+    "@reverse/workflow": "0.0.3",
     "playwright": "1.65.1",
     "ws": "8.23.0"
   },

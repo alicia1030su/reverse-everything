@@ -1,0 +1,182 @@
+{
+  "schemaVersion": 1,
+  "product": "reverse-everything",
+  "productVersion": "0.0.3",
+  "measuredAt": "2026-11-24T08:31:41.672Z",
+  "platform": "win32",
+  "node": "v22.22.2",
+  "startupMs": 2360,
+  "ports": {
+    "api": 65328,
+    "demo": 65329
+  },
+  "idleApi": {
+    "sampledAt": "2026-11-24T08:31:34.776Z",
+    "source": "api",
+    "treeRssMB": 127,
+    "selfRssMB": 127,
+    "childRssMB": 0,
+    "heapUsedMB": 56,
+    "cpuPercent": 0,
+    "handles": 5,
+    "processes": [
+      {
+        "pid": 21232,
+        "ppid": 23820,
+        "rssMB": 127.4921875,
+        "cpuSeconds": 2.640625,
+        "name": "node.exe"
+      }
+    ],
+    "systemFreeMemoryMB": 16639,
+    "systemTotalMemoryMB": 32233,
+    "dataDirBytes": 255360,
+    "diskAvailableBytes": 159033249792,
+    "queuedTasks": 0,
+    "runningTasks": 0,
+    "peakTreeRssMB": 127,
+    "pressure": "normal",
+    "limitations": []
+  },
+  "results": {
+    "file": {
+      "taskId": "c9381481-0d7f-4855-9265-93234553325e",
+      "durationMs": 562,
+      "peakApiRssMB": 127,
+      "evidence": 9,
+      "artifacts": 7,
+      "workerResource": {
+        "sampledAt": "2026-11-24T08:31:34.258Z",
+        "source": "worker",
+        "treeRssMB": 107,
+        "selfRssMB": 107,
+        "childRssMB": 0,
+        "heapUsedMB": 40,
+        "cpuPercent": 0,
+        "handles": 4,
+        "processes": [
+          {
+            "pid": 520,
+            "ppid": 23820,
+            "rssMB": 107.42578125,
+            "cpuSeconds": 1.5625,
+            "name": "node.exe"
+          }
+        ],
+        "systemFreeMemoryMB": 16641,
+        "systemTotalMemoryMB": 32233,
+        "dataDirBytes": 226520,
+        "diskAvailableBytes": 159033249792,
+        "queuedTasks": 0,
+        "runningTasks": 0,
+        "peakTreeRssMB": 107,
+        "pressure": "normal",
+        "limitations": []
+      }
+    },
+    "website": {
+      "taskId": "8dbc52c7-ca69-4e4a-8af7-207bf8b9ac0f",
+      "durationMs": 5417,
+      "peakApiRssMB": 134,
+      "evidence": 51,
+      "artifacts": 21,
+      "workerResource": {
+        "sampledAt": "2026-11-24T08:31:40.398Z",
+        "source": "worker",
+        "treeRssMB": 226,
+        "selfRssMB": 125,
+        "childRssMB": 102,
+        "heapUsedMB": 43,
+        "cpuPercent": 0,
+        "handles": 9,
+        "processes": [
+          {
+            "pid": 520,
+            "ppid": 23820,
+            "rssMB": 124.765625,
+            "cpuSeconds": 3.0625,
+            "name": "node.exe"
+          },
+          {
+            "pid": 16104,
+            "ppid": 520,
+            "rssMB": 94.265625,
+            "cpuSeconds": 1.28125,
+            "name": "powershell.exe"
+          },
+          {
+            "pid": 7508,
+            "ppid": 16104,
+            "rssMB": 7.39453125,
+            "cpuSeconds": 0.03125,
+            "name": "conhost.exe"
+          }
+        ],
+        "systemFreeMemoryMB": 16719,
+        "systemTotalMemoryMB": 32233,
+        "dataDirBytes": 226520,
+        "diskAvailableBytes": 159033249792,
+        "queuedTasks": 0,
+        "runningTasks": 1,
+        "peakTreeRssMB": 226,
+        "pressure": "normal",
+        "limitations": []
+      }
+    },
+    "game": {
+      "taskId": "6500d6f4-7c7e-4b38-b063-5bfefcdbd0bb",
+      "durationMs": 779,
+      "peakApiRssMB": 134,
+      "evidence": 10,
+      "artifacts": 10,
+      "workerResource": {
+        "sampledAt": "2026-11-24T08:31:40.398Z",
+        "source": "worker",
+        "treeRssMB": 226,
+        "selfRssMB": 125,
+        "childRssMB": 102,
+        "heapUsedMB": 43,
+        "cpuPercent": 0,
+        "handles": 9,
+        "processes": [
+          {
+            "pid": 520,
+            "ppid": 23820,
+            "rssMB": 124.765625,
+            "cpuSeconds": 3.0625,
+            "name": "node.exe"
+          },
+          {
+            "pid": 16104,
+            "ppid": 520,
+            "rssMB": 94.265625,
+            "cpuSeconds": 1.28125,
+            "name": "powershell.exe"
+          },
+          {
+            "pid": 7508,
+            "ppid": 16104,
+            "rssMB": 7.39453125,
+            "cpuSeconds": 0.03125,
+            "name": "conhost.exe"
+          }
+        ],
+        "systemFreeMemoryMB": 16719,
+        "systemTotalMemoryMB": 32233,
+        "dataDirBytes": 226520,
+        "diskAvailableBytes": 159033249792,
+        "queuedTasks": 0,
+        "runningTasks": 1,
+        "peakTreeRssMB": 226,
+        "pressure": "normal",
+        "limitations": []
+      }
+    }
+  },
+  "passed": true,
+  "notes": [
+    "Process-tree RSS includes active Chromium/analyzer children and excludes the sampler process itself.",
+    "Budgets are observations, not guarantees.",
+    "Single Worker, sequential tasks."
+  ]
+}
