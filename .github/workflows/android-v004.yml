@@ -56,8 +56,8 @@ jobs:
           unzip -q .android-v004/jadx-1.5.3.zip -d .android-v004
       - name: Verify deterministic APK and run real JADX known answers
         run: node scripts/verify-jadx.mjs --check-fixture --archive .android-v004/jadx-1.5.3.zip --jadx-home .android-v004/jadx --log .android-v004/verify.json
-      - name: Build core
-        run: npm run build -w @reverse/core
+      - name: Build workspaces
+        run: npm run build
       - name: Run Android adapter and real JADX tests
         shell: bash
         run: |
