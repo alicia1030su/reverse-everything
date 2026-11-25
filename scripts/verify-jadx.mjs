@@ -215,7 +215,7 @@ function buildManifest(expected) {
 
 async function zip(entries) {
   const archive = new yazl.ZipFile();
-  for (const entry of entries) archive.addBuffer(entry.data, entry.name, { mtime: new Date('1980-01-01T00:00:00Z'), mode: 0o100644 });
+  for (const entry of entries) archive.addBuffer(entry.data, entry.name, { mtime: new Date('1980-01-01T00:00:00Z'), mode: 0o100644, compress: false });
   return new Promise((resolve, reject) => {
     const chunks = [];
     archive.outputStream.on('data', chunk => chunks.push(chunk));

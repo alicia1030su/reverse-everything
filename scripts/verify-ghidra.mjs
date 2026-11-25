@@ -62,8 +62,11 @@ async function downloadArchive(destination) {
 }
 
 async function extractArchive(archive, destination, logFile) {
-  const result = spawnSync('tar', ['-xf', archive, '-C', destination], { encoding: 'utf8', shell: false, windowsHide: true, timeout: 10 * 60 * 1000, maxBuffer: 1_000_000 });
-  await writeFile(logFile, `$ tar -xf ${ARCHIVE_NAME}\n${result.stdout || ''}${result.stderr || ''}`, 'utf8');
+  const windows = process.platform === 'win32';
+  const command = windows ? 'tar' : 'unzip';
+  const args = windows ? ['-xf', archive, '-C', destination] : ['-q', archive, '-d', destination];
+  const result = spawnSync(command, args, { encoding: 'utf8', shell: false, windowsHide: true, timeout: 10 * 60 * 1000, maxBuffer: 1_000_000 });
+  await writeFile(logFile, `$ ${[command, ...args].join(' ')}\n${result.stdout || ''}${result.stderr || ''}`, 'utf8');
   if (result.error || result.status !== 0) throw new Error(`Unable to extract verified Ghidra archive: ${result.error?.message || result.stderr || `exit ${result.status}`}`);
 }
 
