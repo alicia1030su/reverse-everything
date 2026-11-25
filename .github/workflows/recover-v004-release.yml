@@ -46,7 +46,6 @@ jobs:
           REPO: alicia1030su/reverse-everything
         run: |
           set -euo pipefail
-          git cat-file -e 2e155abe0248ce6224181ba882f24c5e7ef1b866^{commit}
           node scripts/release-provenance.mjs verify \
             --dir dist/release --tag "$TAG" --version "$VERSION" \
             --tag-commit "$COMMIT" --skip-tag-check
