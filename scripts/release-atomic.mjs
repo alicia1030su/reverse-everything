@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process';
+import { createReadStream } from 'node:fs';
 import { readFile, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -213,20 +213,29 @@ async function ensureDraft(repo, tag, commit, manifestSha256) {
   return release;
 }
 
-function runGh(args, token) {
-  return new Promise((resolve, reject) => {
-    const child = spawn('gh', args, { env: { ...process.env, GH_TOKEN: token }, stdio: ['ignore', 'ignore', 'pipe'], windowsHide: true });
-    let stderr = '';
-    child.stderr.on('data', chunk => { if (stderr.length < 4000) stderr += chunk; });
-    child.on('error', reject);
-    child.on('close', code => {
-      if (code === 0) resolve();
-      else {
-        const detail = stderr.replace(/https?:\/\/\S+/g, '[redacted-url]');
-        reject(new Error('Asset upload failed' + (token ? ': ' + detail.split(token).join('[redacted-token]').trim() : '')));
-      }
-    });
+export function releaseAssetUploadUrl(uploadUrl, name) {
+  if (typeof uploadUrl !== 'string' || !/^https?:\/\//.test(uploadUrl)) throw new Error('Release upload URL is invalid');
+  const url = new URL(uploadUrl.replace(/\{.*$/, ''));
+  url.searchParams.set('name', name);
+  return url;
+}
+
+async function uploadAsset(release, name, file, token) {
+  const info = await stat(file);
+  const response = await fetch(releaseAssetUploadUrl(release.upload_url, name), {
+    method: 'POST',
+    headers: {
+      authorization: 'Bearer ' + token,
+      accept: 'application/vnd.github+json',
+      'content-type': 'application/octet-stream',
+      'content-length': String(info.size),
+      'x-github-api-version': '2022-11-28',
+    },
+    body: createReadStream(file),
+    duplex: 'half',
   });
+  if (!response.ok) throw new Error(`Release asset upload failed for ${name}: HTTP ${response.status}`);
+  return response.json();
 }
 
 async function verifyPublicRelease(repo, release, tag, commit, expected) {
@@ -243,8 +252,8 @@ async function upload(repo, tag, dir, commit, manifestSha256, expected) {
     await verifyPublicRelease(repo, release, tag, commit, expected);
     return release;
   }
-  await ensureDraft(repo, tag, commit, manifestSha256);
-  release = await getRelease(repo, tag);
+  const draft = await ensureDraft(repo, tag, commit, manifestSha256);
+  release = draft;
   const remote = new Map((release.assets ?? []).map(asset => [asset.name, asset]));
   for (const name of remote.keys()) if (!expected.some(asset => asset.name === name)) throw new Error('Refusing to add assets to a Draft containing unexpected asset: ' + name);
   const token = process.env.GH_TOKEN ?? process.env.GITHUB_TOKEN;
@@ -255,7 +264,7 @@ async function upload(repo, tag, dir, commit, manifestSha256, expected) {
       if (errors.length) throw new Error('Refusing to overwrite existing Release asset: ' + asset.name + '\n' + errors.join('\n'));
       continue;
     }
-    await runGh(['release', 'upload', tag, path.join(dir, asset.name), '--repo', repo], token);
+    await uploadAsset(release, asset.name, path.join(dir, asset.name), token);
   }
   const uploaded = await getRelease(repo, tag);
   const errors = verifyAssetCompleteness(uploaded.assets, expected);

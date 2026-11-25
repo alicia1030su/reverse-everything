@@ -55,8 +55,12 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
+          TAG: v0.0.4
+          REPO: alicia1030su/reverse-everything
         run: |
           set -euo pipefail
+          release_id="$(gh api "repos/$REPO/releases?per_page=100" --jq ".[] | select(.tag_name == \"$TAG\") | .id")"
+          test -n "$release_id"
           cat > /tmp/release-v004-notes.md <<'EOF'
           ## 逆向万物 v0.0.4
 
@@ -85,7 +89,7 @@ jobs:
 
           release-provenance-sha256:ccab9042c24e6d7e278b566e316693950367f89ec6400dc4663233778fa83fe0
           EOF
-          gh api -X PATCH repos/alicia1030su/reverse-everything/releases/458077214 \
+          gh api -X PATCH "repos/$REPO/releases/$release_id" \
             -F body=@/tmp/release-v004-notes.md >/dev/null
       - name: Upload missing Draft assets without overwriting
         shell: bash

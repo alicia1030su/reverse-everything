@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 // @ts-expect-error JavaScript release utility is exercised directly.
-import { evaluateRelease, expectedReleaseAssets, findReleaseByTag, provenanceMarker, verifyAssetCompleteness, verifyDraft } from '../../scripts/release-atomic.mjs';
+import { evaluateRelease, expectedReleaseAssets, findReleaseByTag, provenanceMarker, releaseAssetUploadUrl, verifyAssetCompleteness, verifyDraft } from '../../scripts/release-atomic.mjs';
 
 const commit = 'a'.repeat(40);
 const tag = 'v0.0.4';
@@ -31,6 +31,15 @@ describe('atomic release state', () => {
     expect(findReleaseByTag([{ id: 2, tag_name: 'v0.0.3' }, draft], tag)).toBe(draft);
     expect(findReleaseByTag([], tag)).toBeNull();
     expect(() => findReleaseByTag([draft, { id: 3, tag_name: tag, draft: true }], tag)).toThrow(/Multiple releases/);
+  });
+
+  it('builds asset upload URLs from the Draft release identity instead of the tag endpoint', () => {
+    const uploadUrl = 'https://uploads.github.com/repos/acme/product/releases/42/assets{?name,label}';
+    const url = releaseAssetUploadUrl(uploadUrl, 'asset file.bin');
+    expect(url.origin).toBe('https://uploads.github.com');
+    expect(url.pathname).toBe('/repos/acme/product/releases/42/assets');
+    expect(url.searchParams.get('name')).toBe('asset file.bin');
+    expect(() => releaseAssetUploadUrl('not-a-url', 'asset.bin')).toThrow(/upload URL is invalid/);
   });
 
   it('accepts only a non-prerelease Draft targeting the accepted commit', () => {
