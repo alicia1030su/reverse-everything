@@ -1,5 +1,5 @@
 import { mkdir, mkdtemp, readFile, readdir, rm, symlink, utimes, writeFile } from 'node:fs/promises';
-import { writeFileSync } from 'node:fs';
+import { utimesSync, writeFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import http from 'node:http';
 import os from 'node:os';
@@ -350,7 +350,7 @@ describe('persistent workflow',()=>{
     expect(db.artifacts(task.id)).toEqual([]);expect(await readdir(objectDir(dataDir,task.id))).toEqual([]);expect(db.getTask(task.id)?.status).toBe(action==='cancel'?'CANCELLED':'PAUSED');db.close();
   });
   it('revalidates digest after addArtifact and before commit',async()=>{
-    const {dataDir,db}=await setup();const content='verified';const original=db.addArtifact.bind(db);db.addArtifact=((...args:Parameters<typeof db.addArtifact>)=>{writeFileSync(args[2],'B'.repeat(args[3]));return original(...args);}) as typeof db.addArtifact;const engine=new WorkflowEngine(db,{dataDir,adapters:[adapter({prepare:async ctx=>{await ctx.writeArtifact('verified.txt',content,'text/plain');return {prepared:true};}})]});const project=db.project({name:'artifact-add-race',kind:'software',authorizationConfirmed:true});const task=await engine.create(project.id,{adapter:'file'});await engine.execute(task.id);
+    const {dataDir,db}=await setup();const content='verified';const original=db.addArtifact.bind(db);db.addArtifact=((...args:Parameters<typeof db.addArtifact>)=>{writeFileSync(args[2],'B'.repeat(args[3]));const changed=new Date(Date.now()+5000);utimesSync(args[2],changed,changed);return original(...args);}) as typeof db.addArtifact;const engine=new WorkflowEngine(db,{dataDir,adapters:[adapter({prepare:async ctx=>{await ctx.writeArtifact('verified.txt',content,'text/plain');return {prepared:true};}})]});const project=db.project({name:'artifact-add-race',kind:'software',authorizationConfirmed:true});const task=await engine.create(project.id,{adapter:'file'});await engine.execute(task.id);
     expect(db.getTask(task.id)?.status).toBe('FAILED');expect(db.getTask(task.id)?.error).toContain('integrity');expect(db.artifacts(task.id).some(item=>item.name==='verified.txt')).toBe(false);db.close();
   });
   it('does not reject committed publication when the GC warning cannot be logged',async()=>{
