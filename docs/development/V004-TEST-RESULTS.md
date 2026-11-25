@@ -20,8 +20,8 @@
 | `npm run build` | 通过 | contracts/evidence/security/ai/workflow/hardware/firmware/core/api/worker/cli/desktop/web 全量构建 |
 | `npm run typecheck` | 通过 | `tsc -b` 与 Web 类型检查 |
 | `npm run lint` | 通过 | 0 error / 0 warning |
-| `npm test` | 49 files passed；513 passed / 7 skipped | 真实 Worker、浏览器、SQLite、Windows 文件安全与恶意输入回归 |
-| `npx playwright test tests/e2e/web-v004.spec.ts` | 7/7 通过 | 九入口、硬件实验室、首次引导、移动导航、主题、运维、项目复建任务 |
+| `npm test` | 49 files passed；520 passed / 7 skipped | 真实 Worker、浏览器、SQLite、Windows 文件安全与恶意输入回归 |
+| `npm run test:e2e` | Windows 12/12；Ubuntu 11 passed / 1 skipped | 九入口、硬件实验室、首次引导、移动导航、主题、运维、项目复建任务与真实 Electron smoke |
 | `npx playwright test --config=playwright.desktop.config.ts` | 1/1 通过 | 真实 Electron 指标 smoke、文件任务、报告/证据/产物下载、sidecar 孤儿检查 |
 | `tests/integration/platform.test.ts` | 8/8 通过 | 独立 Worker、网页、游戏、安全、AI、SARIF、CLI/MCP |
 | 硬件 5 个测试文件 | 42 passed / 1 skipped | H0/H1、枚举、capture、HID、官方样本 fixture；自由文本仅返回哈希 |
@@ -38,19 +38,23 @@
 | 独立只读复审 | P0=0 / P1=0 | workflow、APK/JADX、Ghidra、hardware/firmware、桌面、release 与文档声明 |
 | Windows EXE / Portable | 通过 | EXE 与解包后 Portable 均以 `RE_SMOKE_TEST=1` 真实启动；health/capabilities/desktop metrics/neutral launcher 通过；未签名，不伪造代码签名 |
 
-## 最终候选包 SHA256
+## 最终 CI 真实验收（2026-11-25）
 
-| 文件 | SHA256 |
-|---|---|
-| `reverse-everything-server-0.0.4.tar.gz` | `c295d590d88fee7746f76a3094236a5e81fcab4e6d5d03e3e5243b181e98283a` |
-| `reverse-everything-cli-0.0.4.tgz` | `77e945a1250699f2e43322547d8823340ec58c2a0c9dd18054681d9ce5c9bcc2` |
-| `reverse-everything-skill-0.0.4.zip` | `d6530cf54023d685a186d77b0cd628947859fbdc58b43d347bf1927712be3c57` |
-| `Reverse-Everything-Setup-0.0.4-win-x64.exe` | `5b372b6a1ce73bf18c9d2304233fff95db40bfe7c690a4f02041348dcbcca636` |
-| `Reverse-Everything-Setup-0.0.4-win-x64.zip` | `ee9520d7158592bda71e006850b2b6ab71e71d149a69394fbcb7f64100a0500c` |
+| 检查 | 结果 | Evidence |
+|---|---|---|
+| 主 CI：Windows / Ubuntu / Docker | 全部通过 | Run `45593845956`，Commit `a9cfd0f8559bee95239411196bd333bb8e69d996` |
+| Windows / Ubuntu 单元与集成 | 49 files passed；520 passed / 7 skipped | 同一主 CI Run |
+| Windows / Ubuntu Web + Electron E2E | Windows 12/12；Ubuntu 11 passed / 1 skipped | 同一主 CI Run |
+| JADX 1.5.3 官方 archive 与真实已知答案 | 通过 | Run `45593845938`；archive SHA256 `8280f3799c0273fe797a2bcd90258c943e451fd195f13d05400de5e6451d15ec` |
+| Ghidra 12.2 / JDK25 官方 PE/ELF 已知答案 | Ubuntu PE/ELF 与 Windows PE 全部通过 | Run `45593845917`；archive SHA256 `2c2cd776db3c1f6a097ba418922378ac3649cadd5e844a6f5f088ae628a7be67` |
+| 确定性 APK fixture | 通过 | SHA256 `e95e6ba09e583baca616c83e9576517847d7f3a320c97b5ed6f8983ae63cd07b` |
+
+## 候选包与 digest
+
+最终候选包必须由合并后的冻结 Commit 通过 `Release v004` 工作流重新构建。权威 digest 以该工作流生成的 `RELEASE-MANIFEST.json`、`SHA256SUMS.txt` 与 GitHub Release digest 为准；本文件不固化会被重建改变的历史包哈希。
 
 ## 未验证与外部限制
 
-- Ghidra 12.2/JDK25 与 JADX 1.5.3 的官方已知答案 CI 尚未在本工作区完成；能力保持 `PARTIAL` / `BLOCKED`，fake 工具测试不等于真实验收。
 - 未获得物理 USB 设备、实时捕获、驱动安装、串口实时读取或刷写授权。
-- Docker/Linux/macOS 与代码签名未在本机执行；不得标为通过。
-- v0.0.4 Tag、Draft/正式 Release、CI Run ID 与公开资产 digest 尚未创建。
+- Linux/Ubuntu 与 Docker 已在官方 CI 验证；macOS 与代码签名未验证。
+- v0.0.4 Tag、Draft/正式 Release、候选 Run ID 与公开资产 digest 尚未创建。
