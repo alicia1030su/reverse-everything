@@ -193,10 +193,9 @@ public class ExportMetadata extends GhidraScript {
           if (callFunctionScanCount++ >= MAX_FUNCTIONS) { limit("Call scan was limited to 10000 functions"); break; }
           if (callCount >= MAX_CALLS) { limit("Call inventory was limited to 10000 edges"); break; }
           Function function = functions.next();
-          FunctionIterator called = function.getCalledFunctions(monitor);
-          while (called.hasNext()) {
+          Set<Function> called = function.getCalledFunctions(monitor);
+          for (Function callee : called) {
             if (callCount >= MAX_CALLS) { limit("Call inventory was limited to 10000 edges"); callsLimited = true; break; }
-            Function callee = called.next();
             String key = function.getEntryPoint() + "->" + callee.getEntryPoint();
             if (!callKeys.add(key)) continue;
             String item = (callCount > 0 ? "," : "") + "{\"caller\":" + q(function.getName()) + ",\"callee\":" + q(callee.getName()) + "}";

@@ -355,7 +355,12 @@ function argsOf(argv) {
     const arg = argv[index];
     if (arg === '--build-fixture') args.buildFixture = true;
     else if (arg === '--check-fixture') args.checkFixture = true;
-    else if (arg === '--archive' || arg === '--jadx-home' || arg === '--apk' || arg === '--log') args[arg.slice(2)] = argv[++index];
+    else if (arg === '--archive' || arg === '--jadx-home' || arg === '--apk' || arg === '--log') {
+      const value = argv[++index];
+      if (!value) throw new Error(`Missing value for ${arg}`);
+      if (arg === '--jadx-home') args.jadxHome = value;
+      else args[arg.slice(2)] = value;
+    }
     else throw new Error(`Unknown argument: ${arg}`);
   }
   return args;

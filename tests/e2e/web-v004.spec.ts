@@ -1,14 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
+import { openWorkspace } from './workspace';
 
-const onboardingKey = 'reverse-everything:onboarding:v1';
 const themeKey = 'reverse-everything:theme';
-
-async function openWorkspace(page: Page, path = '/new'): Promise<void> {
-  await page.addInitScript(({ key }) => {
-    window.localStorage.setItem(key, JSON.stringify({ completed: true }));
-  }, { key: onboardingKey });
-  await page.goto(path);
-}
 
 async function createFileProject(page: Page, name: string, fileName = 'sample.json'): Promise<string> {
   await page.request.get('/api/session');

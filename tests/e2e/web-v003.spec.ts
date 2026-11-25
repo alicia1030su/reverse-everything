@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { openWorkspace } from './workspace';
 
 async function createCompletedFileTask(page:Page):Promise<{projectId:string;taskId:string;projectName:string}>{
   await page.request.get('/api/session');
@@ -24,7 +25,7 @@ async function createCompletedFileTask(page:Page):Promise<{projectId:string;task
 
 test('global evidence search returns cross-task evidence and opens the task',async({page})=>{
   const fixture=await createCompletedFileTask(page);
-  await page.goto('/evidence');
+  await openWorkspace(page,'/evidence');
   await expect(page.getByRole('heading',{name:'证据探索器'})).toBeVisible();
   await expect(page.getByText('不指定任务时搜索所有任务的持久化证据。')).toBeVisible();
   await page.getByLabel('全局证据搜索').fill('Input identity');
@@ -41,7 +42,7 @@ test('global evidence search returns cross-task evidence and opens the task',asy
 });
 
 test('backup center exposes real creation confirmation and isolated preview',async({page})=>{
-  await page.goto('/operations/backups');
+  await openWorkspace(page,'/operations/backups');
   await expect(page.getByRole('heading',{name:'备份中心'})).toBeVisible();
   await expect(page.getByText('恢复只写入服务端自动分配的隔离目录')).toBeVisible();
   await page.getByRole('button',{name:'创建备份'}).click();

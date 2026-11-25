@@ -31,10 +31,19 @@ async function restrictWindowsSnapshotDirectory(dir: string): Promise<void> {
 }
 async function assertWindowsNonReparsePath(file: string): Promise<void> {
   if (process.platform !== 'win32') return;
+  const absolute = path.resolve(file);
   let canonical: string;
-  try { canonical = await realpath(file); }
+  try { canonical = await realpath(absolute); }
   catch (error) { if ((error as { code?: string }).code === 'ENOENT') throw new ArtifactAccessError('Artifact not found'); throw error; }
-  if (path.resolve(canonical).toLowerCase() !== path.resolve(file).toLowerCase()) throw new ArtifactAccessError('Artifact path traverses a Windows reparse point');
+  const root = path.parse(absolute).root;
+  let current = root;
+  for (const component of absolute.slice(root.length).split(path.sep).filter(Boolean)) {
+    current = path.join(current, component);
+    const info = await lstat(current).catch(error => { if ((error as { code?: string }).code === 'ENOENT') throw new ArtifactAccessError('Artifact not found'); throw error; });
+    if (info.isSymbolicLink()) throw new ArtifactAccessError('Artifact path traverses a Windows reparse point');
+  }
+  const [original, resolved] = await Promise.all([lstat(absolute), lstat(canonical)]);
+  if (!sameFileIdentity(original, resolved)) throw new ArtifactAccessError('Artifact path traverses a Windows reparse point');
 }
 async function openRegularFile(file: string): Promise<FileHandle> {
   const before = await lstat(file).catch(error => { if ((error as { code?: string }).code === 'ENOENT') throw new ArtifactAccessError('Artifact not found'); throw error; });

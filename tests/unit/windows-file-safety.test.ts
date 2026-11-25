@@ -1,12 +1,12 @@
 import { createHash } from 'node:crypto';
 import { execFile } from 'node:child_process';
-import { lstat, mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
+import { lstat, link, mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ArtifactAccessError, readVerifiedFile, snapshotVerifiedFile } from '@reverse/evidence';
 
-const controls = vi.hoisted(() => ({ failAcl: false, snapshotDirs: [] as string[], swapTarget: '', swapped: false }));
+const controls = vi.hoisted(() => ({ failAcl: false, snapshotDirs: [] as string[], swapTarget: '', swapped: false, realpathTarget: '', realpathAlias: '' }));
 vi.mock('node:child_process', async importOriginal => {
   const actual = await importOriginal<typeof import('node:child_process')>();
   return { ...actual, execFile: ((...args: Parameters<typeof actual.execFile>) => {
@@ -26,11 +26,11 @@ vi.mock('node:fs/promises', async importOriginal => {
       controls.swapped = true; const replacement = `${String(args[0])}.old`; await actual.rename(String(args[0]), replacement); await actual.writeFile(String(args[0]), 'LEAK');
     }
     return info;
-  } };
+  }, realpath: async (...args: Parameters<typeof actual.realpath>) => String(args[0]) === controls.realpathTarget ? controls.realpathAlias : actual.realpath(...args) };
 });
 
 const dirs: string[] = [];
-afterEach(async () => { controls.failAcl = false; controls.snapshotDirs = []; controls.swapTarget = ''; controls.swapped = false; for (const dir of dirs.splice(0)) await rm(dir, { recursive: true, force: true }); });
+afterEach(async () => { controls.failAcl = false; controls.snapshotDirs = []; controls.swapTarget = ''; controls.swapped = false; controls.realpathTarget = ''; controls.realpathAlias = ''; for (const dir of dirs.splice(0)) await rm(dir, { recursive: true, force: true }); });
 async function setup() { const dir = await mkdtemp(path.join(os.tmpdir(), 're-windows-file-safety-')); dirs.push(dir); return dir; }
 const digest = (value: string) => createHash('sha256').update(value).digest('hex');
 function run(command: string, args: string[]): Promise<string> { return new Promise((resolve, reject) => execFile(command, args, { timeout: 5000, windowsHide: true }, (error, stdout) => error ? reject(error) : resolve(stdout))); }
@@ -41,6 +41,11 @@ describe('Windows file safety', () => {
     const dir = await setup(); const artifacts = path.join(dir, 'artifacts'); const outside = path.join(dir, 'outside'); await mkdir(artifacts); await mkdir(outside);
     const value = 'outside-secret'; const target = path.join(outside, 'secret'); await writeFile(target, value); await symlink(outside, path.join(artifacts, 'junction'), 'junction');
     await expect(readVerifiedFile(path.join(artifacts, 'junction', 'secret'), Buffer.byteLength(value), digest(value))).rejects.toBeInstanceOf(ArtifactAccessError);
+  });
+  it.runIf(process.platform === 'win32')('accepts a canonical alias with the same file identity and no link component', async () => {
+    const dir = await setup(); const file = path.join(dir, 'artifact'); const alias = path.join(dir, 'canonical-alias'); const value = 'canonical alias bytes'; await writeFile(file, value); await link(file, alias);
+    controls.realpathTarget = file; controls.realpathAlias = alias;
+    await expect(readVerifiedFile(file, Buffer.byteLength(value), digest(value))).resolves.toEqual(Buffer.from(value));
   });
   it.skipIf(process.platform !== 'win32')('rejects a final-component symbolic-link reparse point', async ({ skip }) => {
     const dir = await setup(); const value = 'outside-secret'; const target = path.join(dir, 'target'); const link = path.join(dir, 'link'); await writeFile(target, value);
