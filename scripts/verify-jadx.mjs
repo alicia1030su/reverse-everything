@@ -315,7 +315,7 @@ async function run(command, args, options = {}) {
     child.stdout.on('data', chunk => { stdout = append(stdout, chunk); });
     child.stderr.on('data', chunk => { stderr = append(stderr, chunk); });
     child.once('error', error => finish(new Error(`Unable to start ${command}: ${error.message}`)));
-    child.once('close', code => code === 0 ? finish(null, { code, stdout, stderr }) : finish(new Error(`JADX exited with code ${code}: ${(stderr || stdout).slice(0, 2000)}`)));
+    child.once('close', code => code === 0 ? finish(null, { code, stdout, stderr }) : finish(new Error(`JADX exited with code ${code}; stdout: ${stdout.slice(-8000) || 'none'}; stderr: ${stderr.slice(-8000) || 'none'}`)));
   });
 }
 
