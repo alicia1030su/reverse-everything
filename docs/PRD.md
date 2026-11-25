@@ -34,7 +34,7 @@ v0.0.4 聚焦原生静态分析、Android、离线协议、硬件/固件与全�
 | firmware | BIN/IMG/HEX/UF2/ELF/ZIP | `firmware` | `firmware` | 身份、熵、字符串、布局、组件/SBOM 线索 |
 | board | 开发板 USB/HID/枚举记录 | `hardware` | `hardware` | 只读串口/设备列表与离线记录分析；不调用 firmware，不宣称特定品牌/型号或实时设备支持 |
 
-`board` 是硬件场景路由，不新增 `board` adapter 或项目 kind。Ghidra 是 `software` 卡片内高级选项，使用独立 `ghidra` adapter；在真实 Ghidra/JDK 已知答案 CI 完成前保持 `PARTIAL` / `BLOCKED`。JADX 同理。
+`board` 是硬件场景路由，不新增 `board` adapter 或项目 kind。Ghidra 是 `software` 卡片内高级选项，使用独立 `ghidra` adapter；Ghidra 12.2/JDK25 与 JADX 1.5.3 已通过官方已知答案 CI，验证范围限于 CI 覆盖的 PE/ELF/APK 样本。
 
 ## 4. 核心流程
 
@@ -77,7 +77,7 @@ v0.0.4 聚焦原生静态分析、Android、离线协议、硬件/固件与全�
 - `MISSING`：未实现。
 - `VERIFIED` 只能用于可重复测试证据，不能仅凭代码存在。
 
-Ghidra/JADX 在真实 CI 证据完成前不得标 `VERIFIED`。物理设备、实时 USB 捕获与刷写在未授权时保持 `BLOCKED` 或禁用。
+Ghidra/JADX 仅在官方 CI 已知答案范围内可标 `VERIFIED`，不扩展到未测试格式、架构或物理设备。物理设备、实时 USB 捕获与刷写在未授权时保持 `BLOCKED` 或禁用。
 
 ## 8. 硬件、固件与安全需求
 

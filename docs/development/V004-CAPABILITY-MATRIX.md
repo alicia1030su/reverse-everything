@@ -21,15 +21,15 @@
 | 能力 | 状态 | 实现证据 | 验收边界 / 剩余动作 |
 |---|---|---|---|
 | PE/ELF/Mach-O 元数据 | IMPLEMENTED | `packages/core/src/adapters/file.ts` | 头、section/import、熵、字符串；不是反编译 |
-| Ghidra Headless 进程链 | PARTIAL | `packages/core/src/adapters/ghidra.ts` | fake headless/故障注入不等于真实工具验收 |
-| Ghidra 伪代码 | PARTIAL（代码已实现） | `ghidra.ts` DecompInterface/postScript | 真实 Ghidra/JDK 已知答案 CI 完成前不得标 VERIFIED |
-| Ghidra 调用图 | PARTIAL（代码已实现） | `ghidra.ts` 直接调用边/postScript | 真实 CI 待验收 |
-| Ghidra 字符串引用 | PARTIAL（代码已实现） | `ghidra.ts` address/reference 类型 | 真实 CI 待验收 |
-| Ghidra Windows/打包启动 | PARTIAL | `scripts/ghidra-analyze-headless.mjs`；打包脚本 | Server TGZ/neutral CWD 真实启动待最终门禁 |
+| Ghidra Headless 进程链 | VERIFIED（CI 已知答案） | `packages/core/src/adapters/ghidra.ts` | 官方 Ghidra 12.2/JDK25 Ubuntu PE/ELF 与 Windows PE 通过 |
+| Ghidra 伪代码 | VERIFIED（CI 已知答案） | `ghidra.ts` DecompInterface/postScript | 已知函数伪代码通过；不覆盖所有架构/格式 |
+| Ghidra 调用图 | VERIFIED（CI 已知答案） | `ghidra.ts` 直接调用边/postScript | 已知直接调用边通过 |
+| Ghidra 字符串引用 | VERIFIED（CI 已知答案） | `ghidra.ts` address/reference 类型 | 已知字符串 address/function 引用通过 |
+| Ghidra Windows/打包启动 | VERIFIED（Windows CI）/候选包复验 | `scripts/ghidra-analyze-headless.mjs`；打包脚本 | Windows Node launcher 官方 CI 通过；最终 Server/Desktop 包由 release workflow smoke |
 | APK ZIP 安全清单 | IMPLEMENTED | `packages/core/src/adapters/apk.ts` | 条数、压缩比、路径、流式/完整性边界；最终回归以门禁为准 |
 | AXML Manifest | IMPLEMENTED | `apk.ts` | package/permission 候选，不执行应用 |
 | DEX 元数据 | IMPLEMENTED | `apk.ts` | string/type/proto/method/class 表；无指令级完整反编译声明 |
-| JADX/等效 Android 反编译 | PARTIAL（代码已实现） | `apk.ts` 真实进程链 | 真实 WorkflowEngine/CI、产物命名/哈希/输入身份证据完成前不得标 VERIFIED |
+| JADX/等效 Android 反编译 | VERIFIED（CI 已知答案） | `apk.ts` 真实进程链 | 官方 JADX 1.5.3 archive、真实 Java/方法/字符串/Manifest/资源与生产适配器测试通过 |
 | iOS 深度分析 | MISSING | 无对应 adapter | 不在 v0.0.4 默认承诺 |
 
 ## 网页、协议与游戏

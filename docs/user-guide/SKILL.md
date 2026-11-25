@@ -19,7 +19,7 @@ node skills/reverse-everything/scripts/inspect-task.mjs <task-id>
 5. 读取证据、`UNKNOWN` 与报告，区分 `EVIDENCE` / `INFERENCE` / `VERIFIED`。
 6. 导出产物并核对 SHA-256。
 
-开发板不是新 adapter：串口/设备只读列表来自硬件 API，固件使用 `firmware` 任务。Ghidra/JADX 在真实工具 CI 证据完成前保持 `PARTIAL` / `BLOCKED`。
+开发板不是新 adapter：串口/设备只读列表来自硬件 API，固件使用 `firmware` 任务。Ghidra/JADX 已通过官方工具已知答案 CI；使用范围限于已验证样本与格式，不替代物理设备或未授权目标验收。
 
 ## 安全
 

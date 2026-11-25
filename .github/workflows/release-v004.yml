@@ -55,23 +55,7 @@ jobs:
           version="$(node scripts/release-atomic.mjs version --root .)"
           tag="v$version"
           export COMMIT="$commit"
-          node --input-type=module <<'NODE'
-          const repo = process.env.GITHUB_REPOSITORY;
-          const commit = process.env.COMMIT;
-          const token = process.env.GH_TOKEN;
-          const workflow = process.env.WORKFLOW_NAME;
-          if (!repo || !commit || !token || !workflow) throw new Error('Missing CI verification context');
-          const response = await fetch(`https://api.github.com/repos/${repo}/commits/${commit}/check-runs?filter=latest&per_page=100`, {
-            headers: { authorization: `Bearer ${token}`, accept: 'application/vnd.github+json', 'x-github-api-version': '2022-11-28' },
-          });
-          if (!response.ok) throw new Error(`CI check-runs API returned HTTP ${response.status}`);
-          const body = await response.json();
-          const checks = (body.check_runs ?? []).filter(run => !String(run.name ?? '').startsWith(workflow + ' /'));
-          if (checks.length < 1) throw new Error('No CI checks found for the frozen commit');
-          const failed = checks.filter(run => run.status !== 'completed' || !['success', 'neutral', 'skipped'].includes(run.conclusion));
-          if (failed.length) throw new Error('CI has not completed successfully: ' + failed.map(run => run.name).join(', '));
-          console.log(`CI checks passed: ${checks.length}`);
-          NODE
+          node scripts/verify-release-workflows.mjs --repo "$GITHUB_REPOSITORY" --commit "$COMMIT" --branch main
           echo "commit=$commit" >> "$GITHUB_OUTPUT"
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"

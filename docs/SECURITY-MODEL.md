@@ -126,5 +126,5 @@
 - DNS 固定不能防止目标网页自身发起合法的同源恶意行为。
 - 静态规则存在误报/漏报；在线依赖漏洞匹配未启用。
 - 硬件只读枚举受 OS 权限与字段限制；不代表物理设备验收。
-- Ghidra/JADX 在真实 CI 证据完成前为 `PARTIAL` / `BLOCKED`，不得标 `VERIFIED`。
+- Ghidra/JADX 仅在官方 CI 已知答案范围内为 `VERIFIED`；外部安装仍区分 archive/external provenance，未测试格式、架构与物理设备不得外推。
 - 运行时原生程序沙箱、容器 seccomp 细粒度策略与自动内存熔断仍受最终门禁约束。

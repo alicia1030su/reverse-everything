@@ -33,7 +33,7 @@ export RE_DATA_DIR=/absolute/data
 | firmware | `firmware` | `firmware` |
 | board | `hardware` | `hardware` |
 
-第七类入口 id 为 `usb`，CLI/API 对应 `hardware`。`board` 是开发板场景路由，仅复用 `hardware`，不调用 `firmware`，不是新 adapter，也不宣称特定品牌/型号或实时设备支持。Ghidra 使用 `software` 项目与 `ghidra` adapter；真实 Ghidra/JDK CI 证据完成前保持 `PARTIAL` / `BLOCKED`。
+第七类入口 id 为 `usb`，CLI/API 对应 `hardware`。`board` 是开发板场景路由，仅复用 `hardware`，不调用 `firmware`，不是新 adapter，也不宣称特定品牌/型号或实时设备支持。Ghidra 使用 `software` 项目与 `ghidra` adapter；官方 Ghidra/JDK 已知答案 CI 已通过，验证范围限于 CI 覆盖的 PE/ELF 样本。
 
 ## 健康、能力与资源
 

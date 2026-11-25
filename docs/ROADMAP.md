@@ -38,7 +38,7 @@
 
 ### 部分完成或阻塞
 
-- Ghidra/JADX：真实已知答案 CI、工具 provenance、打包路径与 WorkflowEngine 证据完成前保持 `PARTIAL` / `BLOCKED`。
+- Ghidra/JADX：官方已知答案 CI 与工具 provenance 已通过；最终发行包路径由候选工作流复验，未测试格式/架构不宣称支持。
 - 硬件：官方离线样本与本机只读枚举需最终门禁；物理设备、实时捕获、驱动与刷写未授权。
 - 网页兼容产物仍为静态预览，不是完整动态网站克隆。
 - AI Planner/Validator 与 bounded repair 保持受限，不宣称自动代码修复。

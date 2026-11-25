@@ -4,9 +4,9 @@
 
 ## 外部工具与真实验收
 
-- Ghidra 伪代码、调用图、字符串引用与 JADX 反编译代码已实现，但真实已知答案 CI 完成前保持 `PARTIAL` / `BLOCKED`，不得标为 `VERIFIED`。
-- fake headless、故障注入与 fake model 测试不能替代真实 Ghidra/JDK/JADX/模型验收。
-- Server TGZ、Windows EXE/Portable 的 neutral CWD 外部工具启动需最终门禁确认。
+- Ghidra 伪代码、调用图、字符串引用与 JADX 反编译已通过官方已知答案 CI；仅在 CI 覆盖的 PE/ELF/APK 范围内标 `VERIFIED`。
+- fake headless、故障注入与 fake model 测试仍不能替代真实工具验收；真实 CI 证据以 `V004-TEST-RESULTS.md` 为准。
+- Server TGZ、Windows EXE/Portable 的 neutral CWD 外部工具启动由最终候选工作流再次确认。
 
 ## 硬件与固件
 

@@ -136,6 +136,14 @@ describe('firmware malicious, signature and resource regressions',()=>{
     const {stdout}=await promisify(execFile)(process.execPath,['--input-type=module','-e',script,file],{maxBuffer:4096});const result=JSON.parse(stdout) as {size:number;bins:number;read:number;maxRSS:number};
     expect(result.size).toBe(32*1024*1024);expect(result.bins).toBe(512);expect(result.read).toBeLessThan(result.size*4);expect(result.maxRSS).toBeLessThan(112*1024);
   },30_000);
+  it('keeps UTF-16LE scanning bounded under a 64MiB heap on a 32MiB high-byte image',async()=>{
+    const file=path.join(await temp(),'utf16-oom.img');await writeFile(file,Buffer.alloc(32*1024*1024,Buffer.from([0x41,0x00])));
+    const moduleUrl=pathToFileURL(path.resolve('packages/firmware/dist/index.js')).href;
+    const script=`import {analyzeFirmware} from ${JSON.stringify(moduleUrl)};const r=await analyzeFirmware({file:process.argv[1],name:'utf16-oom.img'});console.log(JSON.stringify({size:r.size,strings:r.strings.count,truncated:r.strings.truncated,maxRSS:process.resourceUsage().maxRSS}));`;
+    const {stdout}=await promisify(execFile)(process.execPath,['--max-old-space-size=64','--input-type=module','-e',script,file],{maxBuffer:4096,timeout:20_000});
+    const result=JSON.parse(stdout) as {size:number;strings:number;truncated:boolean;maxRSS:number};
+    expect(result.size).toBe(32*1024*1024);expect(result.strings).toBeGreaterThan(0);expect(result.truncated).toBe(true);expect(result.maxRSS).toBeLessThan(112*1024);
+  },30_000);
   it('fails closed on deterministic malformed mutations of known formats',async()=>{
     const fixtures=[knownHex(),knownUf2(),knownElf(),mbrHeader(),await zip([{name:'safe.txt',data:'fixture'}])];
     for(const fixture of fixtures)for(let mutation=0;mutation<6;mutation++){const data=Buffer.from(fixture);data[mutation*17%data.length]=data[mutation*17%data.length]!^0xff;try{const result=await analyzeFirmware(await input('fuzz.bin',data),{firmwareMaxHexRecords:100,firmwareMaxUf2Blocks:100});expect(result.sha256).toMatch(/^[0-9a-f]{64}$/);expect(result.size).toBe(data.length);}catch(error){expect(error).toBeInstanceOf(Error);expect((error as Error).message).not.toMatch(/ENOENT|ECONN|timeout/i);}}

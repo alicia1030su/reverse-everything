@@ -103,8 +103,8 @@ validate(ctx) → reproducible checks and limitations
 
 ## 8. 外部工具与证据状态
 
-- Ghidra：headless 进程、隔离项目、函数/伪代码/调用图/字符串引用代码已实现；真实 Ghidra/JDK 已知答案 CI 未完成前为 `PARTIAL` / `BLOCKED`。
-- JADX：APK 反编译进程链与产物代码已实现；真实 WorkflowEngine/CI 与已知答案证据未完成前为 `PARTIAL` / `BLOCKED`。
+- Ghidra：headless 进程、隔离项目、函数/伪代码/调用图/字符串引用已通过官方 Ghidra 12.2/JDK25 的 Ubuntu PE/ELF 与 Windows PE 已知答案 CI；不扩展到未测试格式或架构。
+- JADX：APK 反编译进程链、产物与输入身份已通过官方 JADX 1.5.3 archive 和真实已知答案 CI；最终发行包仍由候选工作流重新验收。
 - 本地 fake headless、故障注入与替身测试不能标为真实工具 `VERIFIED`。
 - 工具版本、实际可执行文件、输入副本与产物哈希必须进入证据/manifest。
 
