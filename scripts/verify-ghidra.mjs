@@ -148,6 +148,21 @@ function taskContext(dataDir, name, buffer) {
   };
 }
 
+async function captureApplicationLog(format) {
+  if (!evidence.tool.version) return;
+  const configBase = process.platform === 'win32'
+    ? process.env.APPDATA
+    : process.env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config');
+  if (!configBase) return;
+  const logFile = path.join(configBase, 'ghidra', `ghidra_${evidence.tool.version}_PUBLIC`, 'application.log');
+  try {
+    const content = await readFile(logFile, 'utf8');
+    await writeFile(path.join(OUTPUT_DIR, `${format}-application.log`), content.slice(-250_000), 'utf8');
+  } catch {
+    // The application log is optional diagnostic evidence; stdout/stderr remain authoritative.
+  }
+}
+
 async function analyzeFixture(format, binary, binarySha256, work, adapter) {
   const dataDir = path.join(work, `runtime-${format}`);
   const uploadDir = path.join(dataDir, 'uploads', 'ghidra-v004-fixture');
@@ -195,6 +210,7 @@ try {
       const fixture = await compileFixture(format, work);
       evidence.fixtures.push(await analyzeFixture(format, fixture.binary, fixture.sha256, work, ghidraAdapter));
     } catch (error) {
+      await captureApplicationLog(format);
       evidence.fixtures.push({ format, passed: false, error: error instanceof Error ? error.message : String(error) });
     }
   }

@@ -215,7 +215,7 @@ function buildManifest(expected) {
 
 async function zip(entries) {
   const archive = new yazl.ZipFile();
-  for (const entry of entries) archive.addBuffer(entry.data, entry.name, { mtime: new Date('1980-01-01T00:00:00Z'), mode: 0o100644, compress: false });
+  for (const entry of entries) archive.addBuffer(entry.data, entry.name, { mtime: new Date(1980, 0, 1), mode: 0o100644, compress: false, forceDosTimestamp: true });
   return new Promise((resolve, reject) => {
     const chunks = [];
     archive.outputStream.on('data', chunk => chunks.push(chunk));
@@ -240,7 +240,7 @@ async function buildFixture() {
   const provenance = {
     fixture: 'minimal.apk',
     generator: 'scripts/verify-jadx.mjs --build-fixture',
-    generationMethod: 'Deterministic synthetic DEX 035 and binary AXML assembled in Node.js; mirrors the checked-in Fixture.java and AndroidManifest.xml known answers. No APK is executed.',
+    generationMethod: 'Deterministic synthetic DEX 035 and binary AXML assembled in Node.js with stored ZIP entries and timezone-independent DOS timestamps; mirrors the checked-in Fixture.java and AndroidManifest.xml known answers. No APK is executed.',
     sourceSha256: sha256(source),
     manifestSourceSha256: sha256(manifestSource),
     dexSha256: sha256(dex),

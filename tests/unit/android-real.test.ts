@@ -18,6 +18,20 @@ async function context():Promise<TaskContext>{
 }
 
 describe('Android known-answer APK fixture',()=>{
+  it('uses timezone-independent ZIP timestamps',async()=>{
+    const apk=await readFile(path.join(fixtureDir,'minimal.apk'));
+    expect(apk.readUInt32LE(0)).toBe(0x04034b50);
+    expect(apk.readUInt16LE(10)).toBe(0);
+    expect(apk.readUInt16LE(12)).toBe(0x0021);
+    const extraStart=30+apk.readUInt16LE(26),extraEnd=extraStart+apk.readUInt16LE(28);
+    let offset=extraStart;
+    while(offset<extraEnd){
+      const id=apk.readUInt16LE(offset),size=apk.readUInt16LE(offset+2);
+      expect(id).not.toBe(0x5455);
+      offset+=4+size;
+    }
+    expect(offset).toBe(extraEnd);
+  });
   it('is deterministic and built-in ZIP/AXML/DEX analysis matches every known answer',async()=>{
     execFileSync(process.execPath,[path.join(root,'scripts','verify-jadx.mjs'),'--check-fixture'],{cwd:root,stdio:'pipe'});const ctx=await context(),expected=JSON.parse(await readFile(path.join(fixtureDir,'expected.json'),'utf8')) as {packageName:string;className:string;methodName:string;stringValue:string;resourcePath:string;permission:string;declaredPermission:string};ctx.options.apkDecompile=false;ctx.stageOutputs.PREPARE=await apkAdapter.prepare(ctx);const result=await apkAdapter.analyze(ctx) as ApkAnalysis;
     expect(result.sha256).toBe(ctx.upload?.sha256);expect(result.manifest).toMatchObject({format:'binary-axml',packageName:expected.packageName,permissions:[expected.permission],declaredPermissions:[expected.declaredPermission]});expect(result.entries.names).toContain(expected.resourcePath);expect(result.dexFiles).toHaveLength(1);expect(result.dexFiles[0]?.classDefs.values).toContain(`L${expected.className.replaceAll('.','/')};`);expect(result.dexFiles[0]?.methodIds.values).toEqual(expect.arrayContaining([expect.objectContaining({name:expected.methodName}),expect.objectContaining({name:'<init>'})]));expect(result.dexFiles[0]?.stringIds.values).toContain(expected.stringValue);expect(result.decompilation).toMatchObject({status:'BLOCKED',requested:false});
