@@ -223,7 +223,7 @@ async function probeJadx(tool:JadxTool,signal?:AbortSignal,registerProcess?:((pi
     const finish=(value:{version:string}|{reason:string})=>{if(settled)return;settled=true;clearTimeout(timer);signal?.removeEventListener('abort',onAbort);unregisterProcess?.();resolve(value);};
     const terminate=(reason:string)=>{if(settled||killing)return;killing=true;void killTree(child).then(()=>finish({reason}));};
     const onAbort=()=>terminate('JADX availability probe was aborted');
-    const timer=setTimeout(()=>terminate('JADX version probe timed out'),5_000);signal?.addEventListener('abort',onAbort,{once:true});
+    const timer=setTimeout(()=>terminate('JADX version probe timed out'),15_000);signal?.addEventListener('abort',onAbort,{once:true});
     const append=(chunk:Buffer)=>{if(output.length<8192)output+=chunk.toString('utf8').slice(0,8192-output.length);};child.stdout?.on('data',append);child.stderr?.on('data',append);
     child.once('error',error=>finish({reason:`Unable to start JADX: ${error.message}`}));child.once('close',code=>{if(settled||killing)return;if(code!==0){finish({reason:`JADX version probe exited with code ${code}`});return;}const versionOutput=output.replace(/\u001b\[[0-?]*[ -/]*[@-~]/g,'').trim();if(!new RegExp(`^(?:jadx\\s+)?${JADX_VERSION.replaceAll('.','\\.')}\\s*$`,'im').test(versionOutput)){finish({reason:`JADX version must be pinned to ${JADX_VERSION}; probe returned ${redactSensitive(versionOutput).slice(0,300)||'no version'}`});return;}finish({version:JADX_VERSION});});
     if(child.pid!==undefined&&registerProcess){try{unregisterProcess=registerProcess(child.pid);}catch(error){terminate(error instanceof Error?error.message:String(error));}}

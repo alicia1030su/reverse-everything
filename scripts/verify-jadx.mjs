@@ -329,7 +329,7 @@ async function verifyRealJadx(home, apk) {
   const cliSha256 = await hashFile(cli);
   const java = javaCommand();
   const prefix = ['-cp', path.join(resolved, 'lib', '*'), 'jadx.cli.JadxCLI'];
-  const version = await run(java, [...prefix, '--version'], { timeoutMs: 10000 });
+  const version = await run(java, [...prefix, '--version'], { timeoutMs: 30000 });
   const versionOutput = `${version.stdout}${version.stderr}`.replace(/\u001b\[[0-?]*[ -/]*[@-~]/g, '').trim();
   if (!new RegExp(`^(?:jadx\\s+)?${JADX_VERSION.replaceAll('.', '\\.')}\\s*$`, 'im').test(versionOutput)) throw new Error(`JADX version probe did not report ${JADX_VERSION}: ${versionOutput.slice(0, 500)}`);
   const work = await mkdtemp(path.join(os.tmpdir(), 're-jadx-verify-'));
