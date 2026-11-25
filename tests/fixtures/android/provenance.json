@@ -1,0 +1,15 @@
+{
+  "fixture": "minimal.apk",
+  "generator": "scripts/verify-jadx.mjs --build-fixture",
+  "generationMethod": "Deterministic synthetic DEX 035 and binary AXML assembled in Node.js; mirrors the checked-in Fixture.java and AndroidManifest.xml known answers. No APK is executed.",
+  "sourceSha256": "788db7d98598382e01c511fe73af636435f2f74d79454a7c0b04166ae8e00c58",
+  "manifestSourceSha256": "7d8445ecee95fff44d7e3d3e6559bd0df1275cef23336ce65b04664b4b59bd9d",
+  "dexSha256": "e669592193eadd9e7cbf7531043c1599fff9de00acad08433d8b32445300b3d4",
+  "apkSha256": "a46083567fccd05d0e45344a108cb4a9a51b22f1dc703f69ada309c5f87a26ef",
+  "expected": "expected.json",
+  "jadxVerification": {
+    "version": "1.5.3",
+    "officialArchiveSha256": "8280f3799c0273fe797a2bcd90258c943e451fd195f13d05400de5e6451d15ec",
+    "officialUrl": "https://github.com/skylot/jadx/releases/download/v1.5.3/jadx-1.5.3.zip"
+  }
+}

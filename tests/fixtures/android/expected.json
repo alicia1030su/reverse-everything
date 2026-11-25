@@ -1,0 +1,12 @@
+{
+  "packageName": "com.example.fixture",
+  "className": "com.example.fixture.Fixture",
+  "methodName": "fixtureMarker",
+  "methodReturn": "java.lang.String",
+  "stringValue": "hello-from-fixture",
+  "resourcePath": "res/raw/fixture.txt",
+  "resourceValue": "hello-from-fixture\n",
+  "permission": "android.permission.INTERNET",
+  "declaredPermission": "com.example.fixture.DECLARED",
+  "dexVersion": "035"
+}

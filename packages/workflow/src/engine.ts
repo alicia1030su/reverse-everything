@@ -1,13 +1,15 @@
 import path from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
-import { closeSync, constants, fstatSync, lstatSync, openSync, readSync, readdirSync, renameSync, statSync, unlinkSync, type Stats } from 'node:fs';
-import { mkdir, unlink, writeFile } from 'node:fs/promises';
+import { closeSync, constants, fstatSync, lstatSync, openSync, readdirSync, renameSync, statSync, unlinkSync, type Stats } from 'node:fs';
+import { lstat, mkdir, open, unlink, writeFile } from 'node:fs/promises';
+import type { Writable } from 'node:stream';
+import { finished } from 'node:stream/promises';
 import { STAGES, VERSION, SCHEMA_VERSION, type CreateTaskInput, type Stage, type Task } from '@reverse/contracts';
-import { hashFile, readVerifiedFile, safeArtifactName, sha256, writeJson } from '@reverse/evidence';
+import { hashFile, safeArtifactName, sha256, writeJson } from '@reverse/evidence';
 import { Database } from './database.js';
 import { AnalysisCache } from './cache.js';
 import { ResourceMonitor, DEFAULT_RESOURCE_THRESHOLDS, type ResourceThresholds } from './resources.js';
-import type { AdapterDefinition, TaskContext } from './types.js';
+import type { AdapterDefinition, Detection, TaskContext } from './types.js';
 import { assertAiEndpoint, boundedIterations, callAgent, extractJsonObject, type AiRuntimeConfig } from './agent.js';
 
 const MAX_STALE_ARTIFACT_TEMP_MS=10*60*1000;
@@ -21,12 +23,19 @@ export class WorkflowEngine {
   private active = false;
   private ticking = false;
   private closed = false;
+  private transactionDepth = 0;
   private readonly activeTasks = new Set<string>();
   private thresholds: ResourceThresholds;
   private readonly workerId: string;
   private readonly leaseMs: number;
   constructor(readonly db: Database, private opts: EngineOptions) { this.thresholds=opts.thresholds??DEFAULT_RESOURCE_THRESHOLDS;this.workerId=opts.workerId??`${process.pid}-${randomUUID()}`;this.leaseMs=opts.leaseMs??15000;for(const [name,value] of [['timeoutMs',opts.timeoutMs??300000],['maxDiskMB',opts.maxDiskMB??1024],['leaseMs',this.leaseMs],['pollMs',opts.pollMs??300],['maxQueue',opts.maxQueue??100],['hardRssMb',this.thresholds.hardRssMb]] as const)positiveEngineOption(name,value); }
-  private immediate<T>(work:()=>T):T{let began=false;try{this.db.raw.exec('BEGIN IMMEDIATE');began=true;const result=work();this.db.raw.exec('COMMIT');began=false;return result;}catch(error){if(began)try{this.db.raw.exec('ROLLBACK');}catch{/* preserve original error */}throw error;}}
+  refreshBudgets(options:{maxDiskMB?:number;timeoutMs?:number}):void{
+    if(options.maxDiskMB!==undefined)positiveEngineOption('maxDiskMB',options.maxDiskMB);
+    if(options.timeoutMs!==undefined)positiveEngineOption('timeoutMs',options.timeoutMs);
+    if(options.maxDiskMB!==undefined)this.opts.maxDiskMB=options.maxDiskMB;
+    if(options.timeoutMs!==undefined)this.opts.timeoutMs=options.timeoutMs;
+  }
+  private immediate<T>(work:()=>T):T{if(this.transactionDepth>0)return work();let began=false;this.transactionDepth++;try{this.db.raw.exec('BEGIN IMMEDIATE');began=true;const result=work();this.db.raw.exec('COMMIT');began=false;return result;}catch(error){if(began)try{this.db.raw.exec('ROLLBACK');}catch{/* preserve original error */}throw error;}finally{this.transactionDepth--;}}
   private mutateOwned<T>(id:string,token:string,work:(claim:OwnedClaim)=>T):T|undefined{return this.immediate(()=>{const now=new Date().toISOString();const claim=this.db.raw.prepare("SELECT status,current_stage,attempt,lease_owner,lease_expires_at,cancel_requested,pause_requested FROM tasks WHERE id=? AND status='RUNNING' AND lease_owner=? AND lease_expires_at>?").get(id,token,now) as OwnedClaim|undefined;return claim?work(claim):undefined;});}
   start() { this.recover();this.timer=setInterval(()=>{void this.tick();},this.opts.pollMs??300); }
   async close(){this.closed=true;if(this.timer)clearInterval(this.timer);while(this.active||this.ticking||this.activeTasks.size)await new Promise(r=>setTimeout(r,50));}
@@ -93,55 +102,67 @@ export class WorkflowEngine {
     if(!this.hasClaim(id,token))return;
     const adapter=this.opts.adapters.find(a=>a.name===initialTask.adapter);if(!adapter){this.mutateOwned(id,token,()=>{this.db.updateTask(id,{status:'BLOCKED',error:`Adapter ${initialTask.adapter} is not installed`,ended_at:new Date().toISOString()});this.releaseClaim(id,token);});return;}
     const project=this.db.getProject(initialTask.projectId);if(!project){this.mutateOwned(id,token,()=>{this.db.updateTask(id,{status:'BLOCKED',error:'Project no longer exists',ended_at:new Date().toISOString()});this.releaseClaim(id,token);});return;}
-    const upload=this.db.uploads(project.id)[0];const artifactDir=path.join(this.opts.dataDir,'tasks',id,'artifacts');const objectsDir=path.join(artifactDir,'objects');await mkdir(objectsDir,{recursive:true});await this.pruneOrphanObjects(id,artifactDir,objectsDir);if(!this.hasClaim(id,token))return;
+    const upload=this.db.uploads(project.id)[0];const artifactDir=path.join(this.opts.dataDir,'tasks',id,'artifacts');const objectsDir=path.join(artifactDir,'objects');await mkdir(objectsDir,{recursive:true,mode:0o700});await this.pruneOrphanObjects(id,artifactDir,objectsDir);if(!this.hasClaim(id,token))return;
     const outputs:Partial<Record<Stage,unknown>>={};for(const stage of STAGES){const value=this.db.stageOutput(id,stage);if(value!==undefined)outputs[stage]=value;}
-    const taskOptions=initialTask.options;const timeoutMs=numberOption(taskOptions.timeoutMs,this.opts.timeoutMs??300000);const maxMemoryMB=numberOption(taskOptions.maxMemoryMB,this.thresholds.hardRssMb);const maxDiskMB=numberOption(taskOptions.maxDiskMB,this.opts.maxDiskMB??1024);
+    const taskOptions=initialTask.options;const timeoutMs=Math.min(numberOption(taskOptions.timeoutMs,this.opts.timeoutMs??300000),this.opts.timeoutMs??300000);const maxMemoryMB=Math.min(numberOption(taskOptions.maxMemoryMB,this.thresholds.hardRssMb),this.thresholds.hardRssMb);const maxDiskMB=Math.min(numberOption(taskOptions.maxDiskMB,this.opts.maxDiskMB??1024),this.opts.maxDiskMB??1024);
     const priorResources=this.db.raw.prepare('SELECT peak_tree_rss_mb,peak_child_rss_mb,peak_cpu_percent,peak_heap_mb FROM task_resources WHERE task_id=?').get(id) as {peak_tree_rss_mb:number;peak_child_rss_mb:number;peak_cpu_percent:number;peak_heap_mb:number}|undefined;
-    const controller=new AbortController();const processRoots=new Set<number>();let artifactBytes=this.db.artifacts(id).reduce((total,artifact)=>total+artifact.size,0);let peak=priorResources?.peak_tree_rss_mb??0;let peakChild=priorResources?.peak_child_rss_mb??0;let peakCpu=priorResources?.peak_cpu_percent??0;let peakHeap=priorResources?.peak_heap_mb??0;let executionClosed=false;let stageGeneration=0;
+    const controller=new AbortController();const processRoots=new Set<number>();let artifactBytes=this.db.artifacts(id).reduce((total,artifact)=>total+artifact.size,0);let peak=priorResources?.peak_tree_rss_mb??0;let peakChild=priorResources?.peak_child_rss_mb??0;let peakCpu=priorResources?.peak_cpu_percent??0;let peakHeap=priorResources?.peak_heap_mb??0;let executionClosed=false;let stageGeneration=0;let terminalRequest:'cancel'|'pause'|undefined;
     const assertActive=(generation:number)=>{
       if(executionClosed||generation!==stageGeneration)throw new TaskExecutionError('RESOURCE_LIMIT','Task execution context is closed or stage has ended');
       if(controller.signal.aborted)throw controller.signal.reason??new DOMException('Task aborted','AbortError');
       const lease=this.db.raw.prepare("SELECT status,lease_owner,lease_expires_at,cancel_requested,pause_requested FROM tasks WHERE id=?").get(id) as {status:string;lease_owner:string|null;lease_expires_at:string|null;cancel_requested:number;pause_requested:number}|undefined;
-      if(!lease||lease.status!=='RUNNING'||lease.lease_owner!==token||!lease.lease_expires_at||Date.parse(lease.lease_expires_at)<=Date.now()||lease.cancel_requested||lease.pause_requested)throw new TaskExecutionError('RESOURCE_LIMIT','Task execution claim is no longer active');
+      if(!lease||lease.status!=='RUNNING'||lease.lease_owner!==token||!lease.lease_expires_at||Date.parse(lease.lease_expires_at)<=Date.now())throw new TaskExecutionError('RESOURCE_LIMIT','Task execution claim is no longer active');
+      if(lease.cancel_requested||lease.pause_requested){terminalRequest=lease.cancel_requested?'cancel':'pause';controller.abort(new DOMException(terminalRequest==='cancel'?'Task cancelled':'Task paused','AbortError'));throw new TaskExecutionError('RESOURCE_LIMIT','Task execution claim is no longer active');}
     };
     let artifactWriteQueue=Promise.resolve();
     const serializeArtifactWrite=async<T>(operation:()=>Promise<T>):Promise<T>=>{const previous=artifactWriteQueue;let release!:()=>void;artifactWriteQueue=new Promise<void>(resolve=>release=resolve);await previous;try{return await operation();}finally{release();}};
-    const publishArtifacts=async(entries:{name:string;content:string|Uint8Array;mime:string}[],generation:number):Promise<void>=>{
-      assertActive(generation);if(!entries.length)return;const names=new Set<string>();const existing=this.db.artifacts(id);artifactBytes=existing.reduce((total,artifact)=>total+artifact.size,0);const previousSizes=new Map(existing.map(artifact=>[artifact.name,artifact.size]));let total=0;let replacedBytes=0;
-      const prepared=entries.map(entry=>{const name=safeArtifactName(entry.name);if(names.has(name))throw new Error(`Duplicate artifact name: ${name}`);names.add(name);const size=Buffer.byteLength(entry.content);total+=size;replacedBytes+=previousSizes.get(name)??0;return {...entry,name,size};});
-      const nextBytes=artifactBytes+total-replacedBytes;
-      if(nextBytes>maxDiskMB*1048576)throw new TaskExecutionError('ARTIFACT_BUDGET',`Task artifact budget ${maxDiskMB}MB exceeded`);
-      const staged:{name:string;file:string;temporary:string;size:number;digest:string;mime:string}[]=[];let committed=false;
+    type ArtifactEntry={name:string;content:string|Uint8Array;mime:string}|{name:string;writer:(stream:Writable)=>Promise<number>;mime:string};
+    const publishArtifacts=async(entries:ArtifactEntry[],generation:number):Promise<void>=>{
+      assertActive(generation);if(!entries.length)return;const names=new Set<string>();const existing=this.db.artifacts(id);artifactBytes=existing.reduce((total,artifact)=>total+artifact.size,0);const previousSizes=new Map(existing.map(artifact=>[artifact.name,artifact.size]));
+      const prepared=entries.map(entry=>{const name=safeArtifactName(entry.name);if(names.has(name))throw new Error(`Duplicate artifact name: ${name}`);names.add(name);return {...entry,name,size:'content' in entry?Buffer.byteLength(entry.content):undefined};});
+      const knownTotal=prepared.reduce((sum,entry)=>sum+(entry.size??0),0);const knownBytes=artifactBytes+knownTotal-prepared.reduce((sum,entry)=>sum+(previousSizes.get(entry.name)??0),0);
+      if(knownBytes>maxDiskMB*1048576)throw new TaskExecutionError('ARTIFACT_BUDGET',`Task artifact budget ${maxDiskMB}MB exceeded`);
+      const staged:{name:string;file:string;temporary:string;size:number;digest:string;mime:string;temporaryIdentity?:FileIdentity;identity?:FileIdentity}[]=[];let committed=false;
       try{
-        for(const entry of prepared){assertActive(generation);const temporary=path.join(objectsDir,`.${randomUUID()}.tmp`);staged.push({name:entry.name,file:'',temporary,size:entry.size,digest:'',mime:entry.mime});await writeFile(temporary,entry.content,{signal:controller.signal});assertActive(generation);const digest=await sha256(entry.content);assertActive(generation);Object.assign(staged[staged.length-1]!,{file:path.join(objectsDir,digest),digest});}
+        for(const entry of prepared){
+          assertActive(generation);const temporary=path.join(objectsDir,`.${randomUUID()}.tmp`);const item:{name:string;file:string;temporary:string;size:number;digest:string;mime:string;temporaryIdentity?:FileIdentity;identity?:FileIdentity}={name:entry.name,file:'',temporary,size:entry.size??0,digest:'',mime:entry.mime};staged.push(item);
+          if('content' in entry)await writeFile(temporary,entry.content,{flag:'wx',mode:0o600,signal:controller.signal});
+          else{const handle=await open(temporary,'wx');const stream=handle.createWriteStream();try{item.size=await entry.writer(stream);}catch(error){stream.destroy();throw error;}const completion=finished(stream);stream.end();await completion;}
+          assertActive(generation);const verified=await verifyArtifactObject(temporary,item.size);item.digest=verified.digest;item.temporaryIdentity=verified.identity;item.file=path.join(objectsDir,item.digest);
+          if(lstatSync(item.file,{throwIfNoEntry:false})){const existing=await verifyArtifactObject(item.file,item.size);if(existing.digest!==item.digest)throw new Error(`Artifact object integrity failure: ${item.file}`);item.identity=existing.identity;}
+          assertActive(generation);
+        }
         assertActive(generation);const authoritativeBytes=this.immediate(()=>{
           assertActive(generation);
-          const currentArtifacts=this.db.artifacts(id);const currentSizes=new Map(currentArtifacts.map(artifact=>[artifact.name,artifact.size]));const currentBytes=currentArtifacts.reduce((sum,artifact)=>sum+artifact.size,0);const bytes=currentBytes+total-prepared.reduce((sum,entry)=>sum+(currentSizes.get(entry.name)??0),0);
+          const currentArtifacts=this.db.artifacts(id);const currentSizes=new Map(currentArtifacts.map(artifact=>[artifact.name,artifact.size]));const currentBytes=currentArtifacts.reduce((sum,artifact)=>sum+artifact.size,0);const total=staged.reduce((sum,entry)=>sum+entry.size,0);const bytes=currentBytes+total-prepared.reduce((sum,entry)=>sum+(currentSizes.get(entry.name)??0),0);
           if(bytes>maxDiskMB*1048576)throw new TaskExecutionError('ARTIFACT_BUDGET',`Task artifact budget ${maxDiskMB}MB exceeded`);
           for(const entry of staged){
+            if(!entry.temporaryIdentity)throw new Error(`Artifact object integrity failure: ${entry.temporary}`);assertArtifactFileIdentity(entry.temporary,entry.size,entry.temporaryIdentity,entry.temporary);
             const info=lstatSync(entry.file,{throwIfNoEntry:false});
-            if(info){if(!info.isFile()||info.isSymbolicLink())throw new Error(`Artifact object integrity failure: ${entry.digest}`);}
-            else{verifyArtifactObjectSync(entry.temporary,entry.size);renameSync(entry.temporary,entry.file);}
+            if(info){if(!info.isFile()||info.isSymbolicLink()||!entry.identity)throw new Error(`Artifact object integrity failure: ${entry.digest}`);assertFileIdentity(entry.file,info,entry.size,entry.identity);}
+            else{renameSync(entry.temporary,entry.file);const renamed=fileIdentityFromStats(lstatSync(entry.file),entry.size,entry.file);if(entry.identity&&(renamed.dev!==entry.identity.dev||renamed.ino!==entry.identity.ino||renamed.mtimeMs!==entry.identity.mtimeMs))throw new Error(`Artifact object integrity failure: ${entry.file}`);entry.identity=renamed;}
             this.db.addArtifact(id,entry.name,entry.file,entry.size,entry.digest,entry.mime);
-            try{verifyArtifactObjectSync(entry.file,entry.size,entry.digest);}finally{try{unlinkSync(entry.temporary);}catch{}}
+            try{verifyArtifactObjectSync(entry.file,entry.size,undefined,entry.identity);}finally{try{unlinkSync(entry.temporary);}catch{}}
           }
           assertActive(generation);return bytes;
         });committed=true;artifactBytes=authoritativeBytes;
       }catch(error){for(const entry of staged)await unlink(entry.temporary).catch(()=>{});if(!committed)await this.pruneOrphanObjects(id,artifactDir,objectsDir).catch(()=>{});throw error;}
       try{await this.pruneOrphanObjects(id,artifactDir,objectsDir);}catch(error){try{this.db.log(id,'warn',`Artifact orphan GC failed after committed publication: ${String(error).slice(0,2000)}`);}catch{/* GC diagnostics must not turn a committed publication into failure */}}
     };
-    const createContext=(generation:number):TaskContext=>({taskId:id,project,...(upload?{upload}:{}),options:taskOptions,stageOutputs:outputs,dataDir:this.opts.dataDir,signal:controller.signal,
+    const createContext=(generation:number):TaskContext=>({taskId:id,project,...(upload?{upload}:{}),options:taskOptions,effectiveMaxDiskMB:maxDiskMB,effectiveMaxMemoryMB:maxMemoryMB,effectiveTimeoutMs:timeoutMs,stageOutputs:outputs,dataDir:this.opts.dataDir,signal:controller.signal,
       log:async(level,message,tool)=>{assertActive(generation);if(!this.mutateOwned(id,token,()=>this.db.log(id,level,message.slice(0,4000),tool)))throw new TaskExecutionError('RESOURCE_LIMIT','Task execution claim is no longer active');},
       evidence:async(kind,title,source,locator,content)=>{assertActive(generation);const digest=await sha256(JSON.stringify(content));assertActive(generation);const existing=this.db.evidence(id).find(e=>e.title===title&&e.locator===locator&&e.sha256===digest);if(existing)return existing.id;const created=this.mutateOwned(id,token,()=>this.db.addEvidence({taskId:id,kind,title,source,locator,content,sha256:digest}));if(!created)throw new TaskExecutionError('RESOURCE_LIMIT','Task execution claim is no longer active');return created.id;},
       finding:async input=>{assertActive(generation);const created=this.mutateOwned(id,token,()=>this.db.addFinding({taskId:id,status:'observed',...input}));if(!created)throw new TaskExecutionError('RESOURCE_LIMIT','Task execution claim is no longer active');return created.id;},
       writeArtifact:async(rawName,content,mime)=>serializeArtifactWrite(()=>publishArtifacts([{name:rawName,content,mime}],generation)),
       writeArtifacts:async entries=>serializeArtifactWrite(()=>publishArtifacts(entries,generation)),
+      writeArtifactFile:async(name,writer,mime)=>serializeArtifactWrite(()=>publishArtifacts([{name,writer,mime}],generation)),
       readArtifact:async name=>{assertActive(generation);const artifact=this.db.artifactObject(id,safeArtifactName(name));if(!artifact)throw new Error(`Artifact not found: ${name}`);const bytes=await readArtifactObject(artifact.storedPath,artifact.size,artifact.sha256);assertActive(generation);return bytes;},
       registerProcess:pid=>{assertActive(generation);if(!Number.isSafeInteger(pid)||pid<=0)throw new Error('Invalid process PID');processRoots.add(pid);let released=false;return()=>{if(released)return;released=true;processRoots.delete(pid);};}
     });
     if(!this.mutateOwned(id,token,()=>{this.db.raw.prepare('INSERT INTO task_resources (task_id,peak_tree_rss_mb,peak_heap_mb,artifact_bytes,started_at) VALUES (?,?,?,?,?) ON CONFLICT(task_id) DO UPDATE SET artifact_bytes=excluded.artifact_bytes,ended_at=NULL').run(id,peak,peakHeap,artifactBytes,new Date().toISOString());return true;}))return;
+    const recordResourceSnapshot=(snapshot:Awaited<ReturnType<ResourceMonitor['sample']>>|undefined)=>{if(!snapshot)return;peak=Math.max(peak,snapshot.treeRssMB);peakChild=Math.max(peakChild,snapshot.childRssMB);peakCpu=Math.max(peakCpu,snapshot.cpuPercent);peakHeap=Math.max(peakHeap,snapshot.heapUsedMB);if(snapshot.treeRssMB>maxMemoryMB){this.opts.resources?.circuit('danger','Task memory budget exceeded',id,snapshot);controller.abort(new TaskExecutionError('RESOURCE_LIMIT',`Task memory budget ${maxMemoryMB}MB exceeded`));}};
     const deadline=Date.now()+timeoutMs;const timeout=setTimeout(()=>controller.abort(new TaskExecutionError('TASK_TIMEOUT',`Task exceeded ${timeoutMs}ms budget; checkpoint retained`)),Math.max(1,deadline-Date.now()));
-    const resourceTimer=this.opts.resources?setInterval(()=>{void this.resourceSnapshot(true,[...processRoots]).then(snapshot=>{if(!snapshot)return;peak=Math.max(peak,snapshot.treeRssMB);peakChild=Math.max(peakChild,snapshot.childRssMB);peakCpu=Math.max(peakCpu,snapshot.cpuPercent);peakHeap=Math.max(peakHeap,snapshot.heapUsedMB);if(snapshot.treeRssMB>maxMemoryMB){this.opts.resources?.circuit('danger','Task memory budget exceeded',id,snapshot);controller.abort(new TaskExecutionError('RESOURCE_LIMIT',`Task memory budget ${maxMemoryMB}MB exceeded`));}}).catch(()=>controller.abort(new TaskExecutionError('RESOURCE_LIMIT','Task aborted because resource sampling failed')));},3000):undefined;
+    const resourceTimer=this.opts.resources?setInterval(()=>{void this.resourceSnapshot(true,[...processRoots]).then(recordResourceSnapshot).catch(()=>controller.abort(new TaskExecutionError('RESOURCE_LIMIT','Task aborted because resource sampling failed')));},3000):undefined;
     const leaseTimer=setInterval(()=>{const now=new Date();const changed=this.db.raw.prepare("UPDATE tasks SET heartbeat_at=?,lease_expires_at=?,updated_at=? WHERE id=? AND status='RUNNING' AND lease_owner=?").run(now.toISOString(),new Date(now.getTime()+this.leaseMs).toISOString(),now.toISOString(),id,token);if(Number(changed.changes)!==1)controller.abort(new TaskExecutionError('RESOURCE_LIMIT','Task lease lost; execution stopped'));},Math.max(1,Math.floor(this.leaseMs/3)));
     const cancelTimer=setInterval(()=>{const current=this.db.getTask(id);if(current?.cancelRequested||current?.status==='CANCELLED')controller.abort(new DOMException('Task cancelled','AbortError'));},100);
     try{
@@ -158,28 +179,34 @@ export class WorkflowEngine {
         const started=this.mutateOwned(id,token,claim=>{if(claim.current_stage!==stage)return false;this.db.updateTask(id,{current_stage:stage,progress:Math.round(stageIndex/(STAGES.length-1)*100),current_tool:adapter.name});this.db.setStage(id,stage,{status:'RUNNING',attempt:claim.attempt+1,started_at:new Date().toISOString(),ended_at:null,error:null});this.db.log(id,'info',`Stage ${stage} started`,adapter.name);return true;});if(!started)return;
         let releaseCache:(()=>void)|undefined;
         try{
-          let result:unknown;let cacheKey:string|undefined;const cacheable=Boolean(this.opts.cache&&AnalysisCache.isCacheable(stage,adapter.name));
+          let result:unknown;let cacheKey:string|undefined;let cacheHit=false;const cacheable=Boolean(this.opts.cache&&AnalysisCache.isCacheable(stage,adapter.name));
           if(cacheable&&this.opts.cache){
-            const identity=await this.opts.cache.keyFor({projectId:project.id,inputHash:currentTask.inputHash,adapter:adapter.name,adapterVersion:adapter.version,stage,options:taskOptions,shareApproved:taskOptions.cacheScope==='global'&&taskOptions.cacheShareApproved===true});cacheKey=identity.key;result=await this.opts.cache.get(cacheKey);if(result!==undefined){releaseCache=this.opts.cache.acquire(cacheKey);await ctx.log('info',`Stage ${stage} reused verified cross-task cache ${cacheKey.slice(0,12)}`,'cache');}
+            const identity=await this.opts.cache.keyFor({projectId:project.id,inputHash:currentTask.inputHash,adapter:adapter.name,adapterVersion:adapter.version,stage,options:taskOptions,shareApproved:taskOptions.cacheScope==='global'&&taskOptions.cacheShareApproved===true});cacheKey=identity.key;result=await this.opts.cache.get(cacheKey);if(result!==undefined){cacheHit=true;releaseCache=this.opts.cache.acquire(cacheKey);if(stage==='CLASSIFY')await this.recordClassificationEvidence(ctx,adapter.name,result as Detection);await ctx.log('info',`Stage ${stage} reused verified cross-task cache ${cacheKey.slice(0,12)}`,'cache');}
           }
           if(result===undefined)result=await raceWithAbort(this.runStage(adapter,stage,ctx),controller.signal);
           assertActive(generation);outputs[stage]=result;if(!this.mutateOwned(id,token,()=>{this.db.setStageOutput(id,stage,result);return true;}))return;
-          if(result!==undefined&&cacheable&&this.opts.cache&&cacheKey){const shareApproved=taskOptions.cacheScope==='global'&&taskOptions.cacheShareApproved===true;await this.opts.cache.put(cacheKey,shareApproved?'global':'project',shareApproved?null:project.id,adapter.name,stage,result);}
+          if(!cacheHit&&result!==undefined&&cacheable&&this.opts.cache&&cacheKey){const shareApproved=taskOptions.cacheScope==='global'&&taskOptions.cacheShareApproved===true;await this.opts.cache.put(cacheKey,shareApproved?'global':'project',shareApproved?null:project.id,adapter.name,stage,result);}
           releaseCache?.();releaseCache=undefined;assertActive(generation);
-          const stageCacheKey=cacheKey??await sha256(JSON.stringify({adapter:adapter.name,version:adapter.version,stage,inputHash:currentTask.inputHash,options:AnalysisCache.cacheOptions(taskOptions)}));assertActive(generation);
-          const snapshot=await this.resourceSnapshot(false,[...processRoots]);assertActive(generation);if(snapshot){peak=Math.max(peak,snapshot.treeRssMB);peakChild=Math.max(peakChild,snapshot.childRssMB);peakCpu=Math.max(peakCpu,snapshot.cpuPercent);peakHeap=Math.max(peakHeap,snapshot.heapUsedMB);}
+          const stageCacheKey=cacheKey;assertActive(generation);
+          const snapshot=await this.resourceSnapshot(false,[...processRoots]);assertActive(generation);recordResourceSnapshot(snapshot);assertActive(generation);
           const next=STAGES[stageIndex+1];if(!next)throw new Error('Invalid terminal stage');
-          const finalized=this.mutateOwned(id,token,claim=>{if(claim.current_stage!==stage)return false;this.db.setStage(id,stage,{status:'SUCCEEDED',ended_at:new Date().toISOString(),error:null,cache_key:stageCacheKey});this.db.raw.prepare('UPDATE task_resources SET peak_tree_rss_mb=?,peak_child_rss_mb=?,peak_cpu_percent=?,peak_heap_mb=?,artifact_bytes=? WHERE task_id=?').run(peak,peakChild,peakCpu,peakHeap,artifactBytes,id);this.db.updateTask(id,{current_stage:next,progress:Math.round((stageIndex+1)/(STAGES.length-1)*100),current_tool:null});this.db.log(id,'info',`Stage ${stage} completed`);return true;});if(!finalized)return;
+          const finalized=this.mutateOwned(id,token,claim=>{if(claim.current_stage!==stage)return false;this.db.setStage(id,stage,{status:'SUCCEEDED',ended_at:new Date().toISOString(),error:null,cache_key:stageCacheKey??null});this.db.raw.prepare('UPDATE task_resources SET peak_tree_rss_mb=?,peak_child_rss_mb=?,peak_cpu_percent=?,peak_heap_mb=?,artifact_bytes=? WHERE task_id=?').run(peak,peakChild,peakCpu,peakHeap,artifactBytes,id);this.db.updateTask(id,{current_stage:next,progress:Math.round((stageIndex+1)/(STAGES.length-1)*100),current_tool:null});this.db.log(id,'info',`Stage ${stage} completed`);return true;});if(!finalized)return;
         }catch(error){
           releaseCache?.();const message=error instanceof Error?error.message:String(error);
           this.mutateOwned(id,token,claim=>{
-            if(claim.cancel_requested){this.db.log(id,'warn',`Stage ${stage} cancelled`,adapter.name);this.db.setStage(id,stage,{status:'PENDING',ended_at:null,error:null});this.db.updateTask(id,{status:'CANCELLED',ended_at:new Date().toISOString(),current_tool:null,cancel_requested:0});return;}
-            if(claim.pause_requested){this.db.log(id,'warn',`Stage ${stage} paused`,adapter.name);this.db.setStage(id,stage,{status:'PENDING',ended_at:null,error:null});this.db.updateTask(id,{status:'PAUSED',current_tool:null});return;}
+            if(claim.cancel_requested||terminalRequest==='cancel'){this.db.log(id,'warn',`Stage ${stage} cancelled`,adapter.name);this.db.setStage(id,stage,{status:'PENDING',ended_at:null,error:null});this.db.updateTask(id,{status:'CANCELLED',ended_at:new Date().toISOString(),current_tool:null,pause_requested:0,cancel_requested:0});return;}
+            if(claim.pause_requested||terminalRequest==='pause'){this.db.log(id,'warn',`Stage ${stage} paused`,adapter.name);this.db.setStage(id,stage,{status:'PENDING',ended_at:null,error:null});this.db.updateTask(id,{status:'PAUSED',current_tool:null,pause_requested:1,cancel_requested:0});return;}
             this.db.log(id,'error',`Stage ${stage} failed: ${message}`,adapter.name);this.db.setStage(id,stage,{status:'FAILED',ended_at:new Date().toISOString(),error:message.slice(0,2000)});this.db.updateTask(id,{status:'FAILED',error:message.slice(0,2000),ended_at:new Date().toISOString(),current_tool:null});
           });return;
         }finally{stageGeneration+=1;}
       }
-    }finally{executionClosed=true;controller.abort(new TaskExecutionError('RESOURCE_LIMIT','Task execution context closed'));clearTimeout(timeout);if(resourceTimer)clearInterval(resourceTimer);if(leaseTimer)clearInterval(leaseTimer);clearInterval(cancelTimer);await artifactWriteQueue;processRoots.clear();this.immediate(()=>{const released=this.db.raw.prepare('UPDATE tasks SET lease_owner=NULL,lease_expires_at=NULL,heartbeat_at=NULL,updated_at=? WHERE id=? AND lease_owner=? RETURNING id').get(new Date().toISOString(),id,token);if(!released)return;this.db.raw.prepare('UPDATE task_resources SET peak_tree_rss_mb=?,peak_child_rss_mb=?,peak_cpu_percent=?,peak_heap_mb=?,artifact_bytes=?,ended_at=? WHERE task_id=?').run(peak,peakChild,peakCpu,peakHeap,artifactBytes,new Date().toISOString(),id);});}
+    }finally{executionClosed=true;controller.abort(new TaskExecutionError('RESOURCE_LIMIT','Task execution context closed'));clearTimeout(timeout);if(resourceTimer)clearInterval(resourceTimer);if(leaseTimer)clearInterval(leaseTimer);clearInterval(cancelTimer);await artifactWriteQueue;processRoots.clear();this.immediate(()=>{
+      const now=new Date().toISOString();const failure='Worker lease expired before execution reached a terminal state';
+      const expired=this.db.raw.prepare("UPDATE tasks SET status=CASE WHEN cancel_requested THEN 'CANCELLED' WHEN pause_requested THEN 'PAUSED' ELSE 'FAILED' END,error=CASE WHEN cancel_requested=0 AND pause_requested=0 THEN COALESCE(error,?) ELSE error END,ended_at=CASE WHEN cancel_requested OR (cancel_requested=0 AND pause_requested=0) THEN ? ELSE ended_at END,lease_owner=NULL,lease_expires_at=NULL,heartbeat_at=NULL,updated_at=? WHERE id=? AND status='RUNNING' AND lease_owner=? AND (lease_expires_at IS NULL OR lease_expires_at<=?) RETURNING id").get(failure,now,now,id,token,now) as {id:string}|undefined;
+      if(expired){this.db.log(id,'error',failure,'worker');this.db.raw.prepare('UPDATE task_resources SET peak_tree_rss_mb=?,peak_child_rss_mb=?,peak_cpu_percent=?,peak_heap_mb=?,artifact_bytes=?,ended_at=? WHERE task_id=?').run(peak,peakChild,peakCpu,peakHeap,artifactBytes,now,id);return;}
+      const released=this.db.raw.prepare("UPDATE tasks SET lease_owner=NULL,lease_expires_at=NULL,heartbeat_at=NULL,updated_at=? WHERE id=? AND lease_owner=? AND status<>'RUNNING' RETURNING id").get(now,id,token) as {id:string}|undefined;
+      if(!released)return;this.db.raw.prepare('UPDATE task_resources SET peak_tree_rss_mb=?,peak_child_rss_mb=?,peak_cpu_percent=?,peak_heap_mb=?,artifact_bytes=?,ended_at=? WHERE task_id=?').run(peak,peakChild,peakCpu,peakHeap,artifactBytes,now,id);
+    });}
   }
   private async pruneOrphanObjects(taskId:string,artifactDir:string,objectsDir:string):Promise<void>{
     this.immediate(()=>{
@@ -193,7 +220,7 @@ export class WorkflowEngine {
   private async runStage(adapter:AdapterDefinition,stage:Stage,ctx:TaskContext):Promise<unknown>{
     switch(stage){
       case 'INTAKE':{if(ctx.upload){const file=path.resolve(this.opts.dataDir,'uploads',ctx.upload.projectId,ctx.upload.storedName);const current=await hashFile(file);if(current!==ctx.upload.sha256)throw new Error('Input hash changed after upload');await ctx.evidence('EVIDENCE','Input identity verified',ctx.upload.name,`sha256:${current}`,{size:ctx.upload.size,sha256:current});}else await ctx.evidence('EVIDENCE','Target identity',ctx.project.target,ctx.project.target,{target:ctx.project.target});return {verified:true};}
-      case 'CLASSIFY':{const detection=await adapter.detect(ctx);await ctx.evidence(detection.confidence>=0.8?'VERIFIED':'INFERENCE',`Detected ${detection.format}`,adapter.name,'detect',detection);return detection;}
+      case 'CLASSIFY':{const detection=await adapter.detect(ctx);await this.recordClassificationEvidence(ctx,adapter.name,detection);return detection;}
       case 'AUTHORIZATION_CHECK':{if(!ctx.project.authorizationConfirmed)throw new Error('Explicit authorization confirmation is required before analysis');await ctx.evidence('EVIDENCE','Authorization recorded','user','project.authorizationConfirmed',{confirmed:true,recordedAt:new Date().toISOString()});return {confirmed:true};}
       case 'PLAN':{
         const plan=[{stage:'PREPARE',tool:adapter.name},{stage:'ANALYZE',tool:adapter.name},{stage:'COLLECT_EVIDENCE',tool:adapter.name},{stage:'MODEL_BEHAVIOR',tool:'optional-ai'},{stage:'RECONSTRUCT',tool:adapter.name},{stage:'VALIDATE',tool:adapter.name}];
@@ -237,32 +264,57 @@ export class WorkflowEngine {
         if(noProgress)await ctx.evidence('UNKNOWN','AI validation stopped after no progress','model',`${config.model}:validator:no-progress`,{validationHash:await sha256(JSON.stringify(validation)),iteration:reviews.length,reason:'Deterministic validation was unchanged and the AI reviewer repeated passed:false'});
         return {...validation,passed:aiPassed===false?false:validation.passed,checks:[...(validation.checks??[]),...reviews],limitations:[...(validation.limitations??[]),'AI validation is advisory inference, not independent test evidence',...(repaired?['One bounded deterministic reconstruction retry was performed']:[]),...(noProgress?['AI validation stopped early because deterministic validation did not change and the reviewer repeatedly returned false']:[])]};
       }
-      case 'REPORT':{const task=this.db.getTask(ctx.taskId)!;const evidence=this.db.evidence(ctx.taskId);const findings=this.db.findings(ctx.taskId);const validation=ctx.stageOutputs.VALIDATE as {passed?:boolean;checks?:unknown[];level?:string}|undefined;const md=['# 逆向万物分析报告','',`- 产品版本：${VERSION}`,`- 任务：${ctx.taskId}`,`- 项目：${ctx.project.name}`,`- 适配器：${adapter.name} ${adapter.version}`,`- 输入摘要：${task.inputHash}`,`- 生成时间：${new Date().toISOString()}`,'','## 验证结果',validation?.passed===false?'未通过':validation?.passed===true?'通过':'存在限制',validation?.level?`\n验收等级：${validation.level}`:'','','## 证据摘要',...evidence.map(e=>`- [${e.kind}] ${e.title} — ${e.locator}`),'','## 发现',...findings.map(f=>`- [${f.severity}] ${f.title}（置信度 ${Math.round(f.confidence*100)}%）— ${f.details}`),'','## 边界','规则型工具输出是证据；模型文本仅为推断；未验证项保持 UNKNOWN。'].join('\n');await ctx.writeArtifact('report.md',md,'text/markdown; charset=utf-8');const sarif={version:'2.1.0',$schema:'https://json.schemastore.org/sarif-2.1.0.json',runs:[{tool:{driver:{name:'Reverse Everything',version:VERSION,informationUri:'https://github.com/alicia1030su/reverse-everything',rules:[...new Map(findings.map(f=>[f.category,{id:f.category,name:f.title,shortDescription:{text:f.title},properties:{severity:f.severity,cwe:f.category}}])).values()]}},results:findings.map(f=>({ruleId:f.category,level:f.severity==='critical'||f.severity==='high'?'error':f.severity==='medium'?'warning':'note',message:{text:`${f.title}: ${f.details}`},properties:{confidence:f.confidence,status:f.status,evidenceIds:f.evidenceIds,recommendation:f.recommendation}}))}]};await ctx.writeArtifact('findings.sarif',JSON.stringify(sarif,null,2),'application/sarif+json');return {report:'report.md',sarif:'findings.sarif'};}
-      case 'EXPORT':{const manifest={product:'reverse-everything',version:VERSION,schemaVersion:SCHEMA_VERSION,taskId:ctx.taskId,project:ctx.project,adapter:adapter.name,adapterVersion:adapter.version,inputHash:this.db.getTask(ctx.taskId)!.inputHash,evidence:this.db.evidence(ctx.taskId),findings:this.db.findings(ctx.taskId),stages:this.db.stages(ctx.taskId),artifacts:this.db.artifacts(ctx.taskId),exportedAt:new Date().toISOString()};await ctx.writeArtifact('manifest.json',JSON.stringify(manifest,null,2),'application/json');await ctx.writeArtifact('evidence.json',JSON.stringify(this.db.evidence(ctx.taskId),null,2),'application/json');await writeJson(path.join(this.opts.dataDir,'tasks',ctx.taskId,'manifest.json'),manifest);return {artifacts:this.db.artifacts(ctx.taskId).map(a=>a.name)};}
+      case 'REPORT':{const task=this.db.getTask(ctx.taskId)!;const evidence=this.db.exportEvidence(ctx.taskId);const findings=this.db.findings(ctx.taskId);const validation=ctx.stageOutputs.VALIDATE as {passed?:boolean;checks?:unknown[];level?:string}|undefined;const md=['# 逆向万物分析报告','',`- 产品版本：${VERSION}`,`- 任务：${ctx.taskId}`,`- 项目：${ctx.project.name}`,`- 适配器：${adapter.name} ${adapter.version}`,`- 输入摘要：${task.inputHash}`,`- 生成时间：${new Date().toISOString()}`,'','## 验证结果',validation?.passed===false?'未通过':validation?.passed===true?'通过':'存在限制',validation?.level?`\n验收等级：${validation.level}`:'','','## 证据摘要',...evidence.map(e=>`- [${e.kind}] ${e.title} — ${e.locator}`),'','## 发现',...findings.map(f=>`- [${f.severity}] ${f.title}（置信度 ${Math.round(f.confidence*100)}%）— ${f.details}`),'','## 边界','规则型工具输出是证据；模型文本仅为推断；未验证项保持 UNKNOWN。'].join('\n');await ctx.writeArtifact('report.md',md,'text/markdown; charset=utf-8');const sarif={version:'2.1.0',$schema:'https://json.schemastore.org/sarif-2.1.0.json',runs:[{tool:{driver:{name:'Reverse Everything',version:VERSION,informationUri:'https://github.com/alicia1030su/reverse-everything',rules:[...new Map(findings.map(f=>[f.category,{id:f.category,name:f.title,shortDescription:{text:f.title},properties:{severity:f.severity,cwe:f.category}}])).values()]}},results:findings.map(f=>({ruleId:f.category,level:f.severity==='critical'||f.severity==='high'?'error':f.severity==='medium'?'warning':'note',message:{text:`${f.title}: ${f.details}`},properties:{confidence:f.confidence,status:f.status,evidenceIds:f.evidenceIds,recommendation:f.recommendation}}))}]};await ctx.writeArtifact('findings.sarif',JSON.stringify(sarif,null,2),'application/sarif+json');return {report:'report.md',sarif:'findings.sarif'};}
+      case 'EXPORT':{const manifest={product:'reverse-everything',version:VERSION,schemaVersion:SCHEMA_VERSION,taskId:ctx.taskId,project:ctx.project,adapter:adapter.name,adapterVersion:adapter.version,inputHash:this.db.getTask(ctx.taskId)!.inputHash,evidence:this.db.exportEvidence(ctx.taskId),findings:this.db.findings(ctx.taskId),stages:this.db.stages(ctx.taskId),artifacts:this.db.artifacts(ctx.taskId),exportedAt:new Date().toISOString()};await ctx.writeArtifact('manifest.json',JSON.stringify(manifest,null,2),'application/json');await ctx.writeArtifact('evidence.json',JSON.stringify(this.db.exportEvidence(ctx.taskId),null,2),'application/json');await writeJson(path.join(this.opts.dataDir,'tasks',ctx.taskId,'manifest.json'),manifest);return {artifacts:this.db.artifacts(ctx.taskId).map(a=>a.name)};}
       case 'COMPLETED':return {completed:true};
     }
   }
+  private async recordClassificationEvidence(ctx:TaskContext,adapter:AdapterDefinition['name'],detection:Detection):Promise<void>{await ctx.evidence(detection.confidence>=0.8?'VERIFIED':'INFERENCE',`Detected ${detection.format}`,adapter,'detect',detection);}
   pause(id:string){const task=this.db.getTask(id);if(!task||!['RUNNING','QUEUED'].includes(task.status))return false;this.db.updateTask(id,{pause_requested:1,...(task.status==='QUEUED'?{status:'PAUSED' as const}:{})});return true;}
   resume(id:string){const task=this.db.getTask(id);if(!task||task.status!=='PAUSED')return false;this.db.updateTask(id,{status:'QUEUED',pause_requested:0,ended_at:null});return true;}
-  cancel(id:string){const task=this.db.getTask(id);if(!task||['COMPLETED','CANCELLED'].includes(task.status))return false;this.db.updateTask(id,{cancel_requested:1,...(task.status==='QUEUED'?{status:'CANCELLED' as const,ended_at:new Date().toISOString()}:{})});return true;}
+  cancel(id:string){return this.immediate(()=>{const task=this.db.getTask(id);if(!task||['COMPLETED','CANCELLED'].includes(task.status))return false;if(task.status==='RUNNING')this.db.updateTask(id,{cancel_requested:1});else if(task.status==='PAUSED')this.db.updateTask(id,{status:'CANCELLED',ended_at:new Date().toISOString(),current_tool:null,pause_requested:0,cancel_requested:0});else this.db.updateTask(id,{status:'CANCELLED',ended_at:new Date().toISOString(),pause_requested:0,cancel_requested:0});return true;});}
   retry(id:string){return this.immediate(()=>{const task=this.db.getTask(id);if(!task||task.status!=='FAILED')return false;this.db.updateTask(id,{status:'QUEUED',pause_requested:0,cancel_requested:0,error:null,ended_at:null,attempt:task.attempt+1});this.db.setStage(id,task.currentStage,{status:'PENDING',error:null});return true;});}
   async create(projectId:string,input:CreateTaskInput):Promise<Task>{const project=this.db.getProject(projectId);if(!project)throw new Error('Project not found');const upload=this.db.uploads(projectId)[0];return this.db.createTask(projectId,input.adapter,input,upload?.sha256??await sha256(project.target));}
 }
-function verifyArtifactObjectSync(file:string,size:number,digest?:string):void{
+type FileIdentity={dev:number;ino:number;size:number;mtimeMs:number;ctimeMs:number};
+function fileIdentityFromStats(info:Stats,size:number,file:string):FileIdentity{
+  if(!info.isFile()||info.isSymbolicLink()||info.size!==size)throw new Error(`Artifact object integrity failure: ${file}`);
+  return {dev:info.dev,ino:info.ino,size:info.size,mtimeMs:info.mtimeMs,ctimeMs:info.ctimeMs};
+}
+function assertFileIdentity(file:string,info:Stats,size:number,expected?:FileIdentity):void{
+  const current=fileIdentityFromStats(info,size,file);
+  if(expected&&(current.dev!==expected.dev||current.ino!==expected.ino||current.size!==expected.size||current.mtimeMs!==expected.mtimeMs||current.ctimeMs!==expected.ctimeMs))throw new Error(`Artifact object integrity failure: ${file}`);
+}
+function assertArtifactFileIdentity(file:string,size:number,expected:FileIdentity|undefined,label=file):void{assertFileIdentity(label,lstatSync(file),size,expected);}
+async function verifyArtifactObject(file:string,size:number):Promise<{digest:string;identity:FileIdentity}>{
+  try{
+    const handle=await open(file,constants.O_RDONLY|(constants.O_NOFOLLOW??0));try{
+      const before=await handle.stat();const identity=fileIdentityFromStats(before,size,file);const hash=createHash('sha256');const chunk=Buffer.alloc(64*1024);let position=0;
+      while(position<size){const {bytesRead}=await handle.read(chunk,0,Math.min(chunk.length,size-position),position);if(bytesRead===0)throw new Error(`Artifact object integrity failure: ${file}`);hash.update(chunk.subarray(0,bytesRead));position+=bytesRead;}
+      const final=await handle.stat();const after=await import('node:fs/promises').then(fs=>fs.lstat(file));assertFileIdentity(file,before,size,identity);assertFileIdentity(file,final,size,identity);assertFileIdentity(file,after,size,identity);
+      return {digest:hash.digest('hex'),identity};
+    }finally{await handle.close();}
+  }catch(error){if(error instanceof Error&&error.message.includes('Artifact object integrity failure'))throw error;throw new Error(`Artifact object integrity failure: ${file}`,{cause:error});}
+}
+function verifyArtifactObjectSync(file:string,size:number,_digest?:string,expected?:FileIdentity):void{
   let fd:number|undefined;
   try{
     try{fd=openSync(file,constants.O_RDONLY|(constants.O_NOFOLLOW??0));}catch(error){if((error as NodeJS.ErrnoException).code==='ELOOP')throw new Error(`Artifact object integrity failure: ${file}`);throw error;}
-    const before=lstatSync(file);const opened=fstatSync(fd);assertArtifactIdentity(before,opened,size,file);
-    if(digest){const hash=createHash('sha256');const chunk=Buffer.alloc(64*1024);let position=0;while(position<size){const read=readSync(fd,chunk,0,Math.min(chunk.length,size-position),position);if(read===0)throw new Error(`Artifact object integrity failure: ${file}`);hash.update(chunk.subarray(0,read));position+=read;}if(hash.digest('hex')!==digest)throw new Error(`Artifact object integrity failure: ${file}`);}
-    const final=fstatSync(fd);const after=lstatSync(file);assertArtifactIdentity(before,final,size,file);assertArtifactIdentity(after,final,size,file);
-  }catch(error){if(error instanceof Error&&error.message.includes('Artifact object integrity failure'))throw error;throw new Error(`Artifact object integrity failure: ${digest??file}`,{cause:error});}
+    const before=lstatSync(file);const opened=fstatSync(fd);assertFileIdentity(file,before,size,expected);assertFileIdentity(file,opened,size,expected);
+    const final=fstatSync(fd);const after=lstatSync(file);assertFileIdentity(file,final,size,expected);assertFileIdentity(file,after,size,expected);
+  }catch(error){if(error instanceof Error&&error.message.includes('Artifact object integrity failure'))throw error;throw new Error(`Artifact object integrity failure: ${file}`,{cause:error});}
   finally{if(fd!==undefined)try{closeSync(fd);}catch{}}
 }
-function assertArtifactIdentity(a:Stats,b:Stats,size:number,file:string):void{if(!a.isFile()||a.isSymbolicLink()||!b.isFile()||b.isSymbolicLink()||a.dev!==b.dev||a.ino!==b.ino||a.size!==size||b.size!==size||a.mtimeMs!==b.mtimeMs)throw new Error(`Artifact object integrity failure: ${file}`);}
 function fileIdentity(info:Stats):string{return `${info.dev}:${info.ino}`;}
 async function readArtifactObject(file:string,size:number,digest:string):Promise<Buffer>{
-  try{return await readVerifiedFile(file,size,digest);}
-  catch(error){throw new Error(`Artifact object integrity failure: ${digest}`,{cause:error});}
+  try{
+    const linked=await lstat(file);if(!linked.isFile()||linked.isSymbolicLink())throw new Error(`Artifact object integrity failure: ${digest}`);
+    const handle=await open(file,constants.O_RDONLY|(constants.O_NOFOLLOW??0));try{
+      const before=await handle.stat();const identity=fileIdentityFromStats(before,size,file);if(identity.dev!==linked.dev||identity.ino!==linked.ino)throw new Error(`Artifact object integrity failure: ${digest}`);const hash=createHash('sha256');const chunk=Buffer.alloc(64*1024);const chunks:Buffer[]=[];let position=0;
+      while(position<size){const {bytesRead}=await handle.read(chunk,0,Math.min(chunk.length,size-position),position);if(!bytesRead)throw new Error(`Artifact object integrity failure: ${digest}`);const bytes=Buffer.from(chunk.subarray(0,bytesRead));chunks.push(bytes);hash.update(bytes);position+=bytesRead;}
+      const after=await handle.stat();if(!after.isFile()||after.dev!==identity.dev||after.ino!==identity.ino||after.size!==identity.size)throw new Error(`Artifact object integrity failure: ${digest}`);if(hash.digest('hex')!==digest)throw new Error(`Artifact object integrity failure: ${digest}`);return Buffer.concat(chunks,size);
+    }finally{await handle.close();}
+  }catch(error){if(error instanceof Error&&error.message.includes('Artifact object integrity failure'))throw error;throw new Error(`Artifact object integrity failure: ${digest}`,{cause:error});}
 }
 function positiveEngineOption(name:string,value:number):void {if(!Number.isFinite(value)||value<=0)throw new Error(`${name} must be a finite positive number`);}
 function numberOption(value:unknown,fallback:number){positiveEngineOption('task budget',fallback);return typeof value==='number'&&Number.isFinite(value)&&value>0?value:fallback;}

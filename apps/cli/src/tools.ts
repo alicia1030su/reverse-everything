@@ -51,7 +51,7 @@ export function createMcpServer(localFileRead = false): McpServer {
   register('list_projects', 'List local projects', {}, () => api('/api/projects'));
   register('create_project', 'Create an authorized project', {
     name: z.string(),
-    kind: z.enum(['website', 'software', 'game', 'security', 'protocol']),
+    kind: z.enum(['website', 'software', 'game', 'security', 'protocol', 'hardware', 'firmware']),
     target: z.string().optional(),
     authorized: z.literal(true),
   }, args => api('/api/projects', { method: 'POST', body: JSON.stringify({ name: args.name, kind: args.kind, target: args.target ?? '', authorizationConfirmed: true }) }));
@@ -77,7 +77,7 @@ export function createMcpServer(localFileRead = false): McpServer {
   });
   register('create_task', 'Create a task through the shared engine', {
     projectId: z.string(),
-    adapter: z.enum(['website', 'file', 'security', 'game', 'network', 'apk', 'ghidra']),
+    adapter: z.enum(['website', 'file', 'security', 'game', 'network', 'apk', 'ghidra', 'hardware', 'firmware']),
     options: z.record(z.string(), z.unknown()).optional(),
     confirmLocal: z.literal(true).optional(),
   }, args => {
@@ -96,6 +96,10 @@ export function createMcpServer(localFileRead = false): McpServer {
   register('list_capabilities', 'List product version adapters and entrypoints', {}, () => api('/api/capabilities'));
   register('get_system_health', 'Get API worker and browser status', {}, () => api('/api/system/status'));
   register('get_resource_metrics', 'Get real API worker and desktop metrics', {}, () => api('/api/resources'));
+  register('list_hardware_capabilities', 'Get read-only hardware platform capabilities; no device handles are opened', {}, () => api('/api/hardware/capabilities'));
+  register('list_hardware_devices', 'List OS-visible USB identities from the local loopback API only; remote API mode is forbidden', {}, () => api('/api/hardware/devices'));
+  register('list_serial_ports', 'List serial ports without opening them or changing DTR/RTS; local loopback only', {}, () => api('/api/hardware/serial'));
+  register('get_hardware_report', 'Get an offline hardware analysis task and its evidence/artifacts', { taskId: z.string() }, args => api(`/api/tasks/${String(args.taskId)}`));
   register('list_evidence', 'List paginated evidence for a task', { taskId: z.string(), limit: z.number().optional(), offset: z.number().optional() }, args => api(`/api/tasks/${String(args.taskId)}/evidence?limit=${Number(args.limit ?? 100)}&offset=${Number(args.offset ?? 0)}`));
   register('get_evidence', 'Get evidence by ID', { evidenceId: z.string() }, args => api(`/api/evidence/${String(args.evidenceId)}`));
   register('get_task_events', 'Get persisted task event history', { taskId: z.string(), after: z.number().optional() }, args => api(`/api/tasks/${String(args.taskId)}/events/history?after=${Number(args.after ?? 0)}`));

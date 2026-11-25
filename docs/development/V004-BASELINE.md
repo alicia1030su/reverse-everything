@@ -37,6 +37,7 @@
 - API 项目删除、上传、任务创建和任务动作使用进程内 `projectMutations` Map（`apps/api/src/server.ts:69-70`）。Database 运行时单实例约束需在修复阶段核实并明确文档化。
 - PAUSED 任务 cancel 只设置 flag，resume 后仍被 claimNext 排除，可能永久卡住（`engine.ts:51,246-247`）。
 - 项目删除未清理 cache payload 与 events；缓存命中 CLASSIFY 不重建任务级 Detected 证据（`server.ts:89`、`engine.ts:163,196`）。
+- 无接管者时租约过期会留下 RUNNING+NULL lease；热缓存命中仍重复 put；retention 热更新不生效；队列准入非原子；Worker 状态无新鲜度；证据去重/导出受 1000 条展示上限影响。
 - 工件发布在 `BEGIN IMMEDIATE` 内调用同步 `verifyArtifactObjectSync`，包含同步分块 SHA-256（`packages/workflow/src/engine.ts:117-129,251-259`）。这是本轮明确 P1。
 - 资源采样失败时 `performSample` 返回带 limitation 的 fallback；Worker admission 和运行中采样 catch 会直接阻断/中止任务（`engine.ts:65-68,144`；`resources.ts:212-216`）。需区分指标不可用与真实超限。
 

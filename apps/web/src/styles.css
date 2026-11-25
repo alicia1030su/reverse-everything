@@ -1,2 +1,93 @@
-@tailwind base;@tailwind components;@tailwind utilities;
-:root{color-scheme:dark}*{box-sizing:border-box}html,body,#root{min-height:100%}body{margin:0;background:#080d14;color:#dbe7f1;font-family:Inter,'PingFang SC','Microsoft YaHei',system-ui,sans-serif}button,a,input,select,textarea{font:inherit}a{color:inherit;text-decoration:none}::selection{background:rgba(64,217,187,.25)}::-webkit-scrollbar{width:8px;height:8px}::-webkit-scrollbar-thumb{background:#26384a;border-radius:8px}::-webkit-scrollbar-track{background:transparent}.mono{font-family:'JetBrains Mono','Cascadia Code',Consolas,monospace}.react-flow__node-evidence{font-size:11px;padding:8px 10px;border-radius:8px;border:1px solid #2b4658;background:#101d29;color:#c9e7e0;max-width:190px}.react-flow__edge-path{stroke:#35566b}.react-flow__controls{background:#101d29;border:1px solid #203040}.react-flow__controls-button{background:#101d29;border-bottom:1px solid #203040;fill:#8fa8bb}.panel-scroll{max-height:560px;overflow:auto}
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* dev-expert · anti-slop: P4 H4 E4 S4 R5 V4 */
+:root,
+[data-theme='dark'] {
+  color-scheme: dark;
+  --ink: 8 13 20;
+  --panel: 14 22 33;
+  --panel-2: 18 30 43;
+  --line: 32 48 64;
+  --muted: 127 147 168;
+  --text: 219 231 241;
+  --accent: 64 217 187;
+  --accent-2: 91 168 255;
+  --danger: 248 113 113;
+  --warning: 251 191 36;
+  --success: 52 211 153;
+  --overlay: 2 6 12;
+  --scrollbar: 38 56 74;
+}
+
+[data-theme='light'] {
+  color-scheme: light;
+  --ink: 244 247 250;
+  --panel: 255 255 255;
+  --panel-2: 237 243 247;
+  --line: 205 217 227;
+  --muted: 83 105 124;
+  --text: 22 37 51;
+  --accent: 13 148 136;
+  --accent-2: 37 99 235;
+  --danger: 185 28 28;
+  --warning: 161 98 7;
+  --success: 4 120 87;
+  --overlay: 30 47 62;
+  --scrollbar: 175 191 204;
+}
+
+* { box-sizing: border-box; }
+html, body, #root { min-height: 100%; }
+html { overflow-x: clip; }
+body {
+  margin: 0;
+  overflow-x: clip;
+  background: rgb(var(--ink));
+  color: rgb(var(--text));
+  font-family: var(--font-sans);
+}
+button, a, input, select, textarea { font: inherit; }
+button, a { -webkit-tap-highlight-color: transparent; }
+a { color: inherit; text-decoration: none; }
+::selection { background: rgb(var(--accent) / .25); }
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-thumb { background: rgb(var(--scrollbar)); border-radius: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+.mono { font-family: var(--font-mono); }
+.panel-scroll { max-height: 560px; overflow: auto; }
+
+[data-theme='light'] .text-white { color: rgb(var(--text)); }
+[data-theme='light'] .text-slate-100,
+[data-theme='light'] .text-slate-200,
+[data-theme='light'] .text-slate-300 { color: rgb(var(--text)); }
+[data-theme='light'] .text-slate-400,
+[data-theme='light'] .text-slate-600 { color: rgb(var(--muted)); }
+[data-theme='light'] .bg-panel2 { background-color: rgb(var(--panel-2)); }
+[data-theme='light'] .bg-\[\#0a121b\],
+[data-theme='light'] .bg-\[\#09111a\] { background-color: rgb(var(--panel-2)); }
+[data-theme='light'] .border-slate-600 { border-color: rgb(var(--line)); }
+[data-theme='light'] .hover\:bg-white\/\[\.02\]:hover,
+[data-theme='light'] .hover\:bg-white\/\[\.025\]:hover,
+[data-theme='light'] .hover\:bg-white\/5:hover { background-color: rgb(var(--accent) / .06); }
+[data-theme='light'] .bg-white\/5 { background-color: rgb(var(--panel-2)); }
+[data-theme='light'] .bg-white\/\[\.04\] { background-color: rgb(var(--panel-2)); }
+
+.react-flow__node-evidence {
+  font-size: 11px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid rgb(var(--line));
+  background: rgb(var(--panel-2));
+  color: rgb(var(--text));
+  max-width: 190px;
+}
+.react-flow__edge-path { stroke: rgb(var(--accent-2)); }
+.react-flow__controls { background: rgb(var(--panel)); border: 1px solid rgb(var(--line)); }
+.react-flow__controls-button { background: rgb(var(--panel)); border-bottom: 1px solid rgb(var(--line)); fill: rgb(var(--muted)); }
+
+:focus-visible { outline: 2px solid rgb(var(--accent)); outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+}

@@ -19,6 +19,8 @@ extraResources:
     filter: ['**/dist/**','**/package.json']
   - from: ../../dist/desktop-runtime/node_modules
     to: node_modules
+  - from: ../../dist/desktop-runtime/scripts
+    to: scripts
   - from: ../../examples
     to: examples
   - from: ../../scripts/start.mjs

@@ -2,11 +2,21 @@ import { app, BrowserWindow, Menu, Tray, nativeImage, shell, session } from 'ele
 import { spawn, type ChildProcess } from 'node:child_process';
 import { createServer } from 'node:net';
 import { access, mkdir, readFile, writeFile } from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
+import {
+  createDesktopMetricsCollector,
+  isUsableDesktopSnapshot,
+  reportDesktopMetrics,
+  type DesktopMetricsReport,
+  type DesktopMetricsSnapshot,
+  type DesktopMetricTrigger,
+  type DesktopSidecarSnapshot,
+} from './metrics.js';
 
 const product = 'reverse-everything';
 const version = app.getVersion();
-const smoke = process.argv.includes('--smoke-test');
+const smoke = process.argv.includes('--smoke-test') || process.env.RE_SMOKE_TEST === '1';
 const resourceDir = path.resolve(process.env.RE_RESOURCE_DIR ?? process.resourcesPath);
 const dataDir = path.resolve(process.env.RE_DATA_DIR ?? path.join(app.getPath('appData'), product));
 const logDir = path.join(dataDir, 'logs');
@@ -15,8 +25,22 @@ let worker: ChildProcess | undefined;
 let window: BrowserWindow | undefined;
 let tray: Tray | undefined;
 let baseUrl = '';
+let localToken = '';
 let quitting = false;
 let stopping: Promise<void> | undefined;
+let metricsTimer: NodeJS.Timeout | undefined;
+let metricsQueue: Promise<void> = Promise.resolve();
+let lastMetricsReport: DesktopMetricsReport | undefined;
+let lastMetricsSnapshot: DesktopMetricsSnapshot | undefined;
+let lastRunningTasks = 0;
+const metricsCollector = createDesktopMetricsCollector({
+  mainPid: process.pid,
+  getAppMetrics: () => app.getAppMetrics(),
+  getMemoryUsage: () => process.memoryUsage(),
+  getCpuUsage: () => process.cpuUsage(),
+  getActiveResourceCount: () => process.getActiveResourcesInfo().length,
+  cpuCount: () => os.cpus().length,
+});
 
 app.setName(product);
 app.setAppUserModelId('com.alicia1030su.reverse-everything');
@@ -95,6 +119,56 @@ async function serviceHealthy(): Promise<boolean> {
   }
 }
 
+async function localResourceSnapshots(): Promise<{ api?: DesktopSidecarSnapshot; worker?: DesktopSidecarSnapshot }> {
+  if (!baseUrl || !localToken) return {};
+  try {
+    const response = await fetch(`${baseUrl}/api/resources`, {
+      headers: { authorization: `Bearer ${localToken}` },
+      redirect: 'error',
+      signal: AbortSignal.timeout(3000),
+    });
+    if (!response.ok) return {};
+    const resources = await response.json() as { api?: DesktopSidecarSnapshot; worker?: DesktopSidecarSnapshot };
+    return { ...(resources.api ? { api: resources.api } : {}), ...(resources.worker ? { worker: resources.worker } : {}) };
+  } catch {
+    return {};
+  }
+}
+
+function sampleDesktopMetrics(requestedTrigger: DesktopMetricTrigger): Promise<DesktopMetricsReport | undefined> {
+  const pending = metricsQueue.then(async () => {
+    if (!baseUrl || !localToken) return undefined;
+    try {
+      const resources = await localResourceSnapshots();
+      const runningTasks = resources.api?.runningTasks ?? resources.worker?.runningTasks ?? 0;
+      const trigger = requestedTrigger === 'periodic' && runningTasks > 0 && lastRunningTasks === 0 ? 'task-running' : requestedTrigger;
+      lastRunningTasks = runningTasks;
+      const snapshot = metricsCollector.collect(trigger, [
+        { kind: 'api', ...(api?.pid ? { pid: api.pid } : {}), ...(resources.api ? { snapshot: resources.api } : {}) },
+        { kind: 'worker', ...(worker?.pid ? { pid: worker.pid } : {}), ...(resources.worker ? { snapshot: resources.worker } : {}) },
+      ]);
+      lastMetricsSnapshot = snapshot;
+      const report = await reportDesktopMetrics({ baseUrl, token: localToken, snapshot });
+      lastMetricsReport = report;
+      await log(`[metrics] trigger=${trigger} reported=${report.ok} status=${report.status ?? 'network-error'} attempts=${report.attempts} processes=${snapshot.processes.length}/${snapshot.treeRssMB}MB limitations=${snapshot.limitations.length}`);
+      return report;
+    } catch {
+      const report: DesktopMetricsReport = { ok: false, attempts: 0, error: 'Metrics collection failed' };
+      lastMetricsReport = report;
+      await log(`[metrics] trigger=${requestedTrigger} reported=false status=collection-error`);
+      return report;
+    }
+  });
+  metricsQueue = pending.then(() => undefined, () => undefined);
+  return pending;
+}
+
+function startMetricsTimer(): void {
+  if (metricsTimer) return;
+  metricsTimer = setInterval(() => { void sampleDesktopMetrics('periodic'); }, 5000);
+  metricsTimer.unref();
+}
+
 async function startServices(): Promise<void> {
   await mkdir(dataDir, { recursive: true });
   await log(`desktop starting version=${version} resourceDir=${resourceDir} dataDir=${dataDir}`);
@@ -122,7 +196,11 @@ async function startServices(): Promise<void> {
   const deadline = Date.now() + 20000;
   while (Date.now() < deadline) {
     const healthy = await Promise.race([serviceHealthy(), apiSidecar.failure, workerSidecar.failure]);
-    if (healthy && api?.exitCode === null && worker?.exitCode === null) return;
+    if (healthy && api?.exitCode === null && worker?.exitCode === null) {
+      localToken = (await readFile(path.join(dataDir, 'local-token'), 'utf8')).trim();
+      if (!localToken) throw new Error('Local API token is empty');
+      return;
+    }
     if (api?.exitCode !== null && api?.exitCode !== undefined) {
       throw new Error(`API sidecar exited before becoming healthy (code=${api.exitCode}). See ${logDir}`);
     }
@@ -135,13 +213,19 @@ async function startServices(): Promise<void> {
 }
 
 async function createWindow(): Promise<void> {
-  const localToken = (await readFile(path.join(dataDir, 'local-token'), 'utf8')).trim();
   await session.defaultSession.cookies.set({
     url: baseUrl,
     name: 're_local',
     value: localToken,
     httpOnly: true,
     sameSite: 'strict',
+  });
+  session.defaultSession.webRequest.onCompleted({
+    urls: [`${baseUrl}/api/projects/*/tasks`, `${baseUrl}/api/tasks/*/resume`, `${baseUrl}/api/tasks/*/retry`],
+  }, details => {
+    if (details.method === 'POST' && details.statusCode >= 200 && details.statusCode < 300) {
+      setTimeout(() => { if (!quitting) void sampleDesktopMetrics('task-running'); }, 250);
+    }
   });
   window = new BrowserWindow({
     width: 1440,
@@ -159,38 +243,73 @@ async function createWindow(): Promise<void> {
     return { action: 'deny' };
   });
   await window.loadURL(baseUrl);
-  if (smoke) {
-    const result = await window.webContents.executeJavaScript(`(async()=>{const health=await fetch('/api/health');const capabilities=await fetch('/api/capabilities');return {healthStatus:health.status,health:await health.json(),capabilitiesStatus:capabilities.status,capabilities:await capabilities.json()};})()`) as {
-      healthStatus?: number;
-      health?: { product?: string; version?: string };
-      capabilitiesStatus?: number;
-      capabilities?: { product?: { version?: string } };
-    };
-    const ok = result.health?.product === product && result.health?.version === version && result.capabilities?.product?.version === version;
-    const output = process.env.RE_SMOKE_OUTPUT;
-    if (output) {
-      await writeFile(output, JSON.stringify({ ok, version: result.capabilities?.product?.version, dataDir, resourceDir, diagnostics: result }, null, 2));
-    }
-    await stop(ok ? 0 : 1);
-  } else {
+  if (!smoke) {
     tray = new Tray(nativeImage.createEmpty());
     tray.setToolTip(`逆向万物 ${version}`);
     tray.on('click', () => window?.show());
   }
 }
 
-function runCommand(command: string, args: string[]): Promise<void> {
+async function runSmoke(): Promise<void> {
+  const result = await window!.webContents.executeJavaScript(`(async()=>{const health=await fetch('/api/health');const capabilities=await fetch('/api/capabilities');const resources=await fetch('/api/resources');return {healthStatus:health.status,health:await health.json(),capabilitiesStatus:capabilities.status,capabilities:await capabilities.json(),resourcesStatus:resources.status,resources:await resources.json()};})()`) as {
+    healthStatus?: number;
+    health?: { product?: string; version?: string };
+    capabilitiesStatus?: number;
+    capabilities?: { product?: { version?: string } };
+    resourcesStatus?: number;
+    resources?: { desktop?: unknown };
+  };
+  const desktop = result.resources?.desktop;
+  const metricsStatus = lastMetricsReport?.ok && isUsableDesktopSnapshot(desktop) ? 'reported' : lastMetricsReport ? 'failed' : 'unavailable';
+  const ok = result.health?.product === product && result.health?.version === version
+    && result.capabilities?.product?.version === version
+    && metricsStatus === 'reported';
+  const output = process.env.RE_SMOKE_OUTPUT;
+  if (output) {
+    await writeFile(output, JSON.stringify({
+      ok,
+      version: result.capabilities?.product?.version,
+      dataDir,
+      resourceDir,
+      diagnostics: result,
+      desktopMetrics: {
+        status: metricsStatus,
+        report: lastMetricsReport,
+        snapshot: isUsableDesktopSnapshot(desktop) ? desktop : lastMetricsSnapshot,
+        roles: isUsableDesktopSnapshot(desktop) ? desktop.processes.map(process => process.role) : [],
+      },
+    }, null, 2));
+  }
+  await stop(ok ? 0 : 1);
+}
+
+function captureCommand(command: string, args: string[], timeoutMs = 5000): Promise<string> {
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
     let output = '';
+    let settled = false;
+    const finish = (error?: Error, value = '') => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      if (error) reject(error); else resolve(value);
+    };
+    const timer = setTimeout(() => {
+      child.kill();
+      finish(new Error(`${command} timed out after ${timeoutMs}ms`));
+    }, timeoutMs);
     child.stdout?.on('data', chunk => { output += String(chunk); });
     child.stderr?.on('data', chunk => { output += String(chunk); });
-    child.once('error', reject);
-    child.once('exit', (code, signal) => {
-      if (code === 0) resolve();
-      else reject(new Error(`${command} exited code=${code} signal=${signal}: ${output.trim()}`));
+    child.once('error', error => finish(error));
+    child.once('close', code => {
+      if (code === 0) finish(undefined, output);
+      else finish(new Error(`${command} exited code=${code}: ${output.trim()}`));
     });
   });
+}
+
+async function runCommand(command: string, args: string[]): Promise<void> {
+  await captureCommand(command, args);
 }
 
 function waitForExit(child: ChildProcess, timeoutMs: number): Promise<boolean> {
@@ -217,10 +336,49 @@ function processGroupExists(pid: number): boolean {
   }
 }
 
-async function stopSidecar(child: ChildProcess | undefined, name: string): Promise<void> {
-  if (!child?.pid) return;
+function processExists(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === 'EPERM';
+  }
+}
+
+async function windowsProcessTree(rootPid: number): Promise<number[]> {
+  const script = '$p=Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId; $p | ConvertTo-Json -Compress';
+  const output = await captureCommand('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script]);
+  const parsed = JSON.parse(output) as { ProcessId: number; ParentProcessId: number } | Array<{ ProcessId: number; ParentProcessId: number }> | null;
+  const rows = parsed ? (Array.isArray(parsed) ? parsed : [parsed]) : [];
+  const byParent = new Map<number, number[]>();
+  for (const row of rows) {
+    if (!Number.isSafeInteger(row.ProcessId) || !Number.isSafeInteger(row.ParentProcessId)) continue;
+    const children = byParent.get(row.ParentProcessId) ?? [];
+    children.push(row.ProcessId);
+    byParent.set(row.ParentProcessId, children);
+  }
+  const result = [rootPid];
+  const seen = new Set(result);
+  for (let index = 0; index < result.length; index++) {
+    for (const pid of byParent.get(result[index]!) ?? []) {
+      if (seen.has(pid)) continue;
+      seen.add(pid);
+      result.push(pid);
+    }
+  }
+  return result;
+}
+
+async function stopSidecar(child: ChildProcess | undefined, name: string): Promise<boolean> {
+  if (!child?.pid) return true;
   const pid = child.pid;
   if (process.platform === 'win32') {
+    let ownedPids: number[] | undefined;
+    try {
+      ownedPids = await windowsProcessTree(pid);
+    } catch (error) {
+      await log(`[sidecar] descendant snapshot unavailable name=${name} pid=${pid}: ${String(error)}`);
+    }
     try {
       await runCommand('taskkill', ['/PID', String(pid), '/T', '/F']);
       await log(`[sidecar] taskkill completed name=${name} pid=${pid}`);
@@ -230,7 +388,11 @@ async function stopSidecar(child: ChildProcess | undefined, name: string): Promi
     }
     const exited = await waitForExit(child, 5000);
     if (!exited) await log(`[sidecar] timed out waiting for process tree name=${name} pid=${pid}`);
-    return;
+    if (!ownedPids) return false;
+    const alive = ownedPids.filter(processExists);
+    if (alive.length) await log(`[sidecar] orphan processes remain name=${name} pids=${alive.join(',')}`);
+    else await log(`[sidecar] orphan check clear name=${name} checked=${ownedPids.length}`);
+    return exited && alive.length === 0;
   }
 
   try {
@@ -249,19 +411,25 @@ async function stopSidecar(child: ChildProcess | undefined, name: string): Promi
   }
   const exited = await waitForExit(child, 5000);
   if (!exited) await log(`[sidecar] timed out waiting for process group name=${name} pid=${pid}`);
+  const clear = exited && !processGroupExists(pid);
+  await log(`[sidecar] orphan check ${clear ? 'clear' : 'failed'} name=${name} pid=${pid}`);
+  return clear;
 }
 
 function stop(code = 0): Promise<void> {
   if (stopping) return stopping;
   quitting = true;
   stopping = (async () => {
+    if (metricsTimer) clearInterval(metricsTimer);
+    metricsTimer = undefined;
+    await sampleDesktopMetrics('before-quit');
     window?.destroy();
     tray?.destroy();
-    await Promise.all([
+    const [workerClear, apiClear] = await Promise.all([
       stopSidecar(worker, 'worker'),
       stopSidecar(api, 'api'),
     ]);
-    await log(`desktop stopped exitCode=${code}`);
+    await log(`desktop stopped exitCode=${code} sidecarOrphanCheck=${workerClear && apiClear ? 'clear' : 'failed'}`);
     app.exit(code);
   })();
   return stopping;
@@ -272,6 +440,9 @@ app.whenReady().then(async () => {
   try {
     await startServices();
     await createWindow();
+    await sampleDesktopMetrics('startup');
+    startMetricsTimer();
+    if (smoke) await runSmoke();
   } catch (error) {
     await log(`desktop startup failed: ${error instanceof Error ? error.stack ?? error.message : String(error)}`);
     await stop(1);

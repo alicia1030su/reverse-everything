@@ -1,0 +1,75 @@
+name: Android v0.0.4 real JADX
+
+on:
+  push:
+    paths:
+      - 'packages/core/src/adapters/apk.ts'
+      - 'scripts/verify-jadx.mjs'
+      - 'tests/fixtures/android/**'
+      - 'tests/unit/android-real.test.ts'
+      - 'tests/unit/deep-adapters.test.ts'
+      - 'tests/unit/apk-artifact-publication.test.ts'
+      - '.github/workflows/android-v004.yml'
+  pull_request:
+    paths:
+      - 'packages/core/src/adapters/apk.ts'
+      - 'scripts/verify-jadx.mjs'
+      - 'tests/fixtures/android/**'
+      - 'tests/unit/android-real.test.ts'
+      - 'tests/unit/deep-adapters.test.ts'
+      - 'tests/unit/apk-artifact-publication.test.ts'
+      - '.github/workflows/android-v004.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  real-jadx:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      JADX_VERSION: 1.5.3
+      JADX_SHA256: 8280f3799c0273fe797a2bcd90258c943e451fd195f13d05400de5e6451d15ec
+      JADX_URL: https://github.com/skylot/jadx/releases/download/v1.5.3/jadx-1.5.3.zip
+      RE_JADX_HOME: ${{ github.workspace }}/.android-v004/jadx
+      RE_RUN_ANDROID_REAL: 1
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - run: npm ci --no-audit --no-fund
+      - name: Download and verify official JADX archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .android-v004
+          curl -fL --retry 2 "$JADX_URL" -o .android-v004/jadx-1.5.3.zip
+          test "$(stat -c %s .android-v004/jadx-1.5.3.zip)" = 116608944
+          echo "$JADX_SHA256  .android-v004/jadx-1.5.3.zip" | sha256sum -c -
+          unzip -q .android-v004/jadx-1.5.3.zip -d .android-v004
+      - name: Verify deterministic APK and run real JADX known answers
+        run: node scripts/verify-jadx.mjs --check-fixture --archive .android-v004/jadx-1.5.3.zip --jadx-home .android-v004/jadx --log .android-v004/verify.json
+      - name: Build core
+        run: npm run build -w @reverse/core
+      - name: Run Android adapter and real JADX tests
+        shell: bash
+        run: |
+          set -o pipefail
+          npx vitest run tests/unit/android-real.test.ts tests/unit/deep-adapters.test.ts --reporter=verbose 2>&1 | tee .android-v004/tests.log
+      - name: Upload JADX verification logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-v004-jadx-logs
+          path: |
+            .android-v004/verify.json
+            .android-v004/tests.log
+          if-no-files-found: warn
+          retention-days: 14

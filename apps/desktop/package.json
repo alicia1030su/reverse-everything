@@ -1,6 +1,6 @@
 {
   "name": "@reverse/desktop",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "private": true,
   "type": "module",
   "description": "Reverse Everything Windows desktop shell",
@@ -8,7 +8,7 @@
   "main": "dist/main.js",
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "dist": "node ../../node_modules/electron-builder/cli.js --win --x64"
+    "dist": "node ../../scripts/prepare-desktop-dist.mjs && node ../../node_modules/electron-builder/cli.js --win --x64"
   },
   "devDependencies": {
     "electron": "38.2.0",

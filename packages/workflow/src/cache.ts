@@ -14,7 +14,7 @@ const PURE_STAGES = new Set<Stage>(['CLASSIFY','PREPARE','ANALYZE']);
 const REALTIME_ADAPTERS = new Set<AdapterName>(['website','game','security']);
 // Only the file adapter can rebuild every downstream artifact from its complete output.
 const CACHEABLE_ANALYZE_ADAPTERS = new Set<AdapterName>(['file']);
-const CACHEABLE_PREPARE_ADAPTERS = new Set<AdapterName>(['file','network','apk']);
+const CACHEABLE_PREPARE_ADAPTERS = new Set<AdapterName>(['file','network']);
 const EXECUTION_OPTION = /^(?:timeoutMs|settleMs|maxMemoryMB|maxDiskMB|pollMs|leaseMs|ghidraTimeoutMs|aiMaxIterations|cacheScope|cacheShareApproved)$/i;
 const RANDOM_OPTION = /random|nonce|requestId|traceId|runId|timestamp|^(?:now|requestedAt|startedAt|createdAt)$/i;
 const SENSITIVE_FIELD_NAMES = new Set(['apikey','key','accesskey','secretkey','privatekey','clientkey','token','accesstoken','refreshtoken','authtoken','idtoken','secret','clientsecret','password','passwd','pwd','credential','credentials','authorization','auth','cookie','setcookie','session','sessionid','sid','jwt','refresh','access','bearer']);

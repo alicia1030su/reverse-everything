@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="title desc">
+  <title id="title">逆向万物</title>
+  <desc id="desc">芯片、电路节点与逆向箭头组成的项目标识</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#101b3a"/><stop offset="1" stop-color="#291452"/></linearGradient>
+    <linearGradient id="line" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#54e1ff"/><stop offset="1" stop-color="#a98bff"/></linearGradient>
+  </defs>
+  <rect x="8" y="8" width="240" height="240" rx="56" fill="url(#bg)"/>
+  <g fill="none" stroke="url(#line)" stroke-width="8" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="70" y="70" width="116" height="116" rx="22"/>
+    <path d="M98 70V46h60v24M98 186v24h60v-24M70 98H46v60h24M186 98h24v60h-24"/>
+    <path d="M104 128h48M128 104v48"/>
+    <path d="m156 88 24-24m-8 0h8v8M100 168l-24 24m8 0h-8v-8"/>
+  </g>
+  <g fill="#54e1ff"><circle cx="46" cy="128" r="7"/><circle cx="210" cy="128" r="7"/><circle cx="128" cy="46" r="7"/><circle cx="128" cy="210" r="7"/></g>
+</svg>

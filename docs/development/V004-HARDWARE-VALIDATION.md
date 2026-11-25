@@ -20,7 +20,7 @@
 
 ## 设备能力声明
 
-- H0 设备身份识别：计划支持 Windows PnP/CIM 与 Linux sysfs 只读枚举。
+- H0 设备身份识别：支持 Windows PnP/CIM 与 Linux sysfs 只读枚举；VID/PID、拓扑与实例哈希可用于身份关联，序列号不读取，设备自由文本仅返回单向哈希。
 - H1 标准描述符：Linux sysfs 与离线记录；Windows 仅暴露 OS 可读字段。
 - H2 授权通信记录：离线 PCAP/PCAPNG/usbmon。
 - H3 可验证协议理解：必须关联原始位置，未知字段保持 UNKNOWN。

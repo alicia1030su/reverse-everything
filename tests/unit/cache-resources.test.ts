@@ -89,6 +89,49 @@ describe('AnalysisCache concurrency and references',()=>{
 });
 
 describe('ResourceMonitor reliability',()=>{
+  it('retries transient process sampler failures and reports exhaustion without hiding real limits',async()=>{
+    const dir=await temp();const db=new Database(':memory:');let calls=0;
+    const monitor=new ResourceMonitor(db,dir,undefined,{processSampler:async()=>{calls++;if(calls<3)throw new Error('temporary');return processSample(900);},diskSampler:async()=>diskSample,sampleTtlMs:0,maxSamplingAttempts:3,retryDelayMs:0});
+    const snapshot=await monitor.sampleOrThrow('worker',{fresh:true});
+    expect(calls).toBe(3);expect(snapshot.treeRssMB).toBe(900);expect(snapshot.pressure).toBe('danger');
+    const failing=new ResourceMonitor(db,dir,undefined,{processSampler:async()=>{throw new Error('denied');},diskSampler:async()=>diskSample,sampleTtlMs:0,maxSamplingAttempts:2,retryDelayMs:0});
+    const failed=await failing.sample('worker',{fresh:true});
+    expect(failed.samplingStatus).toBe('unavailable');expect(failed.sampling).toMatchObject({attempts:2,retrying:false});
+    await expect(failing.sampleOrThrow('worker',{fresh:true})).rejects.toThrow(/failed closed/);
+    db.close();
+  });
+
+  it('does not invent CPU history after PID reuse and still reports high load',async()=>{
+    const dir=await temp();const db=new Database(':memory:');let now=1000;let startedAt=1;let cpu=0;
+    const monitor=new ResourceMonitor(db,dir,{softRssMb:1000,hardRssMb:2000,maxCpuPercent:90},{now:()=>now,processSampler:async()=>[{pid:process.pid,ppid:1,rssMB:100,cpuSeconds:cpu,name:'node',startedAt}],diskSampler:async()=>({...diskSample,diskAvailableBytes:4*1024**3}),sampleTtlMs:0});
+    await monitor.sample('worker',{fresh:true});cpu=os.cpus().length;startedAt=2;now+=1000;
+    expect((await monitor.sample('worker',{fresh:true})).cpuPercent).toBe(0);
+    cpu+=os.cpus().length;now+=1000;expect((await monitor.sample('worker',{fresh:true})).pressure).toBe('danger');
+    db.close();
+  });
+
+  it('keeps real self-memory limits visible when Windows sampling fails or Chromium exits',async()=>{
+    const dir=await temp();const db=new Database(':memory:');const rss=1200;
+    const windows=new ResourceMonitor(db,dir,undefined,{processSampler:async()=>{throw new Error('powershell denied');},diskSampler:async()=>diskSample,sampleTtlMs:0,maxSamplingAttempts:2,retryDelayMs:0});
+    const unavailable=await windows.sample('worker',{fresh:true});expect(unavailable.samplingStatus).toBe('unavailable');expect(unavailable.treeRssMB).toBeGreaterThan(0);
+    const chromium=new ResourceMonitor(db,dir,undefined,{processSampler:async()=>[{pid:process.pid,ppid:1,rssMB:rss,cpuSeconds:0,name:'node'}],diskSampler:async()=>diskSample,sampleTtlMs:0});
+    const exited=await chromium.sample('worker',{fresh:true,rootPids:[9001]});expect(exited.samplingStatus).toBe('process-exited');expect(exited.pressure).toBe('danger');
+    db.close();
+  });
+
+  it('marks registered process exit separately from unavailable and stale metrics',async()=>{
+    const dir=await temp();const db=new Database(':memory:');let now=1000;
+    const monitor=new ResourceMonitor(db,dir,undefined,{now:()=>now,processSampler:async()=>processSample(50),diskSampler:async()=>diskSample,sampleTtlMs:0});
+    await monitor.sample('worker',{fresh:true});now+=60000;
+    const exited=await monitor.sample('worker',{fresh:true,rootPids:[999999]});
+    expect(exited.samplingStatus).toBe('process-exited');expect(exited.limitations.join(' ')).toContain('exited');
+    const staleDb=new Database(':memory:');staleDb.setSetting('resource_snapshot_worker',JSON.stringify({sampledAt:new Date(0).toISOString(),limitations:[]}));
+    const stale=new ResourceMonitor(staleDb,dir,undefined,{processSampler:async()=>{throw new Error('denied');},diskSampler:async()=>diskSample,sampleTtlMs:2000,maxSamplingAttempts:1,retryDelayMs:0});
+    const failed=await stale.sample('worker');expect(failed.samplingStatus).toBe('unavailable');expect(failed.sampling).toMatchObject({stale:true});
+    staleDb.close();db.close();
+  });
+
+
   it('shares one in-flight snapshot per source',async()=>{
     const dir=await temp();const db=new Database(':memory:');let calls=0;let finish!:(value:ResourceProcess[])=>void;
     const pending=new Promise<ResourceProcess[]>(resolve=>{finish=resolve;});
@@ -150,7 +193,7 @@ describe('ResourceMonitor reliability',()=>{
     expect(monitor.samplingHealthy(fallback)).toBe(false);
     fail=false;
     const healthy=await monitor.sampleOrThrow('api');
-    expect(calls).toBe(2);
+    expect(calls).toBe(4); // three bounded attempts for the failure, then one healthy sample
     expect(monitor.samplingHealthy(healthy)).toBe(true);
     db.close();
   });

@@ -2,23 +2,64 @@ import { createHash, randomUUID } from 'node:crypto';
 import { createServer } from 'node:http';
 import { createConnection } from 'node:net';
 import { existsSync } from 'node:fs';
-import { mkdir, mkdtemp, realpath, rm, symlink, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { buildServer } from '../../apps/api/src/server.js';
+import { Database } from '@reverse/workflow';
 
 const token='api-safety-token';const auth={authorization:`Bearer ${token}`};
+const queueHashGate=vi.hoisted(()=>({delay:false}));
+vi.mock('@reverse/evidence',async importOriginal=>{const actual=await importOriginal<typeof import('@reverse/evidence')>();return {...actual,sha256:async(...args:Parameters<typeof actual.sha256>)=>{if(queueHashGate.delay)await new Promise(resolve=>setTimeout(resolve,25));return actual.sha256(...args);}};});
 const dirs:string[]=[];const cleanups:(()=>Promise<void>)[]=[];
-afterEach(async()=>{vi.restoreAllMocks();for(const cleanup of cleanups.splice(0).reverse())await cleanup();for(const dir of dirs.splice(0))await rm(dir,{recursive:true,force:true});});
-async function setup(){const dataDir=await mkdtemp(path.join(os.tmpdir(),'re-api-safety-'));dirs.push(dataDir);const built=await buildServer({dataDir,token,backgroundResources:false});cleanups.push(async()=>{await built.app.close();built.db.close();});return {...built,dataDir};}
+afterEach(async()=>{vi.restoreAllMocks();queueHashGate.delay=false;for(const cleanup of cleanups.splice(0).reverse())await cleanup();for(const dir of dirs.splice(0))await rm(dir,{recursive:true,force:true});});
+async function setup(){const dataDir=await mkdtemp(path.join(os.tmpdir(),'re-api-safety-'));dirs.push(dataDir);const built=await buildServer({dataDir,token,backgroundResources:false});cleanups.push(async()=>{await built.app.close();if(built.db.raw.isOpen)built.db.close();});return {...built,dataDir};}
 async function withEnv<T>(values:Record<string,string>,operation:()=>Promise<T>){const previous=Object.fromEntries(Object.keys(values).map(name=>[name,process.env[name]]));Object.assign(process.env,values);try{return await operation();}finally{for(const [name,value] of Object.entries(previous)){if(value===undefined)delete process.env[name];else process.env[name]=value;}}}
 async function within(parent:string,child:string){const canonicalParent=await realpath(parent).catch(()=>path.resolve(parent));const canonicalChild=await realpath(child).catch(()=>path.resolve(child));const relative=path.relative(canonicalParent,canonicalChild);return relative!=='..'&&!relative.startsWith(`..${path.sep}`)&&!path.isAbsolute(relative);}
 
 describe('API safety and recovery boundaries',()=>{
+  it('rejects a second API for the same database and fences a stale lease owner',async()=>{
+    const first=await setup();const headers={...auth,'content-type':'application/json'};
+    await expect(buildServer({dataDir:first.dataDir,token:'second-api-token',backgroundResources:false})).rejects.toThrow(/single-instance|lease/i);
+    const lock=new DatabaseSync(`${first.db.file}.runtime-lock`);lock.prepare("UPDATE runtime_leases SET expires_at='2000-01-01T00:00:00.000Z' WHERE kind='api'").run();lock.close();
+    const second=await buildServer({dataDir:first.dataDir,token:'second-api-token',backgroundResources:false});cleanups.push(async()=>{await second.app.close();if(second.db.raw.isOpen)second.db.close();});
+    expect((await first.app.inject({method:'GET',url:'/api/projects',headers})).statusCode).toBe(409);
+    await second.app.close();second.db.close();
+    const replacement=await buildServer({dataDir:first.dataDir,token,backgroundResources:false});cleanups.push(async()=>{await replacement.app.close();if(replacement.db.raw.isOpen)replacement.db.close();});expect((await replacement.app.inject({method:'GET',url:'/api/projects',headers})).statusCode).toBe(200);
+  });
+  it('allows multiple API servers backed by independent memory databases',async()=>{
+    const dataDir=await mkdtemp(path.join(os.tmpdir(),'re-api-memory-'));dirs.push(dataDir);const firstDb=new Database(':memory:');const secondDb=new Database(':memory:');cleanups.push(async()=>{if(firstDb.raw.isOpen)firstDb.close();if(secondDb.raw.isOpen)secondDb.close();});
+    const first=await buildServer({dataDir,db:firstDb,token,backgroundResources:false});const second=await buildServer({dataDir,db:secondDb,token,backgroundResources:false});cleanups.push(async()=>{await first.app.close();await second.app.close();});
+    expect((await first.app.inject({method:'GET',url:'/api/health'})).statusCode).toBe(200);expect((await second.app.inject({method:'GET',url:'/api/health'})).statusCode).toBe(200);expect(existsSync(path.join(dataDir,'reverse-everything.sqlite.runtime-lock'))).toBe(false);
+  });
+  it('accepts hardware and firmware project kinds',async()=>{
+    const {app}=await setup();
+    for(const kind of ['hardware','firmware']){const response=await app.inject({method:'POST',url:'/api/projects',headers:{...auth,'content-type':'application/json'},body:JSON.stringify({name:`${kind} project`,kind,authorizationConfirmed:true})});expect(response.statusCode,response.body).toBe(201);expect(response.json().kind).toBe(kind);}
+  });
+  it('accepts bounded local desktop metrics and rejects remote or forged snapshots',async()=>{
+    const {app,db}=await setup();const snapshot={sampledAt:new Date().toISOString(),source:'desktop',treeRssMB:100,selfRssMB:60,childRssMB:40,heapUsedMB:20,cpuPercent:5,handles:10,processes:[{pid:100,ppid:1,rssMB:60,name:'main'},{pid:101,ppid:100,rssMB:40,name:'renderer'}],systemFreeMemoryMB:2048,systemTotalMemoryMB:8192,dataDirBytes:1024,diskAvailableBytes:1048576,queuedTasks:0,runningTasks:0,peakTreeRssMB:100,pressure:'normal',limitations:[]};const headers={...auth,'content-type':'application/json'};const body=JSON.stringify(snapshot);
+    expect((await app.inject({method:'POST',url:'/api/resources/desktop',headers:{'content-type':'application/json'},body})).statusCode).toBe(401);
+    expect((await app.inject({method:'POST',url:'/api/resources/desktop',headers,body,remoteAddress:'203.0.113.10'})).statusCode).toBe(403);
+    await withEnv({RE_ALLOW_REMOTE:'true'},async()=>{expect((await app.inject({method:'POST',url:'/api/resources/desktop',headers,body})).statusCode).toBe(403);});
+    expect((await app.inject({method:'POST',url:'/api/resources/desktop',headers,body:JSON.stringify({...snapshot,sampledAt:'2000-01-01T00:00:00.000Z'})})).statusCode).toBe(400);
+    expect((await app.inject({method:'POST',url:'/api/resources/desktop',headers,body:JSON.stringify({...snapshot,processes:Array.from({length:257},(_,index)=>({pid:index+1,rssMB:0}))})})).statusCode).toBe(400);
+    const recorded=await app.inject({method:'POST',url:'/api/resources/desktop',headers,body});expect(recorded.statusCode,recorded.body).toBe(200);expect(recorded.json()).toMatchObject({recorded:true,processes:2});
+    const truncated={...snapshot,processes:[{pid:100,ppid:1,rssMB:60,name:'main'}],childRssMB:40,treeRssMB:100,sampledProcessCount:2,processesTruncated:true};expect((await app.inject({method:'POST',url:'/api/resources/desktop',headers,body:JSON.stringify(truncated)})).statusCode).toBe(200);expect((await app.inject({method:'POST',url:'/api/resources/desktop',headers,body:JSON.stringify({...truncated,processesTruncated:false})})).statusCode).toBe(400);
+    const resources=await app.inject({method:'GET',url:'/api/resources',headers:auth});expect(resources.json().desktop).toMatchObject({source:'desktop',treeRssMB:100,sampledProcessCount:2,processesTruncated:true,processes:expect.any(Array)});
+    await app.inject({method:'PUT',url:'/api/retention',headers,payload:{resourceMaxRows:1,resourceDays:1}});await app.inject({method:'POST',url:'/api/resources/desktop',headers,body});expect(Number((db.raw.prepare('SELECT COUNT(*) n FROM resource_samples').get() as {n:number}).n)).toBe(1);
+  });
+  it('exports every evidence row for a task without the paginated read limit',async()=>{
+    const {db}=await setup();const project=db.project({name:'evidence export',kind:'software',authorizationConfirmed:true});const task=db.createTask(project.id,'file',{adapter:'file'},'evidence-export');const other=db.createTask(project.id,'file',{adapter:'file'},'other-evidence');
+    for(let index=0;index<1005;index++)db.addEvidence({taskId:task.id,kind:'EVIDENCE',title:`row-${index}`,source:'fixture',locator:`locator-${index}`,content:{index},sha256:'hash'});db.addEvidence({taskId:other.id,kind:'EVIDENCE',title:'other',source:'fixture',locator:'other',content:{},sha256:'hash'});
+    const exported=db.exportEvidence(task.id);expect(exported).toHaveLength(1005);expect(exported[0]?.title).toBe('row-0');expect(exported.at(-1)?.title).toBe('row-1004');expect(exported.every(item=>item.taskId===task.id)).toBe(true);
+  });
+  it('enforces the queue limit atomically across concurrent task admissions',async()=>{
+    await withEnv({RE_MAX_QUEUE:'2'},async()=>{const {app,db}=await setup();const project=db.project({name:'queue race',kind:'software',authorizationConfirmed:true});const headers={...auth,'content-type':'application/json'};const responses=await Promise.all(Array.from({length:8},()=>app.inject({method:'POST',url:`/api/projects/${project.id}/tasks`,headers,body:JSON.stringify({adapter:'file'})})));expect(responses.map(response=>response.statusCode).filter(status=>status===201)).toHaveLength(2);expect(responses.map(response=>response.statusCode).filter(status=>status===429)).toHaveLength(6);expect(responses.filter(response=>response.statusCode===429).every(response=>response.json().error.code==='QUEUE_FULL')).toBe(true);expect(db.raw.prepare("SELECT COUNT(*) n FROM tasks WHERE status='QUEUED'").get()).toEqual({n:2});});
+  });
   it('keeps public health minimal and protects resource details',async()=>{
-    const {app}=await setup();const health=await app.inject({method:'GET',url:'/api/health'});expect(health.statusCode).toBe(200);expect(health.json()).toEqual({ok:true,product:'reverse-everything',version:'0.0.3',schemaVersion:3});
+    const {app}=await setup();const health=await app.inject({method:'GET',url:'/api/health'});expect(health.statusCode).toBe(200);expect(health.json()).toEqual({ok:true,product:'reverse-everything',version:'0.0.4',schemaVersion:3});
     expect((await app.inject({method:'GET',url:'/api/resources'})).statusCode).toBe(401);
     expect((await app.inject({method:'GET',url:'/api/resources',headers:auth})).statusCode).toBe(200);
   });
@@ -72,6 +113,21 @@ describe('API safety and recovery boundaries',()=>{
     for(let index=0;index<201;index++){const task=db.createTask(project.id,'file',{adapter:'file'},`hash-${index}`);db.updateTask(task.id,{status:'COMPLETED',current_stage:'COMPLETED'});taskIds.push(task.id);const dir=path.join(dataDir,'tasks',task.id,'artifacts');await mkdir(dir,{recursive:true});await writeFile(path.join(dir,'marker.txt'),String(index));}
     db.updateTask(taskIds[0]!,{status:'RUNNING'});const blocked=await app.inject({method:'DELETE',url:`/api/projects/${project.id}`,headers:{...auth,'content-type':'application/json'},body:JSON.stringify({confirm:project.name})});expect(blocked.statusCode).toBe(409);db.updateTask(taskIds[0]!,{status:'COMPLETED'});
     const response=await app.inject({method:'DELETE',url:`/api/projects/${project.id}`,headers:{...auth,'content-type':'application/json'},body:JSON.stringify({confirm:project.name})});expect(response.statusCode).toBe(200);expect(db.getProject(project.id)).toBeUndefined();for(const id of taskIds)expect(existsSync(path.join(dataDir,'tasks',id))).toBe(false);
+  });
+  it('deletes project cache payloads and task events while preserving global and other-project caches',async()=>{
+    const {app,db,cache,dataDir}=await setup();
+    const project=db.project({name:'cache deletion',kind:'software',authorizationConfirmed:true});
+    const other=db.project({name:'cache survivor',kind:'software',authorizationConfirmed:true});
+    const task=db.createTask(project.id,'file',{adapter:'file'},'delete-cache-task');db.updateTask(task.id,{status:'COMPLETED',current_stage:'COMPLETED'});
+    const otherTask=db.createTask(other.id,'file',{adapter:'file'},'keep-cache-task');db.addEvent(task.id,'project.task.event',{private:true});db.addEvent(otherTask.id,'other.task.event',{kept:true});db.addEvent(null,'global.event',{kept:true});
+    const put=async(projectId:string,shareApproved:boolean,value:string)=>{const identity=await cache.keyFor({projectId,inputHash:`hash-${value}`,adapter:'file',adapterVersion:'1',stage:'ANALYZE',options:{},shareApproved});await cache.put(identity.key,identity.scope,identity.projectId,'file','ANALYZE',{value});return db.raw.prepare('SELECT payload_path FROM cache_entries WHERE key=?').get(identity.key) as {payload_path:string};};
+    const projectPayload=await put(project.id,false,'project-private');const globalPayload=await put(project.id,true,'global-shared');const otherPayload=await put(other.id,false,'other-private');
+    const outside=path.join(dataDir,'outside-cache-payload.json');await writeFile(outside,'must survive');db.raw.prepare("INSERT INTO cache_entries (key,scope,project_id,adapter,stage,kind,size_bytes,payload_path,payload_sha256,created_at,last_accessed_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)").run('unsafe-project-row','project',project.id,'file','ANALYZE','static-analysis',12,outside,'0'.repeat(64),new Date().toISOString(),new Date().toISOString());
+    const response=await app.inject({method:'DELETE',url:`/api/projects/${project.id}`,headers:{...auth,'content-type':'application/json'},body:JSON.stringify({confirm:project.name})});expect(response.statusCode).toBe(200);
+    expect(db.raw.prepare('SELECT key FROM cache_entries ORDER BY key').all()).toEqual([{key:expect.any(String)},{key:expect.any(String)}]);
+    expect(cache.list(project.id).total).toBe(0);expect(cache.list().items.map(item=>item.scope).sort()).toEqual(['global','project']);expect(cache.list().items.find(item=>item.projectId===other.id)).toBeDefined();
+    expect(existsSync(projectPayload.payload_path)).toBe(false);expect(existsSync(globalPayload.payload_path)).toBe(true);expect(existsSync(otherPayload.payload_path)).toBe(true);expect(await readFile(outside,'utf8')).toBe('must survive');
+    expect(db.raw.prepare('SELECT id FROM events WHERE task_id=?').all(task.id)).toEqual([]);expect(db.raw.prepare('SELECT id FROM events WHERE task_id=?').all(otherTask.id)).toHaveLength(1);expect(db.raw.prepare("SELECT id FROM events WHERE type='global.event'").all()).toHaveLength(1);
   });
   it('keeps SSE delivery live when other tasks flood the global event log',async()=>{
     const {app,db}=await setup();const project=db.project({name:'events',kind:'software',authorizationConfirmed:true});const target=db.createTask(project.id,'file',{adapter:'file'},'target');const other=db.createTask(project.id,'file',{adapter:'file'},'other');

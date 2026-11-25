@@ -1,0 +1,67 @@
+name: Ghidra V004 Real Verification
+
+on:
+  push:
+    paths:
+      - 'packages/core/src/adapters/ghidra.ts'
+      - 'packages/core/src/index.ts'
+      - 'scripts/ghidra-analyze-headless.mjs'
+      - 'scripts/verify-ghidra.mjs'
+      - 'tests/fixtures/ghidra/**'
+      - 'tests/unit/deep-adapters.test.ts'
+      - 'tests/unit/ghidra-real.test.ts'
+      - '.github/workflows/ghidra-v004.yml'
+  pull_request:
+    paths:
+      - 'packages/core/src/adapters/ghidra.ts'
+      - 'packages/core/src/index.ts'
+      - 'scripts/ghidra-analyze-headless.mjs'
+      - 'scripts/verify-ghidra.mjs'
+      - 'tests/fixtures/ghidra/**'
+      - 'tests/unit/deep-adapters.test.ts'
+      - 'tests/unit/ghidra-real.test.ts'
+      - '.github/workflows/ghidra-v004.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            formats: pe,elf
+          - os: windows-latest
+            formats: pe
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 25
+      - name: Install PE cross-compiler
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends mingw-w64
+      - run: npm ci --no-audit --no-fund
+      - run: npm run build
+      - name: Verify official Ghidra against compiled PE/ELF fixtures
+        run: node scripts/verify-ghidra.mjs "${{ matrix.formats }}"
+        env:
+          GHIDRA_VERIFY_OUTPUT_DIR: ${{ github.workspace }}/artifacts/ghidra-v004
+      - name: Upload real tool logs and JSON evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ghidra-v004-${{ matrix.os }}
+          path: artifacts/ghidra-v004
+          if-no-files-found: warn
+          retention-days: 14

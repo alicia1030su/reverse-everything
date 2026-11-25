@@ -1,4 +1,4 @@
-export const VERSION = '0.0.3' as const;
+export const VERSION = '0.0.4' as const;
 export const SCHEMA_VERSION = 3 as const;
 export const EVIDENCE_MODEL_VERSION = '3.0.0' as const;
 export const SECURITY_POLICY_VERSION = '3.0.0' as const;
@@ -7,8 +7,8 @@ export const STAGES = ['INTAKE','CLASSIFY','AUTHORIZATION_CHECK','PLAN','PREPARE
 export type Stage = typeof STAGES[number];
 export type TaskStatus = 'CREATED' | 'QUEUED' | 'RUNNING' | 'PAUSED' | 'BLOCKED' | 'FAILED' | 'CANCELLED' | 'PARTIAL_SUCCESS' | 'COMPLETED';
 export type StageStatus = 'PENDING' | 'RUNNING' | 'SUCCEEDED' | 'FAILED' | 'SKIPPED';
-export type ProjectKind = 'website' | 'software' | 'game' | 'security' | 'protocol';
-export type AdapterName = 'website' | 'file' | 'security' | 'game' | 'network' | 'apk' | 'ghidra';
+export type ProjectKind = 'website' | 'software' | 'game' | 'security' | 'protocol' | 'hardware' | 'firmware';
+export type AdapterName = 'website' | 'file' | 'security' | 'game' | 'network' | 'apk' | 'ghidra' | 'hardware' | 'firmware';
 export type EvidenceKind = 'EVIDENCE' | 'INFERENCE' | 'UNKNOWN' | 'VERIFIED';
 export type Severity = 'info' | 'low' | 'medium' | 'high' | 'critical';
 export interface JsonObject { [key: string]: unknown }
@@ -33,8 +33,8 @@ export class AppError extends Error {
   constructor(readonly code: ErrorCode, message: string, readonly status: number, readonly details?: JsonObject, readonly requestId: string = crypto.randomUUID()) { super(message); this.name = 'AppError'; }
 }
 export interface TaskBudget { timeoutMs?: number; maxMemoryMB?: number; maxDiskMB?: number }
-export interface ResourceProcess { pid: number; ppid: number; rssMB: number; cpuSeconds: number; name?: string }
-export interface ResourceSnapshot { sampledAt: string; source: 'api' | 'worker' | 'desktop'; treeRssMB: number; selfRssMB: number; childRssMB: number; heapUsedMB: number; cpuPercent: number; handles: number; processes: ResourceProcess[]; systemFreeMemoryMB: number; systemTotalMemoryMB: number; dataDirBytes: number; diskAvailableBytes: number; queuedTasks: number; runningTasks: number; peakTreeRssMB: number; pressure: 'normal' | 'pressure' | 'danger'; limitations: string[] }
+export interface ResourceProcess { pid: number; ppid: number; rssMB: number; cpuSeconds: number; name?: string; role?: 'main'|'renderer'|'gpu'|'utility'|'other'|'api'|'worker'|'sidecar-child'; cpuPercent?: number; observedAt?: string; source?: 'electron-app-metrics'|'node-self'|'api-resource-snapshot'|'worker-resource-snapshot' }
+export interface ResourceSnapshot { sampledAt: string; source: 'api' | 'worker' | 'desktop'; trigger?: 'startup'|'periodic'|'task-running'|'before-quit'; sampledProcessCount?: number; processesTruncated?: boolean; treeRssMB: number; selfRssMB: number; childRssMB: number; heapUsedMB: number; cpuPercent: number; handles: number; processes: ResourceProcess[]; systemFreeMemoryMB: number; systemTotalMemoryMB: number; dataDirBytes: number; diskAvailableBytes: number; queuedTasks: number; runningTasks: number; peakTreeRssMB: number; pressure: 'normal' | 'pressure' | 'danger'; limitations: string[] }
 export type CacheKind = 'static-analysis' | 'web-snapshot' | 'protocol' | 'ai-inference' | 'reconstruction' | 'validation';
 export interface CacheEntry { key: string; kind: CacheKind; scope: 'project' | 'global'; projectId: string | null; adapter: AdapterName; stage: Stage; sizeBytes: number; sha256: string; hits: number; misses: number; refCount: number; createdAt: string; lastAccessedAt: string; expiresAt: string | null }
 export interface CacheStatistics { entries: number; sizeBytes: number; hits: number; misses: number; writes: number; corrupt: number; evictions: number; hitRate: number }

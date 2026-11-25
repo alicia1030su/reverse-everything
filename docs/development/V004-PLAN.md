@@ -21,7 +21,7 @@
 - A8 安全触发：外部文件、USB 设备、网络 MCP、SQLite、文件替换、AI 工具调用、发布凭证。
 - A9 人工文件：不覆盖用户 data/、桌面、下载、个人目录；仅项目工作树。
 - A10 恢复：`V004-PROGRESS.md`、`.ai-memory/handoff.md`、各 validation/test 文档。
-- B1 数据库：Schema 4 仅添加设备授权/分析元数据，迁移失败回滚并保留备份。
+- B1 数据库：本轮不新增空 Schema；硬件/固件复用现有 task/evidence/finding/artifact 契约。现有 Schema 3 迁移与备份回归必须保持。
 - B2 新依赖：优先系统 API；如引入 serialport/JADX wrapper，先审查许可证、漏洞和锁文件。
 - B3 并发：租约、项目锁、GC、发布、取消、设备重连全部确定性交错测试。
 - B4 性能：先基线后优化；同硬件同输入 P50/P95/P99、内存、event-loop delay。
@@ -92,7 +92,7 @@ flowchart TD
 
 | Wave | 内容 | 关键文件 | 出口证据 |
 |---|---|---|---|
-| 1 | 基线、版本单源、Schema 4 规划 | V004-*、VERSION、contracts | 基线复核、bump 测试 |
+| 1 | 基线、版本单源、现有 Schema 3 契约 | V004-*、VERSION、contracts | 基线复核、bump 测试 |
 | 2 | 两阶段工件发布 | workflow/engine、evidence、workflow tests | 安全回归+1GB 条件基准+事件循环/锁指标 |
 | 3 | 缓存归因、资源采样、桌面指标 | cache/resources、desktop sidecar、benchmark | 冷热 P50/P95/P99、采样故障矩阵、真实桌面内存 |
 | 4 | Windows 文件安全、游戏属性测试 | evidence、api、game tests | Windows CI Junction/Reparse/替换；随机/长稳 |

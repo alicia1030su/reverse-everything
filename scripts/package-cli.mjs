@@ -1,4 +1,5 @@
-import { cp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { cp, readFile, writeFile } from 'node:fs/promises';
+import { resetGeneratedDirectory } from './reset-generated-dir.mjs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { spawnSync } from 'node:child_process';
@@ -65,8 +66,7 @@ async function main() {
   const cliPackage = JSON.parse(await readFile(path.join(root, 'apps/cli/package.json'), 'utf8'));
   const shrinkwrap = buildCliShrinkwrap(rootLock, cliPackage);
   const stage = path.join(root, 'dist/release/cli');
-  await rm(stage, { recursive: true, force: true });
-  await mkdir(stage, { recursive: true });
+  await resetGeneratedDirectory(stage, path.join(root, 'dist/release'), 'cli');
   await cp(path.join(root, 'apps/cli/dist'), path.join(stage, 'dist'), { recursive: true });
   for (const file of ['LICENSE', 'NOTICE']) await cp(path.join(root, file), path.join(stage, file));
   const pkg = {

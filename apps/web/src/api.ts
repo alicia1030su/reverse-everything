@@ -3,6 +3,13 @@ export type EvidenceSearchItem=Evidence&{projectId:string;projectName:string;ada
 export type EvidenceSearchResult=Page<EvidenceSearchItem>;
 export interface BackupVerification {backup:BackupInfo;valid:boolean;issues:string[]}
 export interface EvidenceSearchQuery {q:string;kind?:string;projectId?:string;taskId?:string;limit:number;offset:number}
+export interface HardwareEndpoint {address:number;direction:'IN'|'OUT'|'UNKNOWN';number:number;transferType:string;interval?:number;maxPacketSize?:number}
+export interface HardwareInterface {number:number;alternateSetting?:number;name?:string;class?:string;endpoints:HardwareEndpoint[]}
+export interface HardwareDevice {identity:{stableKey:string;vendorId?:string;productId?:string;serialHash:string;identityHash:string;authorization:'REQUIRED'|'GRANTED'|'REVOKED'};product?:string;manufacturer?:string;version?:string;deviceClass?:string;speed?:string;bus?:string;deviceAddress?:string;topology?:Record<string,string|number>;configurations:unknown[];interfaces:HardwareInterface[];reportDescriptor?:Uint8Array;serialAccess:'OMITTED'}
+export interface HardwareEnumeration {platform:string;status:'OK'|'UNSUPPORTED'|'BLOCKED'|'ERROR';devices:HardwareDevice[];serialPorts?:unknown[];capabilities:{usbEnumeration:string;serialListing:string;openDeviceHandles:false;liveCapture:false;serialOpen:false;administratorRequired:false;hidKeyboardCapture:'DISABLED'};limitations:string[];anomalies:string[];truncated:boolean}
+export interface HardwareDoctor {platform:string;status:HardwareEnumeration['status'];deviceCount:number;capabilities:HardwareEnumeration['capabilities'];limitations:string[];anomalies:string[];truncated:boolean}
+export interface HardwareSerialPort {identity:HardwareDevice['identity'];name:string;manufacturer?:string;driver?:string;subsystem?:string;opened:false}
+export interface HardwareSerial {ports:HardwareSerialPort[];opened:false;liveCapture:false;limitations:string[]}
 export function errorMessage(error:unknown):string{
   if(!(error instanceof Error))return String(error);
   try{const parsed=JSON.parse(error.message) as {error?:{message?:string;code?:string}};const detail=parsed.error;if(detail?.message)return detail.code?`${detail.code}: ${detail.message}`:detail.message;}catch{}
@@ -30,6 +37,10 @@ export const api={
   settings:()=>request<AiSettings>('/settings'),
   saveSettings:(body:Record<string,unknown>)=>request('/settings',{method:'PUT',body:JSON.stringify(body)}),
   testSettings:()=>request<{ok:boolean;status?:number;error?:string}>('/settings/test',{method:'POST'}),
-  demoTrace:()=>request<Blob>('/demo/trace').then(b=>new File([b],'captured-trace.json',{type:'application/json'}))
+  demoTrace:()=>request<Blob>('/demo/trace').then(b=>new File([b],'captured-trace.json',{type:'application/json'})),
+  hardwareDevices:()=>request<HardwareEnumeration>('/hardware/devices'),
+  hardwareDoctor:()=>request<HardwareDoctor>('/hardware/doctor'),
+  hardwareCapabilities:()=>request<HardwareEnumeration['capabilities']&{platform:string;status:HardwareEnumeration['status'];limitations:string[]}>('/hardware/capabilities'),
+  hardwareSerial:()=>request<HardwareSerial>('/hardware/serial')
 };
 export type {TaskDetail,Task,Evidence,Finding,Artifact,BackupInfo,BackupPreview};

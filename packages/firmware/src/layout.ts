@@ -1,0 +1,24 @@
+import { throwIfAborted } from './limits.js';
+import type { FirmwareInput } from './stream.js';
+import type { LayoutAnalysis, LayoutSignature } from './types.js';
+interface Pattern { format:string;bytes:Buffer;fixedOffset?:number;validate?:(data:Buffer,offset:number)=>boolean;details?:(data:Buffer,offset:number)=>Record<string,string|number> }
+const patterns:Pattern[]=[
+  {format:'SquashFS',bytes:Buffer.from('hsqs')},{format:'SquashFS (big-endian)',bytes:Buffer.from('sqsh')},{format:'UBI',bytes:Buffer.from('UBI#')},
+  {format:'UBIFS',bytes:Buffer.from([0x31,0x18,0x10,0x06])},{format:'CramFS',bytes:Buffer.from([0x45,0x3d,0xcd,0x28])},{format:'JFFS2 (little-endian)',bytes:Buffer.from([0x85,0x19]),validate:(data,offset)=>data.length>=offset+8&&data.readUInt32LE(offset+4)>=8&&data.readUInt32LE(offset+4)<=65_531},{format:'JFFS2 (big-endian)',bytes:Buffer.from([0x19,0x85]),validate:(data,offset)=>data.length>=offset+8&&data.readUInt32BE(offset+4)>=8&&data.readUInt32BE(offset+4)<=65_531},
+  {format:'gzip',bytes:Buffer.from([0x1f,0x8b]),fixedOffset:0,validate:(data,offset)=>data[offset+2]===8},{format:'zlib',bytes:Buffer.from([0x78]),fixedOffset:0,validate:(data,offset)=>{if(offset+1>=data.length)return false;const cmf=data[offset]!,flg=data[offset+1]!;return (cmf&15)===8&&(cmf>>4)<=7&&((cmf<<8)+flg)%31===0;}},
+  {format:'7-Zip',bytes:Buffer.from([0x37,0x7a,0xbc,0xaf,0x27,0x1c])},{format:'ZIP',bytes:Buffer.from([0x50,0x4b,0x03,0x04])},{format:'ZIP (empty)',bytes:Buffer.from([0x50,0x4b,0x05,0x06])},
+  {format:'XZ',bytes:Buffer.from([0xfd,0x37,0x7a,0x58,0x5a,0x00])},{format:'bzip2',bytes:Buffer.from('BZh'),validate:(data,offset)=>{const level=data[offset+3];return level!==undefined&&level>=49&&level<=57;}},{format:'LZ4 frame',bytes:Buffer.from([0x04,0x22,0x4d,0x18])},
+  {format:'U-Boot uImage',bytes:Buffer.from([0x27,0x05,0x19,0x56])},{format:'Android boot image',bytes:Buffer.from('ANDROID!')},{format:'Android vendor boot',bytes:Buffer.from('VNDRBOOT')},{format:'Android sparse image',bytes:Buffer.from([0x3a,0xff,0x26,0xed])},{format:'Android AVB footer',bytes:Buffer.from('AVBf')},
+  {format:'Device Tree Blob',bytes:Buffer.from([0xd0,0x0d,0xfe,0xed])},{format:'cpio newc',bytes:Buffer.from('070701')},{format:'tar',bytes:Buffer.from('ustar'),fixedOffset:257},
+  {format:'LUKS encrypted volume',bytes:Buffer.from('LUKS\xba\xbe')},{format:'BitLocker volume',bytes:Buffer.from('-FVE-FS-')},
+  {format:'GPT',bytes:Buffer.from('EFI PART'),fixedOffset:512,details:(data,offset)=>data.length>=offset+16?{revision:`0x${data.readUInt32LE(offset+8).toString(16)}`,headerSize:data.readUInt32LE(offset+12)}:{}},
+  {format:'ext2/3/4 superblock',bytes:Buffer.from([0x53,0xef]),fixedOffset:1080},{format:'FAT boot sector',bytes:Buffer.from('FAT32   '),fixedOffset:82},{format:'FAT12/16 boot sector',bytes:Buffer.from('FAT'),fixedOffset:54},
+];
+export async function detectLayout(input:FirmwareInput,head:Buffer,maxScanBytes:number,signal?:AbortSignal):Promise<LayoutAnalysis>{
+  const found=new Map<string,LayoutSignature>();const add=(pattern:Pattern,offset:number,data:Buffer):void=>{if(found.has(pattern.format)||(pattern.fixedOffset!==undefined&&offset!==pattern.fixedOffset))return;if(pattern.validate&&!pattern.validate(data,offset))return;const detail=pattern.details?.(data,offset);found.set(pattern.format,{format:pattern.format,offset,confidence:'EVIDENCE',...(detail&&Object.keys(detail).length?{details:detail}:{})});};
+  if(head.length>=512&&head[510]===0x55&&head[511]===0xaa&&head.subarray(446,510).some(byte=>byte!==0))add({format:'MBR',bytes:Buffer.alloc(0)},0,head);
+  let position=0;const carry=Buffer.alloc(16);let carryLength=0;const scanLength=Math.min(input.size,maxScanBytes),readBuffer=Buffer.alloc(Math.min(65_536,scanLength)+16);
+  while(position<scanLength){throwIfAborted(signal);const length=Math.min(65_536,scanLength-position);if(carryLength)carry.copy(readBuffer,0,0,carryLength);await input.readAt(position,length,signal,readBuffer.subarray(carryLength));const data=readBuffer.subarray(0,carryLength+length),base=position-carryLength;for(const pattern of patterns){let cursor=0;while(cursor<=data.length-pattern.bytes.length){const index=data.indexOf(pattern.bytes,cursor);if(index<0)break;add(pattern,base+index,data);cursor=index+1;}}carryLength=Math.min(16,data.length);data.copy(carry,0,data.length-carryLength,data.length);position+=length;}
+  const signatures=[...found.values()].sort((a,b)=>a.offset-b.offset||a.format.localeCompare(b.format));const encrypted=signatures.some(item=>/encrypted|BitLocker/.test(item.format));
+  return {formats:signatures.map(item=>item.format),signatures,encrypted,notes:['Signatures identify layout candidates only; filesystems, partitions and archives are never unpacked','Embedded magic signatures may be coincidental unless corroborated by a container header']};
+}

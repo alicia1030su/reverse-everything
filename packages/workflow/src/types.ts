@@ -5,6 +5,9 @@ export interface TaskContext {
   project: Project;
   upload?: Upload;
   options: JsonObject;
+  effectiveMaxDiskMB?: number;
+  effectiveMaxMemoryMB?: number;
+  effectiveTimeoutMs?: number;
   stageOutputs: Partial<Record<Stage, unknown>>;
   dataDir: string;
   signal: AbortSignal;
@@ -13,6 +16,7 @@ export interface TaskContext {
   finding(input: { title: string; category: string; severity: Severity; confidence: number; evidenceIds: string[]; details: string; recommendation: string; status?: 'observed' | 'needs_review' | 'verified' }): Promise<string>;
   writeArtifact(name: string, content: string | Uint8Array, mime: string): Promise<void>;
   writeArtifacts?(entries: {name:string;content:string|Uint8Array;mime:string}[]): Promise<void>;
+  writeArtifactFile?(name: string, writer: (stream: NodeJS.WritableStream) => Promise<number>, mime: string): Promise<void>;
   readArtifact(name: string): Promise<Uint8Array>;
   registerProcess?(pid: number): () => void;
 }

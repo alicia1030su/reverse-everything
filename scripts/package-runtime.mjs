@@ -1,10 +1,22 @@
-import { cp, mkdir, readFile, rm } from 'node:fs/promises';
+import { constants } from 'node:fs';
+import { copyFile, lstat, mkdir, readFile, readdir } from 'node:fs/promises';
+import { resetGeneratedDirectory } from './reset-generated-dir.mjs';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 const root=process.cwd();
+async function copyExclusive(source,destination){
+  const info=await lstat(source);
+  if(info.isSymbolicLink())return;
+  if(info.isDirectory()){await mkdir(destination,{recursive:true});for(const entry of await readdir(source,{withFileTypes:true})){if(entry.name==='.git'||entry.name==='node_modules'||entry.name.endsWith('.map'))continue;await copyExclusive(path.join(source,entry.name),path.join(destination,entry.name));}return;}
+  if(info.isFile()){await mkdir(path.dirname(destination),{recursive:true});await copyFile(source,destination,constants.COPYFILE_EXCL);}
+}
 const out=path.join(root,'dist/desktop-runtime/node_modules');
-await rm(path.dirname(out),{recursive:true,force:true});
+await resetGeneratedDirectory(path.dirname(out),path.join(root,'dist'),'desktop-runtime');
 await mkdir(out,{recursive:true});
+await mkdir(path.join(out,'scripts'),{recursive:true});
+await copyExclusive(path.join(root,'scripts/ghidra-analyze-headless.mjs'),path.join(out,'scripts/ghidra-analyze-headless.mjs'));
+await mkdir(path.join(path.dirname(out),'scripts'),{recursive:true});
+await copyExclusive(path.join(root,'scripts/ghidra-analyze-headless.mjs'),path.join(path.dirname(out),'scripts/ghidra-analyze-headless.mjs'));
 const workspaceDirs=['apps/api','apps/worker','packages/core','packages/security','packages/workflow','packages/evidence','packages/ai','packages/contracts'];
 const queue=[];
 for(const dir of workspaceDirs){
@@ -42,14 +54,14 @@ while(queue.length){
   const key=found.workspace?found.pkg.name:found.dir;
   if(seen.has(key))continue;
   seen.add(key);
-  const dest=path.join(out,...found.pkg.name.split('/'));
+  const nodeModulesRoot=path.join(root,'node_modules');const relative=path.relative(nodeModulesRoot,found.dir);if(!found.workspace&&(relative==='..'||relative.startsWith('..'+path.sep)||path.isAbsolute(relative)))throw new Error('Production dependency is outside root node_modules: '+found.dir);const dest=found.workspace?path.join(out,...found.pkg.name.split('/')):path.join(out,...relative.split(path.sep));
   await mkdir(path.dirname(dest),{recursive:true});
   if(found.workspace){
     await mkdir(dest,{recursive:true});
-    await cp(path.join(found.dir,'dist'),path.join(dest,'dist'),{recursive:true});
-    await cp(path.join(found.dir,'package.json'),path.join(dest,'package.json'));
+    await copyExclusive(path.join(found.dir,'dist'),path.join(dest,'dist'));
+    await copyExclusive(path.join(found.dir,'package.json'),path.join(dest,'package.json'));
   }else{
-    await cp(found.dir,dest,{recursive:true,filter:source=>!source.includes(path.sep+'.git'+path.sep)&&!source.endsWith('.map')});
+    await copyExclusive(found.dir,dest);
   }
   count++;
   for(const dep of Object.keys(found.pkg.dependencies??{}))queue.push({name:dep,from:found.dir});
