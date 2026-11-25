@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
+import { execFile } from 'node:child_process';
 import { constants } from 'node:fs';
-import { lstat, mkdir, mkdtemp, open, readFile, rm, stat, writeFile, type FileHandle } from 'node:fs/promises';
+import { lstat, mkdir, mkdtemp, open, readFile, realpath, rm, stat, writeFile, type FileHandle } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 
@@ -16,6 +17,34 @@ export class ArtifactAccessError extends Error {
   constructor(message: string) { super(message); this.name = 'ArtifactAccessError'; }
 }
 function sameFileIdentity(a: { dev: number; ino: number }, b: { dev: number; ino: number }): boolean { return a.dev === b.dev && a.ino === b.ino; }
+function windowsSystemCommand(name: string): string { const root = process.env.SystemRoot; if (!root) throw new ArtifactAccessError('Windows system directory is unavailable'); return path.join(root, 'System32', name); }
+function runWindowsCommand(command: string, args: string[]): Promise<string> { return new Promise((resolve, reject) => execFile(command, args, { timeout: 5000, windowsHide: true }, (error, stdout) => error ? reject(error) : resolve(stdout))); }
+async function restrictWindowsSnapshotDirectory(dir: string): Promise<void> {
+  try {
+    const identity = await runWindowsCommand(windowsSystemCommand('whoami.exe'), ['/user', '/fo', 'csv', '/nh']);
+    const sid = identity.match(/\bS-1-[0-9-]+\b/)?.[0]; if (!sid) throw new Error('Current user SID was not returned');
+    const icacls = windowsSystemCommand('icacls.exe');
+    await runWindowsCommand(icacls, [dir, '/reset', '/T']);
+    await runWindowsCommand(icacls, [dir, '/grant:r', `*${sid}:(OI)(CI)F`, '/T']);
+    await runWindowsCommand(icacls, [dir, '/inheritance:r', '/T']);
+  } catch { throw new ArtifactAccessError('Unable to restrict snapshot directory permissions'); }
+}
+async function assertWindowsNonReparsePath(file: string): Promise<void> {
+  if (process.platform !== 'win32') return;
+  const absolute = path.resolve(file);
+  let canonical: string;
+  try { canonical = await realpath(absolute); }
+  catch (error) { if ((error as { code?: string }).code === 'ENOENT') throw new ArtifactAccessError('Artifact not found'); throw error; }
+  const root = path.parse(absolute).root;
+  let current = root;
+  for (const component of absolute.slice(root.length).split(path.sep).filter(Boolean)) {
+    current = path.join(current, component);
+    const info = await lstat(current).catch(error => { if ((error as { code?: string }).code === 'ENOENT') throw new ArtifactAccessError('Artifact not found'); throw error; });
+    if (info.isSymbolicLink()) throw new ArtifactAccessError('Artifact path traverses a Windows reparse point');
+  }
+  const [original, resolved] = await Promise.all([lstat(absolute), lstat(canonical)]);
+  if (!sameFileIdentity(original, resolved)) throw new ArtifactAccessError('Artifact path traverses a Windows reparse point');
+}
 async function openRegularFile(file: string): Promise<FileHandle> {
   const before = await lstat(file).catch(error => { if ((error as { code?: string }).code === 'ENOENT') throw new ArtifactAccessError('Artifact not found'); throw error; });
   if (before.isSymbolicLink() || !before.isFile()) throw new ArtifactAccessError('Artifact path is not a regular file');
@@ -23,6 +52,7 @@ async function openRegularFile(file: string): Promise<FileHandle> {
   try {
     const opened = await handle.stat();
     if (opened.isSymbolicLink() || !opened.isFile() || !sameFileIdentity(before, opened)) throw new ArtifactAccessError('Artifact file changed while it was being opened');
+    await assertWindowsNonReparsePath(file);
     return handle;
   } catch (error) { await handle.close().catch(() => {}); throw error; }
 }
@@ -56,11 +86,11 @@ export async function snapshotVerifiedFile(file: string, expectedSize: number, e
   const cleanup = async () => { if (cleaned) return; cleaned = true; await reader?.close().catch(() => {}); await writer?.close().catch(() => {}); await source.close().catch(() => {}); if (dir) await rm(dir, { recursive: true, force: true }); };
   try {
     const before = await source.stat(); if (before.size !== expectedSize) throw new ArtifactAccessError('Artifact size does not match its manifest');
-    dir = await mkdtemp(path.join(os.tmpdir(), 're-artifact-snapshot-')); const snapshot = path.join(dir, 'artifact'); writer = await open(snapshot, constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY, 0o600);
+    dir = await mkdtemp(path.join(os.tmpdir(), 're-artifact-snapshot-')); const snapshot = path.join(dir, 'artifact'); await assertWindowsNonReparsePath(dir); if (process.platform === 'win32') await restrictWindowsSnapshotDirectory(dir); await assertWindowsNonReparsePath(dir); writer = await open(snapshot, constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY, 0o600); await assertWindowsNonReparsePath(snapshot);
     const hash = createHash('sha256'); const chunk = Buffer.alloc(64 * 1024); let position = 0;
     while (position < expectedSize) { const read = await source.read(chunk, 0, Math.min(chunk.length, expectedSize - position), position); if (read.bytesRead === 0) throw new ArtifactAccessError('Artifact ended before its declared size'); const part = chunk.subarray(0, read.bytesRead); let written = 0; while (written < part.length) { const result = await writer.write(part, written, part.length - written); if (result.bytesWritten === 0) throw new ArtifactAccessError('Artifact snapshot could not be written'); written += result.bytesWritten; } hash.update(part); position += part.length; }
     const after = await source.stat(); verifySnapshotStats(before, after, expectedSize); if (hash.digest('hex') !== expectedSha256) throw new ArtifactAccessError('Artifact digest does not match its manifest');
-    await writer.close(); writer = undefined; reader = await open(snapshot, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0)); return { handle: reader, cleanup };
+    await writer.close(); writer = undefined; reader = await openRegularFile(snapshot); return { handle: reader, cleanup };
   } catch (error) { await cleanup(); throw error; }
 }
 export function canonical(value: unknown): string {

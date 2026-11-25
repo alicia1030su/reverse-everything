@@ -8,12 +8,14 @@ import { DEFAULT_RESOURCE_SAMPLE_RETENTION } from './resources.js';
 export interface ResourceRetentionPolicy { resourceDays?:number; resourceMaxRows?:number }
 type EffectiveRetentionPolicy = RetentionPolicy & Required<ResourceRetentionPolicy>;
 interface MetricRow { id:number; task_id:string|null; size:number }
+interface FileIdentity { dev:number; ino:number; size:number; mtimeMs:number; resolved:string }
 
 function withinRoot(root:string,target:string){const relative=path.relative(root,target);if(relative==='')return true;if(relative.startsWith('..'+path.sep)||relative==='..'||path.isAbsolute(relative))return false;return process.platform==='win32'?true:!relative.startsWith('..');}
 
 export class RetentionService {
   readonly root: string;
   private canonicalRoot?: Promise<string>;
+  private readonly fileIdentities = new WeakMap<CleanupItem,FileIdentity>();
   constructor(private db: Database, dataDir: string) { this.root=path.resolve(dataDir); }
   private rootPath(){return this.canonicalRoot??=realpath(this.root).catch(()=>this.root);}
   policy(): EffectiveRetentionPolicy {
@@ -34,9 +36,37 @@ export class RetentionService {
   private activeTaskIds():Set<string> {
     return new Set((this.db.raw.prepare("SELECT id FROM tasks WHERE status IN ('RUNNING','QUEUED','PAUSED')").all() as {id:string}[]).map(row=>row.id));
   }
+  private isActiveTask(taskId:string):boolean {
+    return Boolean(this.db.raw.prepare("SELECT 1 FROM tasks WHERE id=? AND status IN ('RUNNING','QUEUED','PAUSED')").get(taskId));
+  }
+  private matchesIdentity(info:{dev:number;ino:number;size:number;mtimeMs:number},identity:FileIdentity):boolean {
+    return info.dev===identity.dev&&info.ino===identity.ino&&info.size===identity.size&&info.mtimeMs===identity.mtimeMs;
+  }
+  private deleteSqlite(table:'logs'|'events'|'circuit_events'|'resource_samples',id:number):boolean {
+    if(!Number.isSafeInteger(id))return false;
+    this.db.raw.exec('BEGIN IMMEDIATE');
+    try{
+      const guard=table==='resource_samples'
+        ?' AND id NOT IN (SELECT MAX(id) FROM resource_samples GROUP BY source)'
+        :` AND (${table}.task_id IS NULL OR NOT EXISTS (SELECT 1 FROM tasks WHERE tasks.id=${table}.task_id AND status IN ('RUNNING','QUEUED','PAUSED')))`;
+      const result=this.db.raw.prepare(`DELETE FROM ${table} WHERE id=?${guard}`).run(id);
+      this.db.raw.exec('COMMIT');
+      return Number(result.changes)>0;
+    }catch(error){try{this.db.raw.exec('ROLLBACK');}catch{/* preserve original error */}throw error;}
+  }
+  private async deleteFile(item:CleanupItem):Promise<boolean> {
+    const identity=this.fileIdentities.get(item);if(!identity)return false;
+    try{
+      const before=await lstat(item.path);if(!before.isFile()||before.isSymbolicLink()||!this.matchesIdentity(before,identity))return false;
+      const resolved=await realpath(item.path);if(resolved!==identity.resolved||!withinRoot(await this.rootPath(),resolved))return false;
+      const after=await lstat(item.path);if(!after.isFile()||after.isSymbolicLink()||!this.matchesIdentity(after,identity))return false;
+      if(item.taskId&&this.isActiveTask(item.taskId))return false;
+      await rm(item.path,{force:true});return true;
+    }catch{return false;}
+  }
   private async safeFiles(dir:string,category:DataCategory,cutoff:number,reason:string,taskId?:string):Promise<CleanupItem[]>{
     let entries;try{entries=await readdir(dir,{withFileTypes:true});}catch{return [];}const items:CleanupItem[]=[];
-    for(const entry of entries){const file=path.join(dir,entry.name);if(entry.isSymbolicLink())continue;if(entry.isDirectory()){items.push(...await this.safeFiles(file,category,cutoff,reason,taskId));continue;}if(!entry.isFile())continue;try{const info=await lstat(file);if(info.mtimeMs>=cutoff)continue;const resolved=await realpath(file);if(!withinRoot(await this.rootPath(),resolved))continue;items.push({path:file,category,sizeBytes:info.size,reason,...(taskId?{taskId}:{})});}catch{/* missing or inaccessible files are reported by verification, never guessed */}}
+    for(const entry of entries){const file=path.join(dir,entry.name);if(entry.isSymbolicLink())continue;if(entry.isDirectory()){items.push(...await this.safeFiles(file,category,cutoff,reason,taskId));continue;}if(!entry.isFile())continue;try{const info=await lstat(file);if(info.mtimeMs>=cutoff)continue;const resolved=await realpath(file);if(!withinRoot(await this.rootPath(),resolved))continue;const item:CleanupItem={path:file,category,sizeBytes:info.size,reason,...(taskId?{taskId}:{})};this.fileIdentities.set(item,{dev:info.dev,ino:info.ino,size:info.size,mtimeMs:info.mtimeMs,resolved});items.push(item);}catch{/* missing or inaccessible files are reported by verification, never guessed */}}
     return items;
   }
   async preview():Promise<CleanupPreview>{
@@ -79,23 +109,13 @@ export class RetentionService {
   }
   async apply():Promise<CleanupResult>{
     const preview=await this.preview();
-    const active=this.activeTaskIds();
     const deleted:CleanupItem[]=[];
     const skipped:CleanupItem[]=[];
     const tables:Record<string,'logs'|'events'|'circuit_events'|'resource_samples'>={logs:'logs',events:'events',circuit_events:'circuit_events',resource_samples:'resource_samples'};
     for(const item of preview.items){
-      if(item.taskId&&active.has(item.taskId)){skipped.push(item);continue;}
       const match=/^sqlite:(logs|events|circuit_events|resource_samples):(\d+)$/.exec(item.path);
-      if(match){
-        const table=tables[match[1]!]!;
-        const id=Number(match[2]);
-        if(!Number.isSafeInteger(id)){skipped.push(item);continue;}
-        const latestGuard=table==='resource_samples'?' AND id NOT IN (SELECT MAX(id) FROM resource_samples GROUP BY source)':'';
-        const result=this.db.raw.prepare(`DELETE FROM ${table} WHERE id=?${latestGuard}`).run(id);
-        if(Number(result.changes)===0){skipped.push(item);continue;}
-      }else{
-        try{const resolved=await realpath(item.path);if(!withinRoot(await this.rootPath(),resolved)){skipped.push(item);continue;}await rm(item.path,{force:true});}catch{skipped.push(item);continue;}
-      }
+      const removed=match?this.deleteSqlite(tables[match[1]!]!,Number(match[2])):await this.deleteFile(item);
+      if(!removed){skipped.push(item);continue;}
       deleted.push(item);
       this.db.raw.prepare('INSERT INTO retention_events (category,item_path,reason,size_bytes,created_at) VALUES (?,?,?,?,?)').run(item.category,item.path,item.reason,item.sizeBytes,new Date().toISOString());
     }

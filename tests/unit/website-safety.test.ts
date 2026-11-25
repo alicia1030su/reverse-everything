@@ -49,6 +49,15 @@ describe('website capture safety boundaries',()=>{
     const artifactDir=await tempDir('re-web-linear-sanitizer-');const ctx=await context(artifactDir);ctx.stageOutputs.ANALYZE=analysis('https://fixture.example/','<img>'.repeat(100_000));const started=performance.now();await websiteAdapter.reconstruct(ctx);const elapsed=performance.now()-started;const preview=await readFile(path.join(artifactDir,'preview-page-0001.html'),'utf8');
     expect(elapsed).toBeLessThan(3000);expect(preview.match(/<img>/g)).toHaveLength(100_000);expect(preview).not.toContain('/>');
   });
+  it('generates a bounded loopback compatibility server without executing captured scripts',async()=>{
+    const artifactDir=await tempDir('re-web-compat-server-');const ctx=await context(artifactDir);const url='https://fixture.example/';const value=analysis(url,'<html><head><script src="/app.js"></script></head><body><button id="inspect">Inspect</button></body></html>');
+    Object.assign(value,{interactions:[{id:1,action:'click',selector:'#inspect',fromUrl:url,url,title:'fixture',textSummary:'fixture',status:200,ok:true,snapshot:'interaction-state-0001.html',screenshot:'interaction-step-0001.png',network:[]}],apiResponses:[{id:'api-0001',pageId:'page-0001',stepId:1,method:'GET',url:'https://fixture.example/api/profile',status:200,contentType:'application/json',body:'{"name":"fixture"}'}]});
+    await writeFile(path.join(artifactDir,'interaction-state-0001.html'),'<html><body><button id="inspect">Inspected</button><script>fetch("https://evil.example")</script></body></html>');ctx.stageOutputs.ANALYZE=value;
+    const rebuilt=await websiteAdapter.reconstruct(ctx) as {reconstructed:boolean;files:string[]};expect(rebuilt.reconstructed).toBe(true);expect(rebuilt.files).toEqual(expect.arrayContaining(['compatibility-server.mjs','compatibility-runtime.js','web-compatibility.json']));
+    const source=await readFile(path.join(artifactDir,'compatibility-server.mjs'),'utf8');expect(source).toContain("listen(port, '127.0.0.1'");expect(source).not.toContain('child_process');expect(source).toContain('originalBackendRecovered: false');expect(source).toContain('/__compatibility__/api/api-0001');
+    const page=await readFile(path.join(artifactDir,'compatibility-page-0001.html'),'utf8');const state=await readFile(path.join(artifactDir,'compatibility-state-0001.html'),'utf8');expect(page.startsWith('<!doctype html>')).toBe(true);expect(state.startsWith('<!doctype html>')).toBe(true);expect(page).toContain('compatibility-runtime.js');expect(page).not.toContain('/app.js');expect(state).not.toContain('evil.example');expect(page).toContain("script-src 'self'");
+    const manifest=JSON.parse(await readFile(path.join(artifactDir,'web-compatibility.json'),'utf8')) as {originalBackendRecovered:boolean;manifest:{apiResponses:unknown[]}};expect(manifest.originalBackendRecovered).toBe(false);expect(manifest.manifest.apiResponses).toHaveLength(1);
+  });
 });
 
 describe('website real Chrome navigation and DOM bounds',()=>{

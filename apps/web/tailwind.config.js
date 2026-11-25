@@ -1,1 +1,22 @@
-export default {content:['./index.html','./src/**/*.{ts,tsx}'],theme:{extend:{colors:{ink:'#080d14',panel:'#0e1621',panel2:'#121e2b',line:'#203040',muted:'#7f93a8',accent:'#40d9bb',accent2:'#5ba8ff'},fontFamily:{sans:['Inter','PingFang SC','Microsoft YaHei','system-ui','sans-serif'],mono:['JetBrains Mono','Cascadia Code','Consolas','monospace']},boxShadow:{glow:'0 0 0 1px rgba(64,217,187,.14), 0 12px 32px rgba(0,0,0,.25)'}}},plugins:[]};
+export default {
+  content: ['./index.html', './src/**/*.{ts,tsx}'],
+  theme: {
+    extend: {
+      colors: {
+        ink: 'rgb(var(--ink) / <alpha-value>)',
+        panel: 'rgb(var(--panel) / <alpha-value>)',
+        panel2: 'rgb(var(--panel-2) / <alpha-value>)',
+        line: 'rgb(var(--line) / <alpha-value>)',
+        muted: 'rgb(var(--muted) / <alpha-value>)',
+        accent: 'rgb(var(--accent) / <alpha-value>)',
+        accent2: 'rgb(var(--accent-2) / <alpha-value>)',
+      },
+      fontFamily: {
+        sans: ['Inter', 'PingFang SC', 'Microsoft YaHei', 'system-ui', 'sans-serif'],
+        mono: ['JetBrains Mono', 'Cascadia Code', 'Consolas', 'monospace'],
+      },
+      boxShadow: { glow: '0 0 0 1px rgb(var(--accent) / .14), 0 12px 32px rgb(0 0 0 / .12)' },
+    },
+  },
+  plugins: [],
+};

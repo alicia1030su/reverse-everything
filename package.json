@@ -1,6 +1,6 @@
 {
   "name": "reverse-everything",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "private": true,
   "description": "Evidence-first local reverse engineering and compatibility reconstruction workbench",
   "license": "Apache-2.0",
@@ -14,7 +14,7 @@
   ],
   "scripts": {
     "dev": "node scripts/start.mjs",
-    "build": "npm run build -w @reverse/contracts && npm run build -w @reverse/evidence && npm run build -w @reverse/security && npm run build -w @reverse/ai && npm run build -w @reverse/workflow && npm run build -w @reverse/core && npm run build -w @reverse/api && npm run build -w @reverse/worker && npm run build -w @reverse/cli && npm run build -w @reverse/desktop && npm run build -w @reverse/web",
+    "build": "npm run build -w @reverse/contracts && npm run build -w @reverse/evidence && npm run build -w @reverse/security && npm run build -w @reverse/ai && npm run build -w @reverse/workflow && npm run build -w @reverse/hardware && npm run build -w @reverse/firmware && npm run build -w @reverse/core && npm run build -w @reverse/api && npm run build -w @reverse/worker && npm run build -w @reverse/cli && npm run build -w @reverse/desktop && npm run build -w @reverse/web",
     "start": "node scripts/start.mjs",
     "test": "vitest run",
     "test:unit": "vitest run tests/unit",
@@ -33,7 +33,10 @@
     "package:backup": "node scripts/package-backup.mjs",
     "package:skill": "node scripts/package-skill.mjs",
     "validate:skill": "node scripts/validate-skill.mjs",
-    "release:provenance": "node scripts/release-provenance.mjs"
+    "release:provenance": "node scripts/release-provenance.mjs",
+    "version:sync": "node scripts/sync-version.mjs",
+    "version:check": "node scripts/sync-version.mjs --check",
+    "docs:check": "node scripts/check-docs.mjs"
   },
   "devDependencies": {
     "@eslint/js": "9.39.1",

@@ -243,7 +243,7 @@ export async function runSoak(options = {}) {
     throughput: { completed: taskIds.length - failures.length, failed: failures.length, tasksPerSecond: taskIds.length / measuredSeconds },
     durationsMs: summarize(durationsMs),
     artifacts: { total: artifactCounts.reduce((sum, count) => sum + count, 0), perTask: summarize(artifactCounts) },
-    cache: { initial: { hits: 0, misses: 0, writes: 0, entries: 0 }, final: finalCache, verifiedHotCache: finalCache ? failures.length === 0 && finalCache.misses === 3 && finalCache.writes === taskCount * 3 && finalCache.hits === (taskCount - 1) * 3 : false },
+    cache: { initial: { hits: 0, misses: 0, writes: 0, entries: 0 }, final: finalCache, verifiedHotCache: finalCache ? failures.length === 0 && finalCache.misses === 3 && finalCache.writes === 3 && finalCache.hits === (taskCount - 1) * 3 : false },
     memory: {
       baseline: { rssMB: baselineMemory.rss / MB, heapUsedMB: baselineMemory.heapUsed / MB },
       final: { rssMB: endMemory.rss / MB, heapUsedMB: endMemory.heapUsed / MB },

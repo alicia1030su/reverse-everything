@@ -13,7 +13,7 @@ async function fixture() {
   const dir = await mkdtemp(path.join(os.tmpdir(), 're-provenance-'));
   dirs.push(dir);
   await writeFile(path.join(dir, 'asset.txt'), 'candidate');
-  await generateProvenance(dir, { commit, ref: 'refs/heads/main', version: '0.0.3', runId: '1' });
+  await generateProvenance(dir, { commit, ref: 'refs/heads/main', version: '0.0.3', runId: '1', acceptance: { accepted: true, commit, version: '0.0.3', runId: '1', checks: ['candidate-assets'] } });
   return dir;
 }
 async function verify(dir: string, tagCommit = commit) {
@@ -29,7 +29,15 @@ describe('release provenance', () => {
     expect(await verify(dir)).toEqual([]);
     const manifest = JSON.parse(await readFile(path.join(dir, 'RELEASE-MANIFEST.json'), 'utf8'));
     expect(manifest.commit).toBe(commit);
-    expect(manifest.assets.map((asset: { name: string }) => asset.name).sort()).toEqual(['BUILD-INFO.json', 'asset.txt']);
+    expect(manifest.assets.map((asset: { name: string }) => asset.name).sort()).toEqual(['ACCEPTANCE.json', 'BUILD-INFO.json', 'asset.txt']);
+  });
+
+  it('regenerates provenance idempotently for a retried acceptance', async () => {
+    const dir = await fixture();
+    await generateProvenance(dir, { commit, ref: 'refs/heads/main', version: '0.0.3', runId: '1', acceptance: { accepted: true, commit, version: '0.0.3', runId: '1', checks: ['candidate-assets'] } });
+    expect(await verify(dir)).toEqual([]);
+    const manifest = JSON.parse(await readFile(path.join(dir, 'RELEASE-MANIFEST.json'), 'utf8'));
+    expect(new Set(manifest.assets.map((asset: { name: string }) => asset.name)).size).toBe(manifest.assets.length);
   });
 
   it('rejects manifest and BUILD-INFO commit mismatch', async () => {
@@ -47,6 +55,23 @@ describe('release provenance', () => {
     const errors = await verify(dir);
     expect(errors).toContain('Asset SHA-256 mismatch: asset.txt');
     expect(errors).toContain('Checksum mismatch: asset.txt');
+  });
+
+  it('requires acceptance at the same frozen commit as Tag and Build', async () => {
+    const dir = await fixture();
+    const file = path.join(dir, 'ACCEPTANCE.json');
+    const acceptance = JSON.parse(await readFile(file, 'utf8'));
+    acceptance.commit = otherCommit;
+    await writeFile(file, JSON.stringify(acceptance, null, 2) + '\n');
+    expect(await verify(dir)).toContain('Acceptance and BUILD-INFO commits differ');
+  });
+
+  it('rejects missing or unaccepted independent acceptance evidence', async () => {
+    const dir = await fixture();
+    await rm(path.join(dir, 'ACCEPTANCE.json'));
+    expect(await verify(dir)).toContain('ACCEPTANCE.json is missing or invalid');
+    await writeFile(path.join(dir, 'ACCEPTANCE.json'), JSON.stringify({ accepted: false, commit, version: '0.0.3' }) + '\n');
+    expect(await verify(dir)).toContain('Acceptance evidence is not accepted');
   });
 
   it('rejects tag dereference mismatch and exits nonzero from the CLI', async () => {

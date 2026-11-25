@@ -39,7 +39,7 @@ describe('cache correctness',()=>{
         await cache.put(key,'project','p',name,stage,{unsafe:true,trace:{password:'raw-password',sessionToken:'raw-session-token'}});
       }
     }
-    for(const [name,stage] of [['ghidra','PREPARE'],['ghidra','ANALYZE'],['network','ANALYZE'],['apk','ANALYZE']] as const){
+    for(const [name,stage] of [['ghidra','PREPARE'],['ghidra','ANALYZE'],['network','ANALYZE'],['apk','PREPARE'],['apk','ANALYZE']] as const){
       expect(AnalysisCache.isCacheable(stage,name)).toBe(false);
       const {key}=await cache.keyFor({projectId:'p',inputHash:name,adapter:name,adapterVersion:'test',stage,options:{}});
       await cache.put(key,'project','p',name,stage,{unsafe:true});

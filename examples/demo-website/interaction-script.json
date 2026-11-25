@@ -1,0 +1,9 @@
+{
+  "settleMs": 150,
+  "steps": [
+    { "action": "click", "selector": "#inspect" },
+    { "action": "fill", "selector": "#demo-form input[name='note']", "value": "本地回放" },
+    { "action": "submit", "selector": "#demo-form" },
+    { "action": "click", "selector": "a[href='/about']" }
+  ]
+}

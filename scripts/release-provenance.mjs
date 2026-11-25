@@ -38,7 +38,7 @@ export function parseChecksums(text) {
   return entries;
 }
 
-export function verifyProvenance({ manifest, buildInfo, assets, tagCommit, expectedTag, expectedVersion, checksums, manifestSha256 }) {
+export function verifyProvenance({ manifest, buildInfo, acceptance, assets, tagCommit, expectedTag, expectedVersion, checksums, manifestSha256 }) {
   const errors = [];
   if (!manifest || typeof manifest !== 'object') return ['Manifest is missing or invalid'];
   if (!buildInfo || typeof buildInfo !== 'object') errors.push('BUILD-INFO.json is missing or invalid');
@@ -47,6 +47,13 @@ export function verifyProvenance({ manifest, buildInfo, assets, tagCommit, expec
   if (!isCommit(manifest.commit)) errors.push('Manifest commit must be a full SHA-1');
   if (!isCommit(buildInfo?.commit)) errors.push('BUILD-INFO commit must be a full SHA-1');
   if (manifest.commit !== buildInfo?.commit) errors.push('Manifest and BUILD-INFO commits differ');
+  if (manifest.acceptance !== 'ACCEPTANCE.json') errors.push('Manifest acceptance reference is invalid');
+  if (!acceptance || typeof acceptance !== 'object') errors.push('ACCEPTANCE.json is missing or invalid');
+  if (acceptance?.accepted !== true) errors.push('Acceptance evidence is not accepted');
+  if (!isCommit(acceptance?.commit)) errors.push('Acceptance commit must be a full SHA-1');
+  if (acceptance?.version !== manifest.version) errors.push('Acceptance and manifest versions differ');
+  if (acceptance?.commit !== buildInfo?.commit) errors.push('Acceptance and BUILD-INFO commits differ');
+  if (!Array.isArray(acceptance?.checks) || acceptance.checks.length === 0) errors.push('Acceptance checks must be a non-empty array');
   if (!isCommit(tagCommit)) errors.push('Tag commit must be a full SHA-1');
   if (tagCommit !== manifest.commit) errors.push('Tag dereference does not match manifest commit');
   if (expectedTag && manifest.tag !== expectedTag) errors.push('Manifest tag does not match expected tag');
@@ -137,9 +144,13 @@ async function installedVersion(name) {
   }
 }
 
-export async function generateProvenance(dir, { commit, ref, version, runId, tag = 'v' + version }) {
+export async function generateProvenance(dir, { commit, ref, version, runId, acceptance, tag = 'v' + version }) {
   if (!isCommit(commit)) throw new Error('commit must be a full SHA-1');
   if (!/^\d+\.\d+\.\d+$/.test(version)) throw new Error('Only stable semantic versions are allowed');
+  if (!acceptance || acceptance.accepted !== true || acceptance.commit !== commit || acceptance.version !== version) {
+    throw new Error('Acceptance must be accepted at the frozen commit and version');
+  }
+  if (!Array.isArray(acceptance.checks) || acceptance.checks.length === 0) throw new Error('Acceptance checks are required');
   await mkdir(dir, { recursive: true });
   const buildInfo = {
     schemaVersion: PROVENANCE_SCHEMA_VERSION,
@@ -161,6 +172,15 @@ export async function generateProvenance(dir, { commit, ref, version, runId, tag
     },
   };
   await writeFile(path.join(dir, 'BUILD-INFO.json'), JSON.stringify(buildInfo, null, 2) + '\n');
+  const acceptanceEvidence = {
+    schemaVersion: PROVENANCE_SCHEMA_VERSION,
+    accepted: true,
+    commit,
+    version,
+    runId: String(acceptance.runId ?? runId ?? ''),
+    checks: acceptance.checks,
+  };
+  await writeFile(path.join(dir, 'ACCEPTANCE.json'), JSON.stringify(acceptanceEvidence, null, 2) + '\n');
   const assets = await collectAssets(dir);
   const manifest = {
     schemaVersion: PROVENANCE_SCHEMA_VERSION,
@@ -171,6 +191,7 @@ export async function generateProvenance(dir, { commit, ref, version, runId, tag
     ref,
     generatedAt: new Date().toISOString(),
     buildInfo: 'BUILD-INFO.json',
+    acceptance: 'ACCEPTANCE.json',
     assets,
   };
   await writeFile(path.join(dir, 'RELEASE-MANIFEST.json'), JSON.stringify(manifest, null, 2) + '\n');
@@ -188,15 +209,29 @@ export function resolveTagCommit(tag) {
 export async function verifyProvenanceDirectory(dir, { tag, version, tagCommit, skipTagCheck = false }) {
   const manifest = JSON.parse(await readFile(path.join(dir, 'RELEASE-MANIFEST.json'), 'utf8'));
   const buildInfo = JSON.parse(await readFile(path.join(dir, 'BUILD-INFO.json'), 'utf8'));
+  let acceptance;
+  try {
+    acceptance = JSON.parse(await readFile(path.join(dir, 'ACCEPTANCE.json'), 'utf8'));
+  } catch (error) {
+    if (error?.code !== 'ENOENT') throw error;
+  }
   const assets = await collectAssets(dir);
   const checksums = await readFile(path.join(dir, 'SHA256SUMS.txt'), 'utf8');
   const resolvedTagCommit = skipTagCheck ? tagCommit : resolveTagCommit(tag);
-  return verifyProvenance({ manifest, buildInfo, assets, tagCommit: resolvedTagCommit, expectedTag: tag, expectedVersion: version, checksums, manifestSha256: await hashFile(path.join(dir, 'RELEASE-MANIFEST.json')) });
+  return verifyProvenance({ manifest, buildInfo, acceptance, assets, tagCommit: resolvedTagCommit, expectedTag: tag, expectedVersion: version, checksums, manifestSha256: await hashFile(path.join(dir, 'RELEASE-MANIFEST.json')) });
 }
 
 function argument(name) {
   const index = process.argv.indexOf('--' + name);
   return index >= 0 ? process.argv[index + 1] : undefined;
+}
+
+function argumentValues(name) {
+  const values = [];
+  for (let index = 0; index < process.argv.length; index += 1) {
+    if (process.argv[index] === '--' + name && process.argv[index + 1]) values.push(process.argv[index + 1]);
+  }
+  return values;
 }
 
 async function main() {
@@ -206,7 +241,14 @@ async function main() {
     const commit = argument('commit');
     const version = argument('version');
     if (!commit || !version) throw new Error('generate requires --commit and --version');
-    const result = await generateProvenance(dir, { commit, ref: argument('ref') ?? '', version, runId: argument('run-id'), tag: argument('tag') ?? 'v' + version });
+    const result = await generateProvenance(dir, {
+      commit,
+      ref: argument('ref') ?? '',
+      version,
+      runId: argument('run-id'),
+      tag: argument('tag') ?? 'v' + version,
+      acceptance: { accepted: true, commit, version, runId: argument('acceptance-run-id') ?? argument('run-id'), checks: argumentValues('check') },
+    });
     console.log('Generated provenance for ' + result.manifest.tag + ' at ' + result.manifest.commit);
     return;
   }

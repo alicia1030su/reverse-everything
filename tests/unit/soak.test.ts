@@ -41,7 +41,7 @@ describe('short real-engine soak workloads', () => {
     expect(report.integrity.finalQuickCheck).toEqual({ passed: true, result: ['ok'] });
     expect(report.samples).toHaveLength(4);
     expect(report.samples.every(sample => sample.quickCheck.passed)).toBe(true);
-    expect(report.cache.final).toMatchObject({ hits: 33, misses: 3, writes: 36, corrupt: 0 });
+    expect(report.cache.final).toMatchObject({ hits: 33, misses: 3, writes: 3, corrupt: 0 });
     expect(report.cache.verifiedHotCache).toBe(true);
     expect(report.artifacts.perTask.min).toBeGreaterThan(0);
     expect(report.configuration.memoryTrendGateApplied).toBe(false);

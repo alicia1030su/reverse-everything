@@ -26,7 +26,8 @@ async function workspaceManifests() {
 describe('version single source', () => {
   it('keeps every workspace and internal dependency on the root version', async () => {
     const rootPackage = await json('package.json');
-    const version = rootPackage.version;
+    const version = (await readFile(path.join(root, 'VERSION'), 'utf8')).trim();
+    expect(rootPackage.version).toBe(version);
     expect(version).toMatch(/^\d+\.\d+\.\d+$/);
     for (const { file, pkg } of await workspaceManifests()) {
       expect(pkg.version, file).toBe(version);

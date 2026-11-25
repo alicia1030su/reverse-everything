@@ -1,0 +1,14 @@
+{
+  "formats": {
+    "pe": "PE",
+    "elf": "ELF"
+  },
+  "functions": ["v004_entry", "v004_leaf", "v004_message"],
+  "calls": [
+    { "caller": "v004_entry", "callee": "v004_leaf" },
+    { "caller": "v004_entry", "callee": "v004_message" }
+  ],
+  "stringReferences": [
+    { "value": "V004_GHIDRA_KNOWN_STRING", "function": "v004_message" }
+  ]
+}

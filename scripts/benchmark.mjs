@@ -11,6 +11,7 @@ import { fileURLToPath } from 'node:url';
 import { getHeapStatistics } from 'node:v8';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const PRODUCT_VERSION = (await readFile(path.join(ROOT, 'VERSION'), 'utf8')).trim();
 const MB = 1024 * 1024;
 const DEFAULT_SAMPLES = 7;
 const DEFAULT_WARMUP = 2;
@@ -102,6 +103,7 @@ async function createProjectWithUpload(db, dataDir, index) {
 async function measureTask(engine, db, cache, project, taskNumber) {
   const task = await engine.create(project.id, { adapter: 'file' });
   const before = cache.statistics();
+  const beforeCacheHits = new Map((db.raw.prepare('SELECT key,hits FROM cache_entries').all()).map(row => [row.key, Number(row.hits)]));
   const sampler = new MemorySampler();
   const started = performance.now();
   await engine.execute(task.id);
@@ -112,7 +114,7 @@ async function measureTask(engine, db, cache, project, taskNumber) {
     name: stage.name,
     status: stage.status,
     durationMs: stage.startedAt && stage.endedAt ? Date.parse(stage.endedAt) - Date.parse(stage.startedAt) : null,
-    cacheHit: Boolean(stage.cacheKey && ['CLASSIFY', 'PREPARE', 'ANALYZE'].includes(stage.name) && db.raw.prepare('SELECT hits FROM cache_entries WHERE key=?').get(stage.cacheKey)?.hits > 0),
+    cacheHit: Boolean(stage.cacheKey && ['CLASSIFY', 'PREPARE', 'ANALYZE'].includes(stage.name) && Number(db.raw.prepare('SELECT hits FROM cache_entries WHERE key=?').get(stage.cacheKey)?.hits ?? 0) > Number(beforeCacheHits.get(stage.cacheKey) ?? 0)),
   }));
   return {
     taskNumber,
@@ -122,6 +124,8 @@ async function measureTask(engine, db, cache, project, taskNumber) {
     durationMs,
     stages,
     evidence: db.evidence(task.id).length,
+    detectedEvidenceSha256: createHash('sha256').update(JSON.stringify(db.evidence(task.id).filter(item => item.title.startsWith('Detected ')).map(({ kind, title, source, locator, content, sha256 }) => ({ kind, title, source, locator, content, sha256 })))).digest('hex'),
+    detectedEvidenceCount: db.evidence(task.id).filter(item => item.title.startsWith('Detected ')).length,
     artifacts: db.artifacts(task.id).length,
     artifactBytes: db.artifacts(task.id).reduce((sum, artifact) => sum + artifact.size, 0),
     cache: cacheDelta(before, cache.statistics()),
@@ -154,6 +158,8 @@ function phaseSummary(samples, elapsedMs, cache) {
     durationMs: summarize(samples.map(sample => sample.durationMs)),
     artifactsPerTask: summarize(samples.map(sample => sample.artifacts)),
     evidencePerTask: summarize(samples.map(sample => sample.evidence)),
+    detectedEvidenceCount: summarize(samples.map(sample => sample.detectedEvidenceCount)),
+    detectedEvidenceSha256: [...new Set(samples.map(sample => sample.detectedEvidenceSha256))],
     peakRssMB: Math.max(...samples.map(sample => sample.memory.peakRssMB)),
     peakHeapUsedMB: Math.max(...samples.map(sample => sample.memory.peakHeapUsedMB)),
     cache,
@@ -209,10 +215,11 @@ async function runEngineBenchmark(config) {
     warmup.hot.push(await measureTask(engine, db, cache, hotProject, 1));
 
     const coldCacheBefore = cache.statistics();
+    const coldProject = await createProjectWithUpload(db, dataDir, 'cold-same-input');
     const coldStarted = performance.now();
     for (let index = 1; index <= config.samples; index++) {
-      const project = await createProjectWithUpload(db, dataDir, `cold-${index}`);
-      coldSamples.push(await measureTask(engine, db, cache, project, index));
+      await cache.clear({ projectId: coldProject.id });
+      coldSamples.push(await measureTask(engine, db, cache, coldProject, index));
     }
     const coldElapsedMs = performance.now() - coldStarted;
     const coldCache = cacheDelta(coldCacheBefore, cache.statistics());
@@ -244,6 +251,9 @@ async function runEngineBenchmark(config) {
     addCheck(checks, 'hotTasksPerSecond', hot.tasksPerSecond, '>=', thresholds.minTasksPerSecond);
     addCheck(checks, 'coldCacheHitRate', cold.cache.hitRate, '<=', thresholds.maxColdCacheHitRate);
     addCheck(checks, 'hotCacheHitRate', hot.cache.hitRate, '>=', thresholds.minHotCacheHitRate);
+    addCheck(checks, 'coldDetectedEvidenceCount', cold.detectedEvidenceCount.min, '>=', 1);
+    addCheck(checks, 'hotDetectedEvidenceCount', hot.detectedEvidenceCount.min, '>=', 1);
+    addCheck(checks, 'detectedEvidenceSignatures', new Set([...cold.detectedEvidenceSha256, ...hot.detectedEvidenceSha256]).size, '===', 1);
     addCheck(checks, 'peakRssMB', peakRssMB, '<=', thresholds.maxPeakRssMB);
     addCheck(checks, 'peakHeapUsedMB', peakHeapUsedMB, '<=', thresholds.maxPeakHeapMB);
     addCheck(checks, 'gcPauseP95Ms', summarize(gcPausesMs).p95, '<=', thresholds.maxGcPauseP95Ms);
@@ -259,7 +269,7 @@ async function runEngineBenchmark(config) {
       commit,
       environment: environment(),
       workload: { adapter: 'file', adapterVersion: fileAdapter.version, database: ':memory:', fixture: 'JSON package with one dependency', concurrency: 1, samplesPerPhase: config.samples, warmupColdTasks: config.warmup, warmupHotTasks: 1, totalTasks: config.warmup + 1 + config.samples * 2, stages: STAGES },
-      methodology: ['Cold samples use a new project-scoped cache namespace per task.', 'Hot samples reuse one project and input after one unmeasured cache-populating task.', 'Stage durations are persisted stage started_at/ended_at intervals and include engine, cache and SQLite overhead.', 'Memory is sampled in-process every 5 ms during measured tasks; short sub-interval peaks may be missed.', 'GC metrics are PerformanceObserver events; no forced GC is performed.'],
+      methodology: ['Cold and hot samples use the same project and input; the project cache is cleared before each cold sample.', 'Hot samples reuse one project and input after one unmeasured cache-populating task.', 'Stage durations are persisted stage started_at/ended_at intervals and include engine, cache and SQLite overhead.', 'Memory is sampled in-process every 5 ms during measured tasks; short sub-interval peaks may be missed.', 'GC metrics are PerformanceObserver events; no forced GC is performed.'],
       thresholds,
       checks,
       passed: checks.every(check => check.passed),
@@ -326,7 +336,7 @@ async function runE2EBenchmark(output) {
         const response = await fetch(`${base}/api/health`, { signal: AbortSignal.timeout(500) });
         const health = response.ok ? await response.json() : undefined;
         token = await readFile(path.join(dataDir, 'local-token'), 'utf8').catch(() => '');
-        if (health?.product === 'reverse-everything' && health?.version === '0.0.3' && token.trim()) { healthy = true; break; }
+        if (health?.product === 'reverse-everything' && health?.version === PRODUCT_VERSION && token.trim()) { healthy = true; break; }
       } catch { /* wait for this instance */ }
       await new Promise(resolve => setTimeout(resolve, 50));
     }
@@ -359,7 +369,7 @@ async function runE2EBenchmark(output) {
         const detail = await api(`/tasks/${task.id}`);
         if (['COMPLETED', 'FAILED', 'BLOCKED', 'CANCELLED'].includes(detail.status)) {
           if (detail.status !== 'COMPLETED') throw new Error(`${name}: ${detail.error}`);
-          return { taskId: task.id, durationMs: Date.now() - taskStart, peakApiRssMB: peakApi, evidence: detail.evidence.length, artifacts: detail.artifacts.length, workerResource: resources.worker };
+          return { taskId: task.id, durationMs: Date.now() - taskStart, peakApiSnapshotRssMB: peakApi, evidence: detail.evidence.length, artifacts: detail.artifacts.length, workerResource: resources.worker };
         }
         await new Promise(resolve => setTimeout(resolve, 100));
       }
@@ -370,7 +380,7 @@ async function runE2EBenchmark(output) {
       website: await run('基准网页采集', 'website', 'website', null, demoBase, { allowLocal: true, confirmLocal: true, settleMs: 100 }),
       game: await run('基准游戏复活', 'game', 'game', await readFile(path.join(ROOT, 'examples/demo-game/captured-trace.json'))),
     };
-    const report = { schemaVersion: 1, product: 'reverse-everything', productVersion: '0.0.3', measuredAt: new Date().toISOString(), platform: process.platform, node: process.version, startupMs, ports: { api: apiPort, demo: demoPort }, idleApi: idleResources.api, results, passed: true, notes: ['Process-tree RSS includes active Chromium/analyzer children and excludes the sampler process itself.', 'Budgets are observations, not guarantees.', 'Single Worker, sequential tasks.'] };
+    const report = { schemaVersion: 1, product: 'reverse-everything', productVersion: PRODUCT_VERSION, measuredAt: new Date().toISOString(), platform: process.platform, node: process.version, startupMs, ports: { api: apiPort, demo: demoPort }, idleApi: idleResources.api, results, passed: true, notes: ['Process-tree RSS includes active Chromium/analyzer children and excludes the sampler process itself.', 'peakApiSnapshotRssMB is the maximum persisted API resource snapshot observed during polling, not a true high-frequency process peak.', 'Budgets are observations, not guarantees.', 'Single Worker, sequential tasks.'] };
     await writeFile(path.resolve(ROOT, output), JSON.stringify(report, null, 2));
     return report;
   } finally {

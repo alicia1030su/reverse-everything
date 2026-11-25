@@ -1,16 +1,20 @@
 import { DatabaseSync, type SQLInputValue } from 'node:sqlite';
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, realpathSync } from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { STAGES, type Artifact, type CreateProjectInput, type CreateTaskInput, type Evidence, type Finding, type LogEntry, type Project, type Stage, type Task, type TaskDetail, type TaskStage, type Upload } from '@reverse/contracts';
 import { migrateDatabase, type MigrationResult } from './migrations.js';
 
 export interface WorkflowEvent { id:number;taskId:string|null;type:string;payload:unknown;createdAt:string }
+interface RuntimeLease { kind:'api';owner:string;connection:DatabaseSync;timer:ReturnType<typeof setInterval>;lost:boolean }
+const RUNTIME_LEASE_MS=30000;
+const RUNTIME_HEARTBEAT_MS=5000;
 
 export class Database {
   raw: DatabaseSync;
   file: string;
   readonly migration: MigrationResult;
+  private runtimeLease: RuntimeLease | undefined;
   constructor(file: string) {
     this.file = file;
     if (file !== ':memory:') mkdirSync(path.dirname(file), { recursive: true });
@@ -30,6 +34,46 @@ export class Database {
     this.configure();
   }
   close() { this.raw.close(); }
+  acquireRuntimeLease(kind:'api'): void {
+    // worker 只共享数据库而不获取 API 租约；旁路锁文件可在备份关闭和重开数据库期间持续存在。
+    if (this.file === ':memory:') return;
+    if (this.runtimeLease) throw new Error('API runtime single-instance lease is already held by this database');
+    const connection = new DatabaseSync(`${realpathSync(this.file)}.runtime-lock`);
+    try {
+      connection.exec('PRAGMA busy_timeout=5000; CREATE TABLE IF NOT EXISTS runtime_leases (kind TEXT PRIMARY KEY,owner TEXT NOT NULL,pid INTEGER NOT NULL,heartbeat_at TEXT NOT NULL,expires_at TEXT NOT NULL);');
+      const owner = randomUUID(); const now = Date.now(); const heartbeatAt = new Date(now).toISOString(); const expiresAt = new Date(now + RUNTIME_LEASE_MS).toISOString();
+      connection.exec('BEGIN IMMEDIATE');
+      try {
+        const current = connection.prepare('SELECT owner,expires_at FROM runtime_leases WHERE kind=?').get(kind) as {owner:string;expires_at:string}|undefined;
+        if (current && Date.parse(current.expires_at) > now) throw new Error('API runtime single-instance lease is already active');
+        connection.prepare('INSERT INTO runtime_leases (kind,owner,pid,heartbeat_at,expires_at) VALUES (?,?,?,?,?) ON CONFLICT(kind) DO UPDATE SET owner=excluded.owner,pid=excluded.pid,heartbeat_at=excluded.heartbeat_at,expires_at=excluded.expires_at').run(kind,owner,process.pid,heartbeatAt,expiresAt);
+        connection.exec('COMMIT');
+      } catch (error) { try { connection.exec('ROLLBACK'); } catch { /* preserve the lease error */ } throw error; }
+      const lease: RuntimeLease = {kind,owner,connection,timer:setInterval(()=>{this.renewRuntimeLease();},RUNTIME_HEARTBEAT_MS),lost:false};
+      lease.timer.unref(); this.runtimeLease = lease;
+    } catch (error) { connection.close(); throw error; }
+  }
+  assertRuntimeLease(kind:'api'): boolean {
+    const lease=this.runtimeLease;if(!lease)return true;if(lease.kind!==kind||lease.lost)return false;
+    try{const current=lease.connection.prepare('SELECT owner,expires_at FROM runtime_leases WHERE kind=?').get(kind) as {owner:string;expires_at:string}|undefined;if(current?.owner===lease.owner&&Date.parse(current.expires_at)>Date.now())return true;}catch{return false;}
+    return this.renewRuntimeLease();
+  }
+  releaseRuntimeLease(kind:'api'): void {
+    const lease = this.runtimeLease; if (!lease || lease.kind !== kind) return;
+    clearInterval(lease.timer); this.runtimeLease = undefined;
+    try { lease.connection.exec('BEGIN IMMEDIATE');lease.connection.prepare('DELETE FROM runtime_leases WHERE kind=? AND owner=?').run(kind,lease.owner);lease.connection.exec('COMMIT'); }
+    catch { try { lease.connection.exec('ROLLBACK'); } catch { /* the expired lease remains fail-closed */ } }
+    finally { lease.connection.close(); }
+  }
+  private renewRuntimeLease(): boolean {
+    const lease = this.runtimeLease; if (!lease || lease.lost) return false;
+    try {
+      lease.connection.exec('BEGIN IMMEDIATE');
+      const current = lease.connection.prepare('SELECT owner FROM runtime_leases WHERE kind=?').get(lease.kind) as {owner:string}|undefined;
+      if (!current || current.owner !== lease.owner) { lease.connection.exec('ROLLBACK'); lease.lost = true; clearInterval(lease.timer); return false; }
+      const now = Date.now();lease.connection.prepare('UPDATE runtime_leases SET heartbeat_at=?,expires_at=? WHERE kind=? AND owner=?').run(new Date(now).toISOString(),new Date(now+RUNTIME_LEASE_MS).toISOString(),lease.kind,lease.owner);lease.connection.exec('COMMIT');return true;
+    } catch { try { lease.connection.exec('ROLLBACK'); } catch { /* preserve the lost-lease state */ } lease.lost = true; clearInterval(lease.timer); return false; }
+  }
   project(input: CreateProjectInput): Project {
     const p: Project = { id: randomUUID(), name: input.name, kind: input.kind, target: input.target ?? '', authorizationConfirmed: input.authorizationConfirmed, createdAt: new Date().toISOString() };
     this.raw.prepare('INSERT INTO projects VALUES (?,?,?,?,?,?)').run(p.id,p.name,p.kind,p.target,p.authorizationConfirmed ? 1 : 0,p.createdAt);
@@ -69,6 +113,7 @@ export class Database {
   stageOutput(taskId: string, name: Stage): unknown { const r=this.raw.prepare('SELECT output_json FROM stages WHERE task_id=? AND name=?').get(taskId,name) as {output_json:string|null}|undefined; return r?.output_json ? JSON.parse(r.output_json) : undefined; }
   addEvidence(e: Omit<Evidence,'id'|'createdAt'>): Evidence { const item={...e,id:randomUUID(),createdAt:new Date().toISOString()}; this.raw.prepare('INSERT INTO evidence VALUES (?,?,?,?,?,?,?,?,?)').run(item.id,item.taskId,item.kind,item.title,item.source,item.locator,JSON.stringify(item.content),item.sha256,item.createdAt); return item; }
   evidence(taskId: string,limit=1000,offset=0): Evidence[] { return (this.raw.prepare('SELECT * FROM evidence WHERE task_id=? ORDER BY created_at,rowid LIMIT ? OFFSET ?').all(taskId,limit,offset) as Record<string,unknown>[]).map(r=>({id:String(r.id),taskId:String(r.task_id),kind:String(r.kind) as Evidence['kind'],title:String(r.title),source:String(r.source),locator:String(r.locator),content:JSON.parse(String(r.content_json)),sha256:String(r.sha256),createdAt:String(r.created_at)})); }
+  exportEvidence(taskId:string):Evidence[] { return (this.raw.prepare('SELECT * FROM evidence WHERE task_id=? ORDER BY created_at,rowid').all(taskId) as Record<string,unknown>[]).map(r=>({id:String(r.id),taskId:String(r.task_id),kind:String(r.kind) as Evidence['kind'],title:String(r.title),source:String(r.source),locator:String(r.locator),content:JSON.parse(String(r.content_json)),sha256:String(r.sha256),createdAt:String(r.created_at)})); }
   evidenceById(id:string):Evidence|undefined{const r=this.raw.prepare('SELECT * FROM evidence WHERE id=?').get(id) as Record<string,unknown>|undefined;return r?{id:String(r.id),taskId:String(r.task_id),kind:String(r.kind) as Evidence['kind'],title:String(r.title),source:String(r.source),locator:String(r.locator),content:JSON.parse(String(r.content_json)),sha256:String(r.sha256),createdAt:String(r.created_at)}:undefined;}
   addFinding(f: Omit<Finding,'id'>): Finding { const item={...f,id:randomUUID()}; this.raw.prepare('INSERT INTO findings VALUES (?,?,?,?,?,?,?,?,?,?)').run(item.id,item.taskId,item.title,item.category,item.severity,item.confidence,JSON.stringify(item.evidenceIds),item.details,item.recommendation,item.status); return item; }
   findings(taskId: string): Finding[] { return (this.raw.prepare('SELECT * FROM findings WHERE task_id=? ORDER BY severity').all(taskId) as Record<string,unknown>[]).map(r=>({id:String(r.id),taskId:String(r.task_id),title:String(r.title),category:String(r.category),severity:String(r.severity) as Finding['severity'],confidence:Number(r.confidence),evidenceIds:JSON.parse(String(r.evidence_ids_json)) as string[],details:String(r.details),recommendation:String(r.recommendation),status:String(r.status) as Finding['status']})); }

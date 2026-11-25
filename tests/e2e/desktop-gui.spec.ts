@@ -87,10 +87,11 @@ test('真实 Electron BrowserWindow 完成文件分析、报告与证据验收',
     await browserWindow!.evaluate(window => window.setBounds({ x: 0, y: 0, width: 1440, height: 960 }));
     await expect(page.getByRole('heading', { name: '分析总览' })).toBeVisible();
     await expect(page.getByText(`v${expectedVersion} · Apache-2.0`, { exact: true })).toBeVisible();
+    await page.getByRole('button', { name: '关闭首次使用引导' }).click();
 
     await page.getByRole('link', { name: '创建项目', exact: true }).click();
-    await page.getByRole('button', { name: /逆向软件/ }).click();
-    await page.getByPlaceholder('例如：逆向软件样本').fill('桌面 GUI 文件分析验收');
+    await page.getByRole('button', { name: /软件分析/ }).click();
+    await page.getByPlaceholder('例如：软件分析样本').fill('桌面 GUI 文件分析验收');
     await page.locator('input[type=file]').setInputFiles(samplePath);
     await expect(page.getByText('sample.json', { exact: true })).toBeVisible();
     await page.getByRole('checkbox').check();
