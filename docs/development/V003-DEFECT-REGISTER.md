@@ -1,6 +1,6 @@
 # v0.0.3 缺陷登记
 
-状态：本地修复与回归完成，候选发行验收待执行。所有修复必须有“修复前复现 → 根因 → 回归测试 → 修复后通过”证据；外部工具限制单独标注，不冒充已完成验收。
+状态：本地修复、全量门禁与独立清零复审完成，候选发行验收待执行。所有修复必须有“修复前复现 → 根因 → 回归测试 → 修复后通过”证据；外部工具限制单独标注，不冒充已完成验收。
 
 | ID | 模块 | 等级 | 复现 / 证据 | 根因 | 修复方案 | 回归测试 | 状态 |
 |---|---|---|---|---|---|---|---|
@@ -34,6 +34,23 @@
 | V003-028 | Health | P1 | 匿名 health 泄露路径、进程、队列 | 安全校验前 return | 最小 health；资源指标鉴权 | 匿名/跨源负向测试 | 已修复 |
 | V003-029 | Pagination | P1 | recover/delete 复用 200 条分页 | 正确性操作使用展示上限 | 状态/项目专用全量查询 | >200 任务测试 | 已修复 |
 | V003-030 | Cookie | P2 | 不安全 Set-Cookie 不告警 | 检查 header 值是否含 Set-Cookie | 解析实际属性 | 不安全 cookie 测试 | 已修复 |
+| V003-031 | Game credentials | P0 | 非 login 请求首次出现的 apiKey/token 未进入凭证收集，server echo 写入分析、证据、生成物与持久化响应 | 凭证收集只遍历 login 消息 | 收集所有已观察请求凭证路径与值，统一脱敏所有产物面 | 请求凭证 echo 全产物面回归 | 已修复 |
+| V003-032 | Game credentials | P0 | credential 容器 JSON 字符串的 base64/hex 别名未收集 | 只编码叶子字符串 | 收集容器规范序列化及编码变体，保持有界 | 嵌套容器编码 echo 回归 | 已修复 |
+| V003-033 | Game credentials | P0 | 短凭证嵌入相邻字母数字 `xabcx` 未脱敏 | 短凭证要求非字母数字边界 | 非空短凭证子串 fail-closed 脱敏 | 短凭证嵌入别名回归 | 已修复 |
+| V003-034 | Game state response | P1 | 持久化状态文件被替换后，响应 states 分支未执行 sensitive/credentialKeys 过滤 | 状态模板与静态模板过滤路径不一致 | 运行时状态响应统一过滤敏感路径与凭证键 | 持久化文件替换回归 | 已修复 |
+| V003-035 | Game mutation | P1 | 泛化与脱敏漏掉普通请求 requestSecrets 路径 | 只使用 login credentialFields，空集提前返回 | 泛化包含所有请求凭证路径，空登录凭证也脱敏 requestSecrets | 普通请求凭证泛化回归 | 已修复 |
+| V003-036 | Game account isolation | P1 | 账号已知响应可回退到 account=undefined 模板 | responsesFor 允许 null key 回退 | 账号已知响应严格按账号选择，缺失返回 UNKNOWN | 跨账号模板回退回归 | 已修复 |
+| V003-037 | Game credentials | P1 | 轮换凭证的 base64/hex 嵌入别名未进入分析、证据与验证详情 | 变体覆盖不完整 | 原始值与编码变体统一收集、脱敏和校验 | 轮换凭证别名全产物面回归 | 已修复 |
+| V003-038 | Workflow artifacts | 误报 | 审计称批量 UPSERT 未指定冲突目标 | 复核源码已为 `ON CONFLICT(task_id,name)`，Schema 为 `UNIQUE(task_id,name)` | 不改无问题代码，保留跨任务 old/new 证明测试 | `does not collide artifact names or immutable paths across tasks` | 已排除 |
+| V003-039 | Workflow artifacts | P1 | 最终对象检查与发布之间存在 TOCTOU，已有对象未重新验证 digest | 检查在事务外且只信 size | 事务内完成存在性、类型、size、sha256 校验与发布 | 检查/发布替换回归 | 已修复 |
+| V003-040 | Workflow artifacts | P1 | 最终对象可被替换为 symlink，读取路径不拒绝 symlink | 仅 lstat 普通文件判断且存在竞态 | 发布与读取使用 no-follow 或等价 fail-closed 机制 | symlink 发布/读取回归 | 已修复 |
+| V003-041 | Workflow fencing | P1 | assertActive 后、BEGIN IMMEDIATE 前可插入 pause/cancel，仍发布工件 | 缺少事务内最终 fencing | 写锁内重新检查 status/lease/cancel/pause 后才 rename/写 DB | 取消/暂停精确交错回归 | 已修复 |
+| V003-042 | Workflow lease | P1 | UPDATE RETURNING 与 claimedTokens 写入之间退出会留下无 token 的 RUNNING 任务 | 进程内 token 注册非原子 | 以 DB lease_owner 为权威 token，claim 返回即可执行 | claim 后异常/退出恢复回归 | 已修复 |
+| V003-043 | Workflow resources | 误报 | 审计称资源采样 MiB 与阈值 MB 混用 | `1048576 === 1024*1024`，采样与阈值均为 MiB | 不改无问题代码，保留边界回归 | `enforces the exact MiB memory boundary` | 已排除 |
+| V003-044 | Workflow artifacts | P1 | COMMIT 后 GC 失败会把已发布工件报告为失败，adapter finally 可删除最终对象 | 发布与 GC 失败语义混淆 | COMMIT 成功后 GC 降级；返回失败时 DB 必须未提交 | COMMIT 后 GC 失败回归 | 已修复 |
+| V003-045 | API project deletion | P1 | 删除项目快照后并发创建任务，新任务行被级联删除但目录残留 | 文件系统删除与 SQL 删除之间无项目级互斥 | 上传、任务创建、任务动作、项目删除共用项目级串行锁 | 确定性 `rm` 门禁交错测试 | 已修复 |
+| V003-046 | Upload read | P1 | `limitedRead` 先 stat 后 open，路径替换可读取未授权新文件 | 文件身份校验晚于打开 | 打开前 lstat + O_NOFOLLOW + fstat dev/ino 校验，读后复查 size/mtime | stat/open 替换与 symlink 回归 | 已修复 |
+| V003-047 | Artifact read | P1 | 验证后二次读取原路径可返回篡改字节；API 流式下载存在 TOCTOU | 校验与读取不是同一快照 | 单遍 Buffer+hash；流式下载复制到私有 0600 快照后校验并发送快照 | 同尺寸篡改、symlink、原路径写后快照回归 | 已修复 |
 
 ## 完成定义
 

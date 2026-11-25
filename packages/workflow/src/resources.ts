@@ -63,6 +63,39 @@ async function windowsProcesses():Promise<ResourceProcess[]> {
   });
 }
 
+export function parseDarwinProcessOutput(stdout:string):ResourceProcess[] {
+  const rows:ResourceProcess[]=[];
+  for(const line of stdout.split('\n')){
+    if(!line.trim())continue;
+    const match=line.match(/^\s*(\d+)\s+(\d+)\s+(\d+)\s+((?:(\d+):)?(\d+):(\d+(?:\.\d+)?))\s+(.+)$/);
+    if(!match)throw new Error('Malformed macOS process sampling row');
+    const pid=Number(match[1]),ppid=Number(match[2]),rssKB=Number(match[3]);const hours=Number(match[5]??0),minutes=Number(match[6]),seconds=Number(match[7]);
+    if(![pid,ppid,rssKB,hours,minutes].every(Number.isSafeInteger)||!Number.isFinite(seconds))throw new Error('Invalid macOS process sampling values');
+    rows.push({pid,ppid,rssMB:rssKB/1024,cpuSeconds:hours*3600+minutes*60+seconds,name:match[8]!.trim()});
+  }
+  if(!rows.length)throw new Error('Process sampling returned no processes');
+  return rows;
+}
+
+export async function darwinProcesses():Promise<ResourceProcess[]> {
+  return new Promise((resolve,reject)=>{
+    const child=spawn('/bin/ps',['-axo','pid=,ppid=,rss=,time=,comm='],{windowsHide:true});
+    let stdout='';let settled=false;
+    const finish=(error?:Error,rows?:ResourceProcess[])=>{if(settled)return;settled=true;clearTimeout(timer);if(error)reject(error);else resolve(rows??[]);};
+    const timer=setTimeout(()=>{child.kill();finish(new Error('Process sampling timeout'));},8000);
+    child.stdout.on('data',chunk=>{stdout+=chunk.toString();if(stdout.length>16*1024*1024){child.kill();finish(new Error('Process sampling output exceeded 16MB'));}});
+    child.on('error',error=>finish(error));
+    child.on('close',code=>{
+      if(code!==0){finish(new Error(`Process sampling exited with code ${code??'unknown'}`));return;}
+      try{
+        const rows=parseDarwinProcessOutput(stdout);if(typeof child.pid!=='number')throw new Error('Process sampler PID is unavailable');
+        const samplerPids=new Set([child.pid,...descendants(rows,child.pid).map(row=>row.pid)]);const filtered=rows.filter(row=>!samplerPids.has(row.pid));
+        if(!filtered.length)throw new Error('Process sampling returned no processes');finish(undefined,filtered);
+      }catch(error){finish(error instanceof Error?error:new Error(String(error)));}
+    });
+  });
+}
+
 async function linuxProcesses():Promise<ResourceProcess[]> {
   const rows:ResourceProcess[]=[];
   for (const entry of await readdir('/proc')) {
@@ -103,6 +136,8 @@ export function descendants(processes:ResourceProcess[],rootPid:number) {
   return result;
 }
 
+export function defaultProcessSampler(platform:NodeJS.Platform=process.platform):()=>Promise<ResourceProcess[]> {return platform==='win32'?windowsProcesses:platform==='darwin'?darwinProcesses:linuxProcesses;}
+
 export class ResourceMonitor {
   private previous=new Map<number,{time:number;cpu:number}>();
   private lastSample=new Map<string,number>();
@@ -127,7 +162,7 @@ export class ResourceMonitor {
     this.now=options.now??Date.now;
     this.sampleTtlMs=options.sampleTtlMs??2000;
     this.diskSampleTtlMs=options.diskSampleTtlMs??30000;
-    this.processSampler=options.processSampler??(process.platform==='win32'?windowsProcesses:linuxProcesses);
+    this.processSampler=options.processSampler??defaultProcessSampler();
     this.diskSampler=options.diskSampler??(() => this.scanDisk());
     this.systemSampler=options.systemSampler??(() => ({systemFreeMemoryMB:os.freemem()/1048576,systemTotalMemoryMB:os.totalmem()/1048576}));
     this.pressureRecoverySamples=Math.max(1,options.hysteresis?.pressureSamples??2);

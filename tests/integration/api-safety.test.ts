@@ -1,8 +1,8 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { createServer } from 'node:http';
 import { createConnection } from 'node:net';
 import { existsSync } from 'node:fs';
-import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, realpath, rm, symlink, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
@@ -21,6 +21,14 @@ describe('API safety and recovery boundaries',()=>{
     const {app}=await setup();const health=await app.inject({method:'GET',url:'/api/health'});expect(health.statusCode).toBe(200);expect(health.json()).toEqual({ok:true,product:'reverse-everything',version:'0.0.3',schemaVersion:3});
     expect((await app.inject({method:'GET',url:'/api/resources'})).statusCode).toBe(401);
     expect((await app.inject({method:'GET',url:'/api/resources',headers:auth})).statusCode).toBe(200);
+  });
+  it('never serves an artifact whose bytes no longer match the published digest',async()=>{
+    const {app,db,dataDir}=await setup();const original='original-artifact';const tampered='tampered-artifact';const project=db.project({name:'artifact digest',kind:'software',authorizationConfirmed:true});const task=db.createTask(project.id,'file',{adapter:'file'},'artifact-digest');const objects=path.join(dataDir,'tasks',task.id,'artifacts','objects');await mkdir(objects,{recursive:true});const digest=createHash('sha256').update(original).digest('hex');const file=path.join(objects,digest);await writeFile(file,original);db.addArtifact(task.id,'report.md',file,Buffer.byteLength(original),digest,'text/markdown');await writeFile(file,tampered);
+    for(const url of [`/api/tasks/${task.id}`,`/api/tasks/${task.id}/report`,`/api/tasks/${task.id}/artifacts/report.md`]){const response=await app.inject({method:'GET',url,headers:auth});expect(response.body,url).not.toContain(tampered);if(url!==`/api/tasks/${task.id}`)expect(response.statusCode,url).toBe(404);}
+  });
+  it.skipIf(process.platform==='win32')('never serves an artifact path that was replaced with a symbolic link',async()=>{
+    const {app,db,dataDir}=await setup();const secret='outside-artifact-secret';const project=db.project({name:'artifact link',kind:'software',authorizationConfirmed:true});const task=db.createTask(project.id,'file',{adapter:'file'},'artifact-link');const objects=path.join(dataDir,'tasks',task.id,'artifacts','objects');await mkdir(objects,{recursive:true});const target=path.join(dataDir,'outside-secret.txt');await writeFile(target,secret);const digest=createHash('sha256').update(secret).digest('hex');const file=path.join(objects,digest);await writeFile(file,secret);db.addArtifact(task.id,'report.md',file,Buffer.byteLength(secret),digest,'text/markdown');await rm(file);await symlink(target,file,'file');
+    for(const url of [`/api/tasks/${task.id}`,`/api/tasks/${task.id}/report`,`/api/tasks/${task.id}/artifacts/report.md`]){const response=await app.inject({method:'GET',url,headers:auth});expect(response.body,url).not.toContain(secret);if(url!==`/api/tasks/${task.id}`)expect(response.statusCode,url).toBe(404);}
   });
   it('rejects absolute-form and network-path request targets before API routing',async()=>{
     const {app}=await setup();const address=await app.listen({host:'127.0.0.1',port:0});const port=new URL(address).port;
