@@ -51,12 +51,27 @@
 | 固件 UTF-16LE 内存回归 | 通过 | 32MiB 输入、64MiB 堆子进程；修复前 OOM，修复后 maxRSS < 112MiB |
 | 发行工作流身份门禁 | 通过 | 强制 main push 的 CI/JADX/Ghidra 三个命名工作流成功，拒绝 PR run、其他分支或缺失工作流 |
 
-## 候选包与 digest
+## 候选包、正式发行与公开复验
 
-最终候选包必须由合并后的冻结 Commit 通过 `Release v004` 工作流重新构建。权威 digest 以该工作流生成的 `RELEASE-MANIFEST.json`、`SHA256SUMS.txt` 与 GitHub Release digest 为准；本文件不固化会被重建改变的历史包哈希。
+| 检查 | 结果 | Evidence |
+|---|---|---|
+| 冻结 Commit 主 CI | 全部通过 | Run `45608077356`，Commit `cfb19bbfa23d67ed23b660c793602bcadc1cffa6` |
+| 冻结 Commit JADX 真实验收 | 全部通过 | Run `45608076801` |
+| 冻结 Commit Ghidra 真实验收 | 全部通过 | Run `45608076834` |
+| 候选构建与独立 acceptance | Linux/Windows/acceptance 通过 | Run `45611613592` |
+| annotated Tag | 通过 | Tag object `bcf991f5b21e51ef83756e08ef98d32ccdcc276c` 解引用冻结 Commit |
+| Draft 资产上传与逐项 digest | 12/12 通过 | 按 Draft Release ID 的 `upload_url` 上传，拒绝覆盖已有资产 |
+| 正式发布与 Latest | 通过 | `draft=false`、`prerelease=false`，Latest=`v0.0.4` |
+| 公开地址重新下载 | 12/12 通过 | `sha256sum -c SHA256SUMS.txt` 全部 OK |
+| GitHub digest 对照 | 12/12 通过 | Release API digest 与 `SHA256SUMS.txt` 全量一致 |
+| 发行恢复工作流 | 全绿 | Run `45622020772` |
+| 发行脚本回归 | 6/6 通过 | Draft 列表回退、重复 tag 拒绝、Release ID 上传 URL |
+| 发布后 main 本地门禁 | 50 files；528 passed / 8 skipped | `npm test`、`npm run typecheck`、`npm run lint`、`npm run docs:check` 全部通过 |
+
+公开 Release：https://github.com/alicia1030su/reverse-everything/releases/tag/v0.0.4
 
 ## 未验证与外部限制
 
 - 未获得物理 USB 设备、实时捕获、驱动安装、串口实时读取或刷写授权。
 - Linux/Ubuntu 与 Docker 已在官方 CI 验证；macOS 与代码签名未验证。
-- v0.0.4 Tag、Draft/正式 Release、候选 Run ID 与公开资产 digest 尚未创建。
+- Windows 安装包未签名；不伪造代码签名。

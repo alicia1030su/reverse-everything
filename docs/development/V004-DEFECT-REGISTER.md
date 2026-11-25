@@ -14,11 +14,11 @@
 | V004-008 | Desktop | P1 | API 读取 `stored('desktop')`，全仓库无 `sample('desktop')` | 指标生产端缺失 | 桌面 sidecar 采样完整 API/Worker/renderer/Electron 进程树 | 真实桌面任务峰值与退出后孤儿进程检查 | 已修复 |
 | V004-009 | API/UI | P2 | `server.ts:93` detail 一次加载全部 evidence/report；Projects 无新增任务入口 | 展示模型直接加载全量 | 分页/按需读取，已有项目新建任务 | 大任务 API 延迟与 Web E2E | 已修复 |
 | V004-010 | Web | P2 | `NewProject.tsx:45` security 强制文件；Layout 无移动导航；Dashboard labels 缺 adapter | 入口模型与 adapter 契约漂移 | 九类入口、移动抽屉、完整 labels、项目/运维入口 | Web E2E 与界面检查 | 已修复 |
-| V004-011 | File safety | P1 | `evidence.ts:59` 仅 POSIX mode 0600；Windows symlink 用例跳过 | 平台文件身份/ACL 覆盖不足 | Windows Junction/Reparse/硬链接/替换专项，私有快照 ACL | Windows CI 专用测试；POSIX 不回归 | 待审计 |
+| V004-011 | File safety | P1 | `evidence.ts:59` 仅 POSIX mode 0600；Windows symlink 用例跳过 | 平台文件身份/ACL 覆盖不足 | Windows Junction/Reparse/硬链接/替换专项，私有快照 ACL | Windows CI 专用测试；POSIX 不回归 | 已修复 |
 | V004-012 | Docs | P2 | README 和不存在的 CLI 命令；多份文档停留在 v0.0.1/v0.0.2 | 文档未随版本和能力更新 | 中英文 README、用户指南、链接/命令/能力一致性测试 | Markdown/links/clean-env commands | 已修复 |
 | V004-013 | Versioning | P2 | 根版本、workspaces、lock、contracts、compose、Web、workflow 多处复制 | 无真正单一同步源 | VERSION 文件/同步脚本与一致性测试 | 干净 bump 演练、diff 检查 | 已修复 |
-| V004-014 | Capability | P1 | 无 USB/固件/HID/serial 任何实现 | v0.0.3 未交付硬件模块 | 新增 hardware/firmware 包和统一 adapter/API/CLI/MCP/Skill/Web | 模拟+官方离线样本+只读系统枚举；物理设备限制单独记录 | 待实现 |
-| V004-015 | Multi-instance | P2 | 项目锁为进程内 Map；共享 dataDir 的多 API 行为未在用户文档明确 | 锁边界与部署契约不一致 | 核实 DB runtime guard，支持单实例或数据库级保护 | 双 API 实例竞态测试/明确拒绝 | 待审计 |
+| V004-014 | Capability | P1 | 无 USB/固件/HID/serial 任何实现 | v0.0.3 未交付硬件模块 | 新增 hardware/firmware 包和统一 adapter/API/CLI/MCP/Skill/Web | 模拟+官方离线样本+只读系统枚举；物理设备限制单独记录 | 已实现 |
+| V004-015 | Multi-instance | P2 | 项目锁为进程内 Map；共享 dataDir 的多 API 行为未在用户文档明确 | 锁边界与部署契约不一致 | 核实 DB runtime guard，支持单实例或数据库级保护 | 双 API 实例竞态测试/明确拒绝 | 已修复 |
 | V004-016 | Workflow state | P1 | `engine.ts:247` 对 PAUSED 只设 cancel_requested；resume 后 QUEUED 仍被 `claimNext` 排除 | 取消语义未覆盖 PAUSED | PAUSED+cancel 直接 CANCELLED，或 resume 后可靠兑现取消 | API/CLI/MCP/Web 状态回归，长期不卡 QUEUED | 已修复 |
 | V004-017 | Project deletion | P1 | `server.ts:89` 只删目录/项目行；cache_entries 与 events.task_id 无项目级级联 | 删除语义不完整，缓存 payload 与事件残留 | 项目删除清理项目缓存、事件和对象，保护共享缓存；事务/文件一致 | 项目缓存/事件/文件删除回归与隐私文档 | 已修复 |
 | V004-018 | Cache evidence | P1 | `engine.ts:163` CLASSIFY 命中缓存跳过 `runStage`，新任务缺 Detected 证据 | 缓存只保存 output，不重建任务级证据 | 命中时重建任务级 evidence 或显式复用证据引用 | 同项目同输入两任务证据/报告一致性 | 已修复 |
@@ -48,6 +48,7 @@
 | V004-042 | Android CI | P1 | 真实 JADX 仅 dispatch，real test 默认 skip | PR/push 不触发 | 真实 known-answer 进入发布门禁 | CI Run ID 与日志 artifact | 已修复 |
 | V004-043 | Android redaction | P1 | 窄规则漏 JWT/private key/Cookie/AWS key | 敏感模式覆盖不足 | 扩展脱敏与负向样本 | Java/resources 全产物面 | 已修复 |
 | V004-044 | Android validation | P1 | limitations.length>=0 恒真；不校验 files/count/artifacts | 恒真门禁 | 真实关系/完整性断言 | 缺文件/损坏 manifest FAILED | 已修复 |
+| V004-045 | Release Draft upload | P1 | releases/tags/{tag} 不返回 Draft；gh release upload 可能新建 Draft 并将原 Draft 改为 untagged-* | 上传阶段按 Tag 定位 Draft，而不是使用 Release 身份 | 列表端点回退定位 Draft；直接使用 Draft upload_url 按 Release ID 上传；拒绝覆盖已有资产 | Draft 查找/重复 tag/上传 URL 回归；恢复 Run `45622020772` 全绿；公开 12 资产复验通过 | 已修复 |
 
 ## 完成定义
 
