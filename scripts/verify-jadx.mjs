@@ -340,9 +340,14 @@ async function verifyRealJadx(home, apk) {
     const javaPath = path.join(output, 'sources', `${expected.className.replaceAll('.', '/')}.java`);
     const resourcePath = path.join(output, 'resources', expected.resourcePath);
     const manifestPath = path.join(output, 'resources', 'AndroidManifest.xml');
-    const source = await readFile(javaPath, 'utf8');
-    const resource = await readFile(resourcePath, 'utf8');
-    const manifest = await readFile(manifestPath, 'utf8');
+    const diagnostic = `stdout: ${execution.stdout.slice(-4000) || 'none'}; stderr: ${execution.stderr.slice(-4000) || 'none'}`;
+    const readOutput = async file => {
+      try { return await readFile(file, 'utf8'); }
+      catch (error) { throw new Error(`Missing JADX output ${path.relative(output, file)}; ${diagnostic}`, { cause: error }); }
+    };
+    const source = await readOutput(javaPath);
+    const resource = await readOutput(resourcePath);
+    const manifest = await readOutput(manifestPath);
     if (!source.includes(`class ${expected.className.split('.').at(-1)}`) || !source.includes(`${expected.methodName}(`) || !source.includes(expected.stringValue)) throw new Error('JADX Java known-answer mismatch');
     if (!source.includes(`String ${expected.methodName}(`)) throw new Error('JADX method return type known-answer mismatch');
     if (resource !== expected.resourceValue) throw new Error('JADX resource known-answer mismatch');
