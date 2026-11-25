@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 // @ts-expect-error JavaScript release utility is exercised directly.
-import { evaluateRelease, expectedReleaseAssets, provenanceMarker, verifyAssetCompleteness, verifyDraft } from '../../scripts/release-atomic.mjs';
+import { evaluateRelease, expectedReleaseAssets, findReleaseByTag, provenanceMarker, verifyAssetCompleteness, verifyDraft } from '../../scripts/release-atomic.mjs';
 
 const commit = 'a'.repeat(40);
 const tag = 'v0.0.4';
@@ -24,6 +24,13 @@ describe('atomic release state', () => {
     };
     expect(expectedReleaseAssets(manifest, { manifestSize: 8, manifestSha256: manifestDigest, checksumsSize: 10, checksumsSha256: 'c'.repeat(64) })).toEqual(expected);
     expect(provenanceMarker(manifestDigest)).toBe('release-provenance-sha256:' + manifestDigest);
+  });
+
+  it('finds Draft releases through the list endpoint and rejects ambiguous duplicates', () => {
+    const draft = { id: 1, tag_name: tag, draft: true };
+    expect(findReleaseByTag([{ id: 2, tag_name: 'v0.0.3' }, draft], tag)).toBe(draft);
+    expect(findReleaseByTag([], tag)).toBeNull();
+    expect(() => findReleaseByTag([draft, { id: 3, tag_name: tag, draft: true }], tag)).toThrow(/Multiple releases/);
   });
 
   it('accepts only a non-prerelease Draft targeting the accepted commit', () => {

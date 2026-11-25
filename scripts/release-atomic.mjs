@@ -167,10 +167,17 @@ async function api(route, { method = 'GET', body } = {}) {
   return response.status === 204 ? null : response.json();
 }
 
+export function findReleaseByTag(releases, tag) {
+  const matches = (Array.isArray(releases) ? releases : []).filter(release => release?.tag_name === tag);
+  if (matches.length > 1) throw new Error(`Multiple releases found for tag ${tag}`);
+  return matches[0] ?? null;
+}
+
 async function getRelease(repo, tag) {
   try { return await api(`/repos/${repo}/releases/tags/${encodeURIComponent(tag)}`); } catch (error) {
-    if (error instanceof Error && error.message === 'GitHub API returned HTTP 404') return null;
-    throw error;
+    if (!(error instanceof Error) || error.message !== 'GitHub API returned HTTP 404') throw error;
+    const releases = await api(`/repos/${repo}/releases?per_page=100`);
+    return findReleaseByTag(releases, tag);
   }
 }
 
