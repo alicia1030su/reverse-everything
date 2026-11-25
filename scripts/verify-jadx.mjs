@@ -113,7 +113,7 @@ function buildDex(expected) {
   let cursor = dataOff;
   const stringData = strings.map(value => {
     const bytes = Buffer.from(value, 'utf8');
-    const item = Buffer.concat([length8(value.length), length8(bytes.length), bytes, Buffer.from([0])]);
+    const item = Buffer.concat([length8(value.length), bytes, Buffer.from([0])]);
     const offset = cursor;
     stringOffsets.push(offset);
     cursor += align(item.length);
@@ -240,7 +240,7 @@ async function buildFixture() {
   const provenance = {
     fixture: 'minimal.apk',
     generator: 'scripts/verify-jadx.mjs --build-fixture',
-    generationMethod: 'Deterministic synthetic DEX 035 and binary AXML assembled in Node.js with stored ZIP entries and timezone-independent DOS timestamps; mirrors the checked-in Fixture.java and AndroidManifest.xml known answers. No APK is executed.',
+    generationMethod: 'Deterministic spec-compliant synthetic DEX 035 and binary AXML assembled in Node.js with stored ZIP entries and timezone-independent DOS timestamps; mirrors the checked-in Fixture.java and AndroidManifest.xml known answers. No APK is executed.',
     sourceSha256: sha256(source),
     manifestSourceSha256: sha256(manifestSource),
     dexSha256: sha256(dex),

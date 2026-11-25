@@ -1,11 +1,11 @@
 {
   "fixture": "minimal.apk",
   "generator": "scripts/verify-jadx.mjs --build-fixture",
-  "generationMethod": "Deterministic synthetic DEX 035 and binary AXML assembled in Node.js with stored ZIP entries and timezone-independent DOS timestamps; mirrors the checked-in Fixture.java and AndroidManifest.xml known answers. No APK is executed.",
+  "generationMethod": "Deterministic spec-compliant synthetic DEX 035 and binary AXML assembled in Node.js with stored ZIP entries and timezone-independent DOS timestamps; mirrors the checked-in Fixture.java and AndroidManifest.xml known answers. No APK is executed.",
   "sourceSha256": "788db7d98598382e01c511fe73af636435f2f74d79454a7c0b04166ae8e00c58",
   "manifestSourceSha256": "7d8445ecee95fff44d7e3d3e6559bd0df1275cef23336ce65b04664b4b59bd9d",
-  "dexSha256": "e669592193eadd9e7cbf7531043c1599fff9de00acad08433d8b32445300b3d4",
-  "apkSha256": "e6079ccf52a04f0a731b416fd20f44f8d688d628261d5dae706c1cf4ca79bcf6",
+  "dexSha256": "5f46b571f0bcafc4bf7a6d1d0cfc7927e045b578d09349c21f8b60adb5942b82",
+  "apkSha256": "a88db80d08bb40af2d492fa88c434b273eba677f65c78c2f82b9271b4b7cfa28",
   "expected": "expected.json",
   "jadxVerification": {
     "version": "1.5.3",

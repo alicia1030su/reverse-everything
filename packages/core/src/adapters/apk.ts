@@ -123,8 +123,8 @@ async function readZipEntry(file:string,entry:CentralEntry,maxBytes:number,hashO
 
 function readUleb(buffer:Buffer,offset:number):{value:number;next:number}|undefined { let value=0;for(let i=0;i<5;i++){if(offset+i>=buffer.length)return undefined;const byte=buffer[offset+i]!;value|=(byte&0x7f)<<(7*i);if((byte&0x80)===0)return {value:value>>>0,next:offset+i+1};}return undefined; }
 function dexString(buffer:Buffer,offset:number):{value:string;bytes:number;truncated:boolean}|undefined {
-  const utf16=readUleb(buffer,offset);if(!utf16)return undefined;const bytes=readUleb(buffer,utf16.next);if(!bytes)return undefined;const start=bytes.next,end=start+bytes.value;if(end>=buffer.length||buffer[end]!==0)return undefined;const truncated=bytes.value>MAX_DEX_STRING_BYTES,decodedEnd=Math.min(end,start+MAX_DEX_STRING_BYTES);
-  return {value:redactSensitive(buffer.subarray(start,decodedEnd).toString('utf8').replace(/\u0000/g,''))+(truncated?'[TRUNCATED]':''),bytes:bytes.value,truncated};
+  const utf16=readUleb(buffer,offset);if(!utf16)return undefined;const start=utf16.next,end=buffer.indexOf(0,start);if(end<0)return undefined;const bytes=end-start,truncated=bytes>MAX_DEX_STRING_BYTES,decodedEnd=Math.min(end,start+MAX_DEX_STRING_BYTES);
+  return {value:redactSensitive(buffer.subarray(start,decodedEnd).toString('utf8').replace(/\u0000/g,''))+(truncated?'[TRUNCATED]':''),bytes,truncated};
 }
 function checkTable(buffer:Buffer,offset:number,count:number,itemSize:number,label:string):void { if(count>0&&(offset<112||offset+count*itemSize>buffer.length))throw new Error(`Malformed DEX: ${label} table is outside the file`); }
 export function parseDex(entry:string,data:Buffer,maxStrings=20_000,options:DexTableLimits={},signal?:AbortSignal):DexAnalysis {
