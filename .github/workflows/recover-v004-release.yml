@@ -140,4 +140,6 @@ jobs:
           node scripts/release-atomic.mjs verify-draft \
             --dir dist/release --tag "$TAG" --commit "$COMMIT" --repo "$REPO"
           gh release view "$TAG" --repo "$REPO" \
-            --json tagName,isDraft,isPrerelease,isLatest,url,publishedAt,assets
+            --json tagName,isDraft,isPrerelease,url,publishedAt,assets
+          gh api "repos/$REPO/releases/latest" \
+            --jq '{tag_name,html_url,draft,prerelease}'
