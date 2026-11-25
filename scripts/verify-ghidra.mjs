@@ -125,6 +125,10 @@ async function runLogged(command, args, logFile) {
   if (result.error || result.status !== 0) throw new Error(`${command} failed: ${result.error?.message || result.stderr || `exit ${result.status}`}`);
 }
 
+function formatMatches(observed, expected) {
+  return observed === expected || (expected === 'PE' && observed === 'Portable Executable (PE)') || (expected === 'ELF' && observed === 'Executable and Linking Format (ELF)');
+}
+
 async function compileFixture(format, work) {
   const binary = path.join(work, format === 'pe' ? 'v004-sample.dll' : 'libv004-sample.so');
   const logFile = path.join(OUTPUT_DIR, `${format}-compile.log`);
@@ -183,7 +187,7 @@ async function analyzeFixture(format, binary, binarySha256, work, adapter) {
   const checks = [
     { name: 'headless process completed', passed: result.status === 'completed' && result.exitCode === 0 },
     { name: 'adapter validation passed', passed: validation.passed },
-    { name: 'format matches compiled fixture', passed: metadata.format === expected.formats[format], expected: expected.formats[format], observed: metadata.format },
+    { name: 'format matches compiled fixture', passed: formatMatches(metadata.format, expected.formats[format]), expected: expected.formats[format], observed: metadata.format },
     { name: 'known functions recovered', passed: expected.functions.every(name => metadata.functions.some(item => item.name === name)), expected: expected.functions, observed: metadata.functions.map(item => item.name) },
     { name: 'known functions decompiled', passed: expected.functions.every(name => metadata.decompiledFunctions.some(item => item.name === name && item.pseudocode.trim().length > 0)), observed: metadata.decompiledFunctions.map(item => item.name) },
     { name: 'no decompiler failures', passed: metadata.decompileFailureCount === 0, observed: metadata.decompileFailureCount },

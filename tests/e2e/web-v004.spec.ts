@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { openWorkspace } from './workspace';
+import { onboardingKey, openWorkspace } from './workspace';
 
 const themeKey = 'reverse-everything:theme';
 

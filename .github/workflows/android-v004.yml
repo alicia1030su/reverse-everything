@@ -32,7 +32,6 @@ jobs:
       JADX_VERSION: 1.5.3
       JADX_SHA256: 8280f3799c0273fe797a2bcd90258c943e451fd195f13d05400de5e6451d15ec
       JADX_URL: https://github.com/skylot/jadx/releases/download/v1.5.3/jadx-1.5.3.zip
-      RE_JADX_HOME: ${{ github.workspace }}/.android-v004/jadx-1.5.3
       RE_RUN_ANDROID_REAL: 1
     steps:
       - uses: actions/checkout@v4
@@ -54,8 +53,17 @@ jobs:
           test "$(stat -c %s .android-v004/jadx-1.5.3.zip)" = 116608944
           echo "$JADX_SHA256  .android-v004/jadx-1.5.3.zip" | sha256sum -c -
           unzip -q .android-v004/jadx-1.5.3.zip -d .android-v004
+          jadx_home=""
+          for candidate in .android-v004/*; do
+            if [ -f "$candidate/lib/jadx-cli-${JADX_VERSION}.jar" ]; then
+              jadx_home="$candidate"
+              break
+            fi
+          done
+          test -n "$jadx_home"
+          echo "RE_JADX_HOME=$PWD/$jadx_home" >> "$GITHUB_ENV"
       - name: Verify deterministic APK and run real JADX known answers
-        run: node scripts/verify-jadx.mjs --check-fixture --archive .android-v004/jadx-1.5.3.zip --jadx-home .android-v004/jadx-1.5.3 --log .android-v004/verify.json
+        run: node scripts/verify-jadx.mjs --check-fixture --archive .android-v004/jadx-1.5.3.zip --jadx-home "$RE_JADX_HOME" --log .android-v004/verify.json
       - name: Build workspaces
         run: npm run build
       - name: Run Android adapter and real JADX tests

@@ -1,6 +1,6 @@
 import type { Page } from '@playwright/test';
 
-const onboardingKey = 'reverse-everything:onboarding:v1';
+export const onboardingKey = 'reverse-everything:onboarding:v1';
 
 export async function openWorkspace(page: Page, path = '/new'): Promise<void> {
   await page.addInitScript(({ key }) => {
