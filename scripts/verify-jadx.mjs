@@ -322,7 +322,7 @@ async function run(command, args, options = {}) {
 async function verifyRealJadx(home, apk) {
   const resolved = path.resolve(home);
   let cli;
-  for (const candidate of [path.join(resolved, 'lib', `jadx-cli-${JADX_VERSION}-all.jar`), path.join(resolved, 'lib', `jadx-cli-${JADX_VERSION}.jar`)]) {
+  for (const candidate of [path.join(resolved, 'lib', `jadx-${JADX_VERSION}-all.jar`), path.join(resolved, 'lib', `jadx-cli-${JADX_VERSION}-all.jar`), path.join(resolved, 'lib', `jadx-cli-${JADX_VERSION}.jar`)]) {
     try { if ((await stat(candidate)).isFile()) { cli = candidate; break; } } catch (error) { if (error.code !== 'ENOENT') throw error; }
   }
   if (!cli) throw new Error(`Missing pinned JADX CLI in ${resolved}/lib`);

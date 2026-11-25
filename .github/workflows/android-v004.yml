@@ -54,10 +54,9 @@ jobs:
           test "$(stat -c %s .android-v004/jadx-1.5.3.zip)" = 116608944
           echo "$JADX_SHA256  .android-v004/jadx-1.5.3.zip" | sha256sum -c -
           unzip -q .android-v004/jadx-1.5.3.zip -d .android-v004
-          unzip -Z1 .android-v004/jadx-1.5.3.zip | grep '\.jar$' | head -40 || true
           jadx_home=""
           for candidate in .android-v004 .android-v004/*; do
-            if [ -f "$candidate/lib/jadx-cli-${JADX_VERSION}-all.jar" ] || [ -f "$candidate/lib/jadx-cli-${JADX_VERSION}.jar" ]; then
+            if [ -f "$candidate/lib/jadx-${JADX_VERSION}-all.jar" ] || [ -f "$candidate/lib/jadx-cli-${JADX_VERSION}-all.jar" ] || [ -f "$candidate/lib/jadx-cli-${JADX_VERSION}.jar" ]; then
               jadx_home="$candidate"
               break
             fi
