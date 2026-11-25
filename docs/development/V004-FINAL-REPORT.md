@@ -15,9 +15,9 @@
 
 | 项目 | 当前状态 |
 |---|---|
-| 代码/测试/文档哈希 | PR head `a9cfd0f8559bee95239411196bd333bb8e69d996`；最终合并 Commit 待创建 |
-| 单元/集成/E2E/Windows/Linux/Docker 结果 | 主 CI Run `45593845956` 全绿；49 files / 520 passed / 7 skipped；Windows E2E 12/12，Ubuntu 11 passed / 1 skipped；Docker 通过 |
-| Ghidra/JADX 真实工具 CI | 通过；JADX Run `45593845938`，Ghidra Run `45593845917` |
+| 代码/测试/文档哈希 | PR head `f62539cf5bc30524be4cc153e42e68f5711a40b2`；最终合并 Commit 待创建 |
+| 单元/集成/E2E/Windows/Linux/Docker 结果 | 主 CI Run `45597842505` 全绿；50 files / 525 passed / 7 skipped；Windows E2E 12/12，Ubuntu 11 passed / 1 skipped；Docker 通过 |
+| Ghidra/JADX 真实工具 CI | 通过；JADX Run `45597842518`，Ghidra Run `45597842522` |
 | 官方离线样本与物理设备边界 | 3/3 官方样本哈希与解析通过；Windows 只读枚举 8 devices；物理设备未授权 |
 | CLI/Server/Skill/OpenAPI/EXE/Portable 安装验收 | 本地与 PR CI 基础检查通过；最终候选包由 release workflow 重建并 smoke |
 | 性能、缓存冷热与桌面指标 | 桌面真实 smoke 通过；缓存热路径 3 writes / 33 hits；跨平台性能未承诺 |
@@ -26,8 +26,8 @@
 
 ## 独立复审与已知 P2
 
-- 最终只读独立复审：P0=0 / P1=0；审查覆盖 workflow、APK/JADX、Ghidra、hardware/firmware、桌面指标、release 与文档声明。
-- 非阻断 P2：macOS `ps` 时间分量严格校验；APK `prepare` 成功后任务中止的快照由临时目录保留策略兜底；缓存 payload 非原子替换；浏览器依赖版本漂移检查。桌面 resource_samples 保留策略、PCAP 魔数歧义、设备自由文本哈希与 UF2 O(n²) 已在最终代码修复并纳入回归。
+- 最终只读独立复审：P0=0 / P1=0；审查覆盖 workflow、APK/JADX、Ghidra、hardware/firmware、桌面指标、release 与文档声明。固件 UTF-16LE 扫描 OOM 的 P1 已修复并以 64MiB 堆子进程回归关闭。
+- 非阻断 P2：macOS `ps` 时间分量严格校验；APK `prepare` 成功后任务中止的快照由临时目录保留策略兜底；缓存 payload 非原子替换；浏览器依赖版本漂移检查。桌面 resource_samples 保留策略、PCAP 魔数歧义、设备自由文本哈希、UF2 O(n²) 与 release 工作流身份门禁已在最终代码修复并纳入回归。
 - 上述 P2 不改变 P0/P1 清零结论；真实工具 CI 与物理设备限制仍按下方声明处理。
 
 ## 未验证声明

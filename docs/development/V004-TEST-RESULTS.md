@@ -20,7 +20,7 @@
 | `npm run build` | 通过 | contracts/evidence/security/ai/workflow/hardware/firmware/core/api/worker/cli/desktop/web 全量构建 |
 | `npm run typecheck` | 通过 | `tsc -b` 与 Web 类型检查 |
 | `npm run lint` | 通过 | 0 error / 0 warning |
-| `npm test` | 49 files passed；520 passed / 7 skipped | 真实 Worker、浏览器、SQLite、Windows 文件安全与恶意输入回归 |
+| `npm test` | 50 files passed；525 passed / 7 skipped | 真实 Worker、浏览器、SQLite、Windows 文件安全、恶意输入与发行门禁回归 |
 | `npm run test:e2e` | Windows 12/12；Ubuntu 11 passed / 1 skipped | 九入口、硬件实验室、首次引导、移动导航、主题、运维、项目复建任务与真实 Electron smoke |
 | `npx playwright test --config=playwright.desktop.config.ts` | 1/1 通过 | 真实 Electron 指标 smoke、文件任务、报告/证据/产物下载、sidecar 孤儿检查 |
 | `tests/integration/platform.test.ts` | 8/8 通过 | 独立 Worker、网页、游戏、安全、AI、SARIF、CLI/MCP |
@@ -42,12 +42,14 @@
 
 | 检查 | 结果 | Evidence |
 |---|---|---|
-| 主 CI：Windows / Ubuntu / Docker | 全部通过 | Run `45593845956`，Commit `a9cfd0f8559bee95239411196bd333bb8e69d996` |
-| Windows / Ubuntu 单元与集成 | 49 files passed；520 passed / 7 skipped | 同一主 CI Run |
+| 主 CI：Windows / Ubuntu / Docker | 全部通过 | Run `45597842505`，Commit `f62539cf5bc30524be4cc153e42e68f5711a40b2` |
+| Windows / Ubuntu 单元与集成 | 50 files passed；525 passed / 7 skipped | 同一主 CI Run |
 | Windows / Ubuntu Web + Electron E2E | Windows 12/12；Ubuntu 11 passed / 1 skipped | 同一主 CI Run |
-| JADX 1.5.3 官方 archive 与真实已知答案 | 通过 | Run `45593845938`；archive SHA256 `8280f3799c0273fe797a2bcd90258c943e451fd195f13d05400de5e6451d15ec` |
-| Ghidra 12.2 / JDK25 官方 PE/ELF 已知答案 | Ubuntu PE/ELF 与 Windows PE 全部通过 | Run `45593845917`；archive SHA256 `2c2cd776db3c1f6a097ba418922378ac3649cadd5e844a6f5f088ae628a7be67` |
+| JADX 1.5.3 官方 archive 与真实已知答案 | 通过 | Run `45597842518`；archive SHA256 `8280f3799c0273fe797a2bcd90258c943e451fd195f13d05400de5e6451d15ec` |
+| Ghidra 12.2 / JDK25 官方 PE/ELF 已知答案 | Ubuntu PE/ELF 与 Windows PE 全部通过 | Run `45597842522`；archive SHA256 `2c2cd776db3c1f6a097ba418922378ac3649cadd5e844a6f5f088ae628a7be67` |
 | 确定性 APK fixture | 通过 | SHA256 `e95e6ba09e583baca616c83e9576517847d7f3a320c97b5ed6f8983ae63cd07b` |
+| 固件 UTF-16LE 内存回归 | 通过 | 32MiB 输入、64MiB 堆子进程；修复前 OOM，修复后 maxRSS < 112MiB |
+| 发行工作流身份门禁 | 通过 | 强制 main push 的 CI/JADX/Ghidra 三个命名工作流成功，拒绝 PR run、其他分支或缺失工作流 |
 
 ## 候选包与 digest
 
