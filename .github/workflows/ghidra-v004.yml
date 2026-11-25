@@ -2,15 +2,7 @@ name: Ghidra V004 Real Verification
 
 on:
   push:
-    paths:
-      - 'packages/core/src/adapters/ghidra.ts'
-      - 'packages/core/src/index.ts'
-      - 'scripts/ghidra-analyze-headless.mjs'
-      - 'scripts/verify-ghidra.mjs'
-      - 'tests/fixtures/ghidra/**'
-      - 'tests/unit/deep-adapters.test.ts'
-      - 'tests/unit/ghidra-real.test.ts'
-      - '.github/workflows/ghidra-v004.yml'
+    branches: [main]
   pull_request:
     paths:
       - 'packages/core/src/adapters/ghidra.ts'

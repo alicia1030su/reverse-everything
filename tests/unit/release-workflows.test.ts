@@ -1,3 +1,6 @@
+import { readFile } from 'node:fs/promises';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { REQUIRED_RELEASE_WORKFLOWS, verifyReleaseWorkflowRuns } from '../../scripts/verify-release-workflows.mjs';
 
@@ -34,5 +37,22 @@ describe('release workflow identity gate', () => {
   it('uses the latest main push run and rejects a later failure', () => {
     const runs = REQUIRED_RELEASE_WORKFLOWS.flatMap(name => [run(name), run(name, { created_at: '2026-11-25T11:00:00Z', conclusion: 'failure' })]);
     expect(verifyReleaseWorkflowRuns(runs, { commit }).join('\n')).toMatch(/Required workflow is not successful/);
+  });
+
+  it('runs required real-tool workflows on every main push', async () => {
+    const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
+    for (const file of ['.github/workflows/android-v004.yml', '.github/workflows/ghidra-v004.yml']) {
+      const workflow = await readFile(path.join(root, file), 'utf8');
+      expect(workflow).toMatch(/on:\s*\n\s*push:\s*\n\s*branches: \[main\]/);
+    }
+  });
+
+  it('uses native Windows paths for NSIS install and portable destinations', async () => {
+    const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
+    const workflow = await readFile(path.join(root, '.github/workflows/release-v004.yml'), 'utf8');
+    expect(workflow).toContain("$dest = Join-Path $env:RUNNER_TEMP 're-release-install'");
+    expect(workflow).toContain("$dest = Join-Path $env:RUNNER_TEMP 're-release-portable'");
+    expect(workflow).not.toContain('$dest = "$env:RUNNER_TEMP/re-release-install"');
+    expect(workflow).not.toContain('$dest = "$env:RUNNER_TEMP/re-release-portable"');
   });
 });

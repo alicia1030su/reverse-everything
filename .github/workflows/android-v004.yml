@@ -2,14 +2,7 @@ name: Android v0.0.4 real JADX
 
 on:
   push:
-    paths:
-      - 'packages/core/src/adapters/apk.ts'
-      - 'scripts/verify-jadx.mjs'
-      - 'tests/fixtures/android/**'
-      - 'tests/unit/android-real.test.ts'
-      - 'tests/unit/deep-adapters.test.ts'
-      - 'tests/unit/apk-artifact-publication.test.ts'
-      - '.github/workflows/android-v004.yml'
+    branches: [main]
   pull_request:
     paths:
       - 'packages/core/src/adapters/apk.ts'

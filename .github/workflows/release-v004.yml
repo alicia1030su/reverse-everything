@@ -236,7 +236,7 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $version = node scripts/release-atomic.mjs version --root .
           $installer = Get-ChildItem dist/desktop/*.exe | Select-Object -First 1
-          $dest = "$env:RUNNER_TEMP/re-release-install"
+          $dest = Join-Path $env:RUNNER_TEMP 're-release-install'
           $process = Start-Process -FilePath $installer.FullName -ArgumentList '/S',"/D=$dest" -PassThru -Wait
           if ($process.ExitCode -ne 0) { throw "Installer exited $($process.ExitCode)" }
           $exe = Get-ChildItem $dest -Filter *.exe -Recurse | Where-Object { $_.Name -like '*Reverse Everything*' } | Select-Object -First 1
@@ -262,7 +262,7 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $version = node scripts/release-atomic.mjs version --root .
           $zip = Get-ChildItem dist/desktop/*.zip | Select-Object -First 1
-          $dest = "$env:RUNNER_TEMP/re-release-portable"
+          $dest = Join-Path $env:RUNNER_TEMP 're-release-portable'
           Expand-Archive $zip.FullName -DestinationPath $dest
           $exe = Get-ChildItem $dest -Filter *.exe -Recurse | Where-Object { $_.Name -like '*Reverse Everything*' } | Select-Object -First 1
           if (-not $exe) { throw 'Portable executable not found' }
