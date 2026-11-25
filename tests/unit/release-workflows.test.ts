@@ -39,6 +39,14 @@ describe('release workflow identity gate', () => {
     expect(verifyReleaseWorkflowRuns(runs, { commit }).join('\n')).toMatch(/Required workflow is not successful/);
   });
 
+  it('runs required real-tool workflows on every main push', async () => {
+    const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
+    for (const file of ['.github/workflows/android-v004.yml', '.github/workflows/ghidra-v004.yml']) {
+      const workflow = await readFile(path.join(root, file), 'utf8');
+      expect(workflow).toMatch(/on:\s*\n\s*push:\s*\n\s*branches: \[main\]/);
+    }
+  });
+
   it('uses native Windows paths for NSIS install and portable destinations', async () => {
     const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
     const workflow = await readFile(path.join(root, '.github/workflows/release-v004.yml'), 'utf8');
