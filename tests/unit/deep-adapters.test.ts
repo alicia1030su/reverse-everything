@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import yazl from 'yazl';
@@ -14,8 +14,9 @@ const originalHeadless=process.env.RE_GHIDRA_HEADLESS;
 const originalInstall=process.env.RE_GHIDRA_INSTALL_DIR;
 const originalJadxBin=process.env.RE_JADX_BIN;
 const originalJadxHome=process.env.RE_JADX_HOME;
+const originalJadxArchive=process.env.RE_JADX_ARCHIVE;
 const originalJava=process.env.RE_JAVA;
-afterEach(async()=>{for(const dir of dirs.splice(0))await rm(dir,{recursive:true,force:true});if(originalHeadless===undefined)delete process.env.RE_GHIDRA_HEADLESS;else process.env.RE_GHIDRA_HEADLESS=originalHeadless;if(originalInstall===undefined)delete process.env.RE_GHIDRA_INSTALL_DIR;else process.env.RE_GHIDRA_INSTALL_DIR=originalInstall;for(const [key,value] of [['RE_JADX_BIN',originalJadxBin],['RE_JADX_HOME',originalJadxHome],['RE_JAVA',originalJava]] as const){if(value===undefined)delete process.env[key];else process.env[key]=value;}});
+afterEach(async()=>{for(const dir of dirs.splice(0))await rm(dir,{recursive:true,force:true});if(originalHeadless===undefined)delete process.env.RE_GHIDRA_HEADLESS;else process.env.RE_GHIDRA_HEADLESS=originalHeadless;if(originalInstall===undefined)delete process.env.RE_GHIDRA_INSTALL_DIR;else process.env.RE_GHIDRA_INSTALL_DIR=originalInstall;for(const [key,value] of [['RE_JADX_BIN',originalJadxBin],['RE_JADX_HOME',originalJadxHome],['RE_JADX_ARCHIVE',originalJadxArchive],['RE_JAVA',originalJava]] as const){if(value===undefined)delete process.env[key];else process.env[key]=value;}});
 async function temp():Promise<string>{const dir=await mkdtemp(path.join(os.tmpdir(),'re-deep-'));dirs.push(dir);return dir;}
 async function context(name:string,data:Buffer|string,options:Record<string,unknown>={}):Promise<TaskContext>{
   const dataDir=await temp(),projectId='project',storedName='stored.bin',buffer=Buffer.isBuffer(data)?data:Buffer.from(data);const uploadDir=path.join(dataDir,'uploads',projectId),artifactDir=path.join(dataDir,'tasks','task','artifacts');await mkdir(uploadDir,{recursive:true});await mkdir(artifactDir,{recursive:true});await writeFile(path.join(uploadDir,storedName),buffer);
@@ -166,6 +167,7 @@ describe('APK deep adapter',()=>{
     await fakeJadx(`fs.writeFileSync(path.join(output,'sources','com','example','Fixture.java'),'package com.example; public class Fixture { public static String marker() { return "hello-from-fixture"; } }');fs.writeFileSync(path.join(output,'resources','res','raw','fixture.txt'),'hello-from-fixture');`);
     const result=await analyze(apkAdapter,await context('fixture.apk',await zip([{name:'classes.dex',data:emptyDex()}]),{apkDecompile:true})) as ApkAnalysis;expect(decompilation(result)).toMatchObject({status:'COMPLETED',engine:'jadx',version:'1.5.3',javaFiles:1,resourceFiles:1,classes:['com.example.Fixture'],methods:[{class:'com.example.Fixture',name:'marker'}]});expect(decompilation(result).files.map(file=>file.path)).toEqual(expect.arrayContaining(['sources/com/example/Fixture.java','resources/res/raw/fixture.txt']));expect(decompilation(result).artifacts).toContain('apk-jadx-0001-fixture.java');expect(decompilation(result)).toMatchObject({verificationMode:'external',archiveVerified:false,actualSha256:expect.stringMatching(/^[0-9a-f]{64}$/)});
   });
+  it.runIf(process.platform!=='win32')('accepts the all-in-one CLI jar layout from an external JADX home',async()=>{const home=await temp();await mkdir(path.join(home,'lib'),{recursive:true});await writeFile(path.join(home,'lib','jadx-cli-1.5.3-all.jar'),'fixture');const java=path.join(home,'java');await writeFile(java,`#!/usr/bin/env node\nimport fs from 'node:fs';import path from 'node:path';const args=process.argv.slice(2);if(args.includes('--version')){console.log('jadx 1.5.3');process.exit(0);}const output=args[args.indexOf('-d')+1];fs.mkdirSync(path.join(output,'sources','com','example'),{recursive:true});fs.writeFileSync(path.join(output,'sources','com','example','Fixture.java'),'package com.example; public class Fixture {}');\n`,'utf8');await chmod(java,0o755);delete process.env.RE_JADX_BIN;delete process.env.RE_JADX_ARCHIVE;process.env.RE_JADX_HOME=home;process.env.RE_JAVA=java;const result=await analyze(apkAdapter,await context('fixture.apk',await zip([{name:'classes.dex',data:emptyDex()}]),{apkDecompile:true})) as ApkAnalysis;expect(result.decompilation).toMatchObject({status:'COMPLETED',engine:'jadx',version:'1.5.3',verificationMode:'external',archiveVerified:false});});
   it('blocks decompilation when the configured JADX version is not pinned',async()=>{
     await fakeJadx('','jadx 9.9.9');const result=await analyze(apkAdapter,await context('fixture.apk',await zip([{name:'classes.dex',data:emptyDex()}]),{apkDecompile:true})) as ApkAnalysis;expect(decompilation(result)).toMatchObject({status:'BLOCKED',engine:'none'});expect(decompilation(result).reason).toMatch(/version/i);
   });

@@ -321,8 +321,12 @@ async function run(command, args, options = {}) {
 
 async function verifyRealJadx(home, apk) {
   const resolved = path.resolve(home);
-  const cli = path.join(resolved, 'lib', `jadx-cli-${JADX_VERSION}.jar`);
-  if (!(await stat(cli)).isFile()) throw new Error(`Missing pinned JADX CLI: ${cli}`);
+  let cli;
+  for (const candidate of [path.join(resolved, 'lib', `jadx-cli-${JADX_VERSION}-all.jar`), path.join(resolved, 'lib', `jadx-cli-${JADX_VERSION}.jar`)]) {
+    try { if ((await stat(candidate)).isFile()) { cli = candidate; break; } } catch (error) { if (error.code !== 'ENOENT') throw error; }
+  }
+  if (!cli) throw new Error(`Missing pinned JADX CLI in ${resolved}/lib`);
+  const cliSha256 = await hashFile(cli);
   const java = javaCommand();
   const prefix = ['-cp', path.join(resolved, 'lib', '*'), 'jadx.cli.JadxCLI'];
   const version = await run(java, [...prefix, '--version'], { timeoutMs: 10000 });
@@ -343,7 +347,7 @@ async function verifyRealJadx(home, apk) {
     if (!source.includes(`String ${expected.methodName}(`)) throw new Error('JADX method return type known-answer mismatch');
     if (resource !== expected.resourceValue) throw new Error('JADX resource known-answer mismatch');
     if (!manifest.includes(expected.packageName) || !manifest.includes(expected.permission) || !manifest.includes(expected.declaredPermission)) throw new Error('JADX manifest known-answer mismatch');
-    return { realJadx: true, version: JADX_VERSION, archiveSha256: JADX_SHA256, className: expected.className, methodName: expected.methodName, stringValue: expected.stringValue, resourcePath: expected.resourcePath, packageName: expected.packageName, stdout: execution.stdout.slice(-4000), stderr: execution.stderr.slice(-4000) };
+    return { realJadx: true, version: JADX_VERSION, archiveSha256: JADX_SHA256, cliSha256, className: expected.className, methodName: expected.methodName, stringValue: expected.stringValue, resourcePath: expected.resourcePath, packageName: expected.packageName, stdout: execution.stdout.slice(-4000), stderr: execution.stderr.slice(-4000) };
   } finally {
     await rm(work, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
   }

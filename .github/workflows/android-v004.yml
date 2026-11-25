@@ -32,6 +32,7 @@ jobs:
       JADX_VERSION: 1.5.3
       JADX_SHA256: 8280f3799c0273fe797a2bcd90258c943e451fd195f13d05400de5e6451d15ec
       JADX_URL: https://github.com/skylot/jadx/releases/download/v1.5.3/jadx-1.5.3.zip
+      RE_JADX_ARCHIVE: ${{ github.workspace }}/.android-v004/jadx-1.5.3.zip
       RE_RUN_ANDROID_REAL: 1
     steps:
       - uses: actions/checkout@v4
@@ -55,7 +56,7 @@ jobs:
           unzip -q .android-v004/jadx-1.5.3.zip -d .android-v004
           jadx_home=""
           for candidate in .android-v004/*; do
-            if [ -f "$candidate/lib/jadx-cli-${JADX_VERSION}.jar" ]; then
+            if [ -f "$candidate/lib/jadx-cli-${JADX_VERSION}-all.jar" ] || [ -f "$candidate/lib/jadx-cli-${JADX_VERSION}.jar" ]; then
               jadx_home="$candidate"
               break
             fi
