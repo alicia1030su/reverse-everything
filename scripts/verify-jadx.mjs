@@ -120,7 +120,7 @@ function buildDex(expected) {
     return item;
   });
   const constructorOff = cursor;
-  cursor += align(writeCode(Buffer.alloc(32), 0, 1, 1, 1, [0x1070, 2, 0x000e]));
+  cursor += align(writeCode(Buffer.alloc(32), 0, 1, 1, 1, [0x1070, 2, 0x0000]));
   const markerOff = cursor;
   cursor += align(writeCode(Buffer.alloc(32), 0, 1, 0, 0, [0x001a, stringIndex(expected.stringValue), 0x0011]));
   const classDataOff = cursor;
@@ -157,7 +157,7 @@ function buildDex(expected) {
   buffer.writeUInt32LE(0, classDefsOff + 12); buffer.writeUInt32LE(stringIndex('Fixture.java'), classDefsOff + 16); buffer.writeUInt32LE(0, classDefsOff + 20);
   buffer.writeUInt32LE(classDataOff, classDefsOff + 24); buffer.writeUInt32LE(0, classDefsOff + 28);
   stringData.forEach((item, index) => item.copy(buffer, stringOffsets[index]));
-  writeCode(buffer, constructorOff, 1, 1, 1, [0x1070, 2, 0x000e]);
+  writeCode(buffer, constructorOff, 1, 1, 1, [0x1070, 2, 0x0000]);
   writeCode(buffer, markerOff, 1, 0, 0, [0x001a, stringIndex(expected.stringValue), 0x0011]);
   classData.copy(buffer, classDataOff);
   buffer.writeUInt32LE(mapEntries.length, mapOff);
