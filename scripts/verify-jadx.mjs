@@ -335,7 +335,7 @@ async function verifyRealJadx(home, apk) {
   const work = await mkdtemp(path.join(os.tmpdir(), 're-jadx-verify-'));
   try {
     const output = path.join(work, 'output');
-    const execution = await run(java, [...prefix, '-d', output, '--threads-count', '1', '--show-bad-code', '--no-debug-info', '--deobf-cfg-file-mode', 'ignore', '--log-level', 'progress', path.resolve(apk)], { cwd: work });
+    const execution = await run(java, [...prefix, '-d', output, '--threads-count', '1', '--show-bad-code', '--no-debug-info', '--deobf-cfg-file-mode', 'ignore', '--log-level', 'debug', path.resolve(apk)], { cwd: work });
     const expected = JSON.parse(await readFile(path.join(FIXTURE_DIR, 'expected.json'), 'utf8'));
     const javaPath = path.join(output, 'sources', `${expected.className.replaceAll('.', '/')}.java`);
     const resourcePath = path.join(output, 'resources', expected.resourcePath);
