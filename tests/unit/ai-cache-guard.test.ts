@@ -26,11 +26,12 @@ async function securityContext(content:Buffer){
   const ctx:TaskContext={
     taskId:'scan-task',
     project:{id:projectId,name:'scan',kind:'security',target:'fixture.js',authorizationConfirmed:true,createdAt:new Date().toISOString()},
-    upload,options:{},stageOutputs:{},artifactDir:path.join(dataDir,'artifacts'),dataDir,signal:new AbortController().signal,
+    upload,options:{},stageOutputs:{},dataDir,signal:new AbortController().signal,
     log:async()=>{},
     evidence:async(kind,title,source,locator,value)=>{evidence.push({kind,title,source,locator,content:value});return `evidence-${evidence.length}`;},
     finding:async()=>{throw new Error('Unexpected finding during static analysis');},
     writeArtifact:async()=>{},
+    readArtifact:async()=>new Uint8Array(),
   };
   return {ctx,evidence};
 }

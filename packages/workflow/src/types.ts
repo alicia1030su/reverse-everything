@@ -6,7 +6,6 @@ export interface TaskContext {
   upload?: Upload;
   options: JsonObject;
   stageOutputs: Partial<Record<Stage, unknown>>;
-  artifactDir: string;
   dataDir: string;
   signal: AbortSignal;
   log(level: 'info' | 'warn' | 'error', message: string, tool?: string): Promise<void>;
@@ -14,6 +13,7 @@ export interface TaskContext {
   finding(input: { title: string; category: string; severity: Severity; confidence: number; evidenceIds: string[]; details: string; recommendation: string; status?: 'observed' | 'needs_review' | 'verified' }): Promise<string>;
   writeArtifact(name: string, content: string | Uint8Array, mime: string): Promise<void>;
   writeArtifacts?(entries: {name:string;content:string|Uint8Array;mime:string}[]): Promise<void>;
+  readArtifact(name: string): Promise<Uint8Array>;
   registerProcess?(pid: number): () => void;
 }
 export interface Detection { adapter: AdapterName; confidence: number; format: string; details: JsonObject; limitations: string[] }

@@ -1,10 +1,11 @@
 # v0.0.3 开发进度
 
-最后更新：2026-11-24 UTC+8
+最后更新：2026-11-25 UTC+8
 
-- 开发分支：`feat/v0.0.3-deep-reverse`
-- 基线：main/origin/main `38a781c1f88b46f0a5a658046f1a9b426eecedda`
-- 当前阶段：Phase 0–19 已完成；Phase 20 候选资产验收与 Phase 21 正式发布待执行
+- 修复分支：`fix/v003-sensitive-field-limit`
+- 本地分支基点：`dd43ce5`（Portable 资产规范化修复）
+- 当前阶段：Phase 0–19 已完成；Phase 20 候选资产验收进行中，Phase 21 正式发布待执行
+- 冻结前独立复审：游戏 `game.ts=d576d5ce6d9a6445cb66b04901c7dbe793a53d148c9b2e203349c4f4a9e9a88f`；工作流 `engine.ts=2ab92acda7c2fee58e2a177055a1712fac1a02f00024bcef39f44ccc5eb478b0`；两位独立复审员均确认 P0=0/P1=0
 
 | Phase | 状态 | 证据 |
 |---|---|---|
@@ -26,22 +27,34 @@
 | 15 六入口 | 已完成 | Web/API/CLI/MCP stdio/HTTP/Skill/Desktop 共享核心契约测试 |
 | 16 REA/Benchmark | 已完成 | 100 任务长稳、冷热缓存基准、SQLite quick_check 与状态一致性 |
 | 17 内存优化 | 已完成 | 有界解析、缓存预算、资源熔断、峰值 RSS 与长稳报告 |
-| 18 全量/故障测试 | 已完成 | 25 files / 237 tests、E2E 5/5、build/typecheck/lint、秘密/许可证/audit |
-| 19 独立审查 | 已完成 | 两轮只读审计；最终 7 个 P1 修复后等待 fresh reviewer 清零确认 |
-| 20 发行资产 | 待开始 | Linux/Windows/Docker、CLI/Server/Skill、SHA256SUMS/provenance |
+| 18 全量/故障测试 | 已完成 | 30 files / 343 passed / 3 platform-skips、E2E 5/5、build/typecheck/lint、秘密/许可证/audit |
+| 19 独立审查 | 已完成 | 多轮只读审计；游戏与工作流最终冻结哈希经两位独立复审员实跑/定向复测，P0=0/P1=0 |
+| 20 发行资产 | 进行中 | 冻结 Commit 后将执行 Linux/Windows/Docker、CLI/Server/Skill、SHA256SUMS/provenance |
 | 21 正式发布 | 待开始 | 候选全部验收后创建 annotated Tag 并发布正式 Release |
 
 ## 最终本地门禁
 
-- `npm test`：26 个文件、240 项测试全部通过（含 OpenAPI 全路由契约、长数组凭证与覆盖回滚）。
+- `npm test`：30 个文件、343 passed / 3 skipped（Windows symlink 用例按平台跳过，Linux 候选 CI 执行）；覆盖游戏嵌套凭证六面脱敏、轮换/旧状态迁移、工作流 fencing/事务/lease/prune、API 删除竞态与快照读取。
 - `npm run test:e2e`：5/5 通过，包含真实 Electron BrowserWindow。
 - `npm run build`、`npm run typecheck`、`npm run lint`：通过。
-- `npm run check:secrets`：217 个文本文件通过。
+- `npm run check:secrets`：222 个文本文件通过。
 - `npm run licenses`：122 个包，无非许可清单。
-- `npm audit --omit=dev`：根、最终 CLI、最终 Server 均为 0 vulnerabilities。
+- `npm audit --omit=dev`：根依赖 0 vulnerabilities；最终 CLI、最终 Server 由候选 CI 独立审计。
 - `npm run validate:skill`：通过。
+- OpenAPI：42 paths，生成结果无漂移。
 - 长稳：100/100 完成，缓存命中率 99%，`quick_check=ok`，状态不一致 0。
 - 尚未创建正式 Tag；历史 v0.0.1/v0.0.2 Release 未改动。
+
+## 独立清零证据
+
+- 游戏最终冻结：`game.ts=d576d5ce6d9a6445cb66b04901c7dbe793a53d148c9b2e203349c4f4a9e9a88f`。真实生成服务运行时验证 A→move→logout→B→move→restart→B、无 logout 第二凭证拒绝、旧 credential-specific `state.json` key 迁移、嵌套子容器 12 类 original/canonical 编码别名六面脱敏、80 元素合法凭证数组（727 指纹，上限 8192）。
+- 工作流最终冻结：`engine.ts=2ab92acda7c2fee58e2a177055a1712fac1a02f00024bcef39f44ccc5eb478b0`。定向验证事务重入、事务内 fencing、失效 claim、恢复状态、prune 路径身份、短租约心跳、压力延期 cancel/pause、提交后 GC 失败与符号链接/摘要校验。
+- 两位独立复审员对上述哈希均明确报告 `P0=0 / P1=0`；审计误报 V003-038（UPSERT 冲突目标）与 V003-043（MiB/MB）已用源码和回归测试排除。
+
+## 已知非阻断 caveat
+
+- `readArtifact` 的契约仍是先查 manifest 再打开对象；极小窗口内对象被外部删除时返回 `NOT_FOUND`，不会返回错误字节。该行为记录为 P2/契约 caveat，不阻断发行。
+- 工件发布为保证 SQLite  fencing 与文件一致性，在 `BEGIN IMMEDIATE` 内使用同步 size/SHA-256 校验；最大工件场景会阻塞本进程事件循环。候选 CI 与后续基准将量化，当前不降低安全语义。
 
 ## 明确外部限制
 
