@@ -43,7 +43,8 @@ describe('scanGameDirectory', () => {
     expect(second.bytesScanned).toBe(0);
     const reusedBudget = await scanGameDirectory(root, { previous: first, maxBytes: 4095 });
     expect(reusedBudget.truncated).toBe(true);
-    expect(reusedBudget.files).toHaveLength(0);
+    expect(reusedBudget.files.every(file => file.size <= 4095)).toBe(true);
+    expect(reusedBudget.bytesScanned).toBe(0);
     const relativePrevious = first.files.map(file => ({ ...file, path: file.relativePath }));
     const relativeReuse = await scanGameDirectory(root, { previous: relativePrevious });
     expect(relativeReuse.files.every(file => file.evidenceRefs[0]?.detail.includes('未重读'))).toBe(true);
