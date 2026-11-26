@@ -34,7 +34,7 @@
 - 桌面真实进程指标、Windows 私有快照 ACL、API/Electron 单实例。
 - Release ID 驱动的 Draft 上传与公开资产复验。
 
-## v0.0.5：主机研究实验室与智能逆向向导（当前）
+## v0.0.5：主机研究实验室与智能逆向向导（已发布）
 
 - Console Research Lab：PS5/PS4/Xbox/Android TV/开放嵌入式设备档案、USB 诊断、C0-C5 证据等级。
 - 智能逆向向导：小白、专业、AI Agent 三模式。
@@ -44,15 +44,17 @@
 - Schema 4、授权范围中心、工具管理器与全入口契约。
 - 发行脚本分页、Release ID、限流重试、公开后复验。
 
-## v0.0.6：协议理解
+## v0.0.6：Game Revival（当前）
 
-- WebSocket/JSON/XML/Protobuf/二进制样本、字段关联、请求响应匹配、状态机与本地回放。
-- 仅在授权离线数据上推进。
+- Game Revival Studio：合法游戏档案、只读增量目录扫描、文件指纹与证据分级服务端规格。
+- L0-L7：档案 → 扫描 → 规格 → 生成构建 → 独立启动/管理认证 → 双客户端同场/权威状态/房间隔离 → 持久化/重连/结算/多房间并发 → Docker 部署。
+- 自有多人 FPS/RPG 独立 TypeScript/Node/WebSocket 服务端、认证管理后台、可下载 ZIP；不依赖平台 API。
+- CLI `game profile|scan|spec|rebuild|status|download`、REST 游戏复活路由、MCP 44 工具（新增 7 个）与 Skill 工作流。
+- `scan_game_directory` 仅扫描 API 服务端 `RE_GAME_ROOTS` 显式允许的目录；未配置返回 403，HTTP MCP 不能绕过。
+- 当前本地最高实测 L6；本地 Docker 不可用，Docker/L7 待 CI，不提前标为通过。
+- 独立兼容实现不是原始服务端，不保证商业原客户端兼容，不绕过 DRM/反作弊/认证，不分发未授权资源。
 
-## v0.0.7：游戏复活
-
-- Unity/Unreal/Godot/Cocos 识别、资源包、存档、协议恢复、离线流程。
-- L0–L5 逐级证据，不承诺每款游戏达到 L5。
+## v0.0.7：协议理解
 
 ## v0.0.8：安全研究
 

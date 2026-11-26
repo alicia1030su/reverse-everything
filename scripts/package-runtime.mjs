@@ -17,8 +17,11 @@ await mkdir(path.join(out,'scripts'),{recursive:true});
 await copyExclusive(path.join(root,'scripts/ghidra-analyze-headless.mjs'),path.join(out,'scripts/ghidra-analyze-headless.mjs'));
 await mkdir(path.join(path.dirname(out),'scripts'),{recursive:true});
 await copyExclusive(path.join(root,'scripts/ghidra-analyze-headless.mjs'),path.join(path.dirname(out),'scripts/ghidra-analyze-headless.mjs'));
+const rootPackage=JSON.parse(await readFile(path.join(root,'package.json'),'utf8'));
+const npmVersion=rootPackage.devDependencies?.npm;
+if(typeof npmVersion!=='string'||!/^\d+\.\d+\.\d+$/.test(npmVersion))throw new Error('npm must be an exact-version devDependency');
 const workspaceDirs=['apps/api','apps/worker','packages/core','packages/security','packages/workflow','packages/evidence','packages/ai','packages/contracts'];
-const queue=[];
+const queue=[{name:'npm',from:root}];
 for(const dir of workspaceDirs){
   const pkg=JSON.parse(await readFile(path.join(root,dir,'package.json'),'utf8'));
   for(const name of Object.keys(pkg.dependencies??{}))queue.push({name,from:path.join(root,dir)});
@@ -42,7 +45,7 @@ async function findPackage(name,from){
   while(dir!==path.dirname(dir)){
     try{
       const pkg=JSON.parse(await readFile(path.join(dir,'package.json'),'utf8'));
-      if(pkg.name===name)return {dir,pkg,workspace:false};
+      if(pkg.name===name||path.basename(dir)===name.split('/').at(-1))return {dir,pkg,workspace:false};
     }catch{}
     dir=path.dirname(dir);
   }
@@ -51,6 +54,7 @@ async function findPackage(name,from){
 while(queue.length){
   const item=queue.shift();
   const found=await findPackage(item.name,item.from);
+  if(item.name==='npm'&&found.pkg.version!==npmVersion)throw new Error(`Installed npm ${found.pkg.version} does not match fixed devDependency ${npmVersion}`);
   const key=found.workspace?found.pkg.name:found.dir;
   if(seen.has(key))continue;
   seen.add(key);

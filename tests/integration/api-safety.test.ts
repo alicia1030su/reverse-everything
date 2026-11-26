@@ -64,7 +64,7 @@ describe('API safety and recovery boundaries',()=>{
     await withEnv({RE_MAX_QUEUE:'2'},async()=>{const {app,db}=await setup();const project=db.project({name:'queue race',kind:'software',authorizationConfirmed:true});const headers={...auth,'content-type':'application/json'};const responses=await Promise.all(Array.from({length:8},()=>app.inject({method:'POST',url:`/api/projects/${project.id}/tasks`,headers,body:JSON.stringify({adapter:'file'})})));expect(responses.map(response=>response.statusCode).filter(status=>status===201)).toHaveLength(2);expect(responses.map(response=>response.statusCode).filter(status=>status===429)).toHaveLength(6);expect(responses.filter(response=>response.statusCode===429).every(response=>response.json().error.code==='QUEUE_FULL')).toBe(true);expect(db.raw.prepare("SELECT COUNT(*) n FROM tasks WHERE status='QUEUED'").get()).toEqual({n:2});});
   });
   it('keeps public health minimal and protects resource details',async()=>{
-    const {app}=await setup();const health=await app.inject({method:'GET',url:'/api/health'});expect(health.statusCode).toBe(200);expect(health.json()).toEqual({ok:true,product:'reverse-everything',version:'0.0.5',schemaVersion:4});
+    const {app}=await setup();const health=await app.inject({method:'GET',url:'/api/health'});expect(health.statusCode).toBe(200);expect(health.json()).toEqual({ok:true,product:'reverse-everything',version:'0.0.6',schemaVersion:5});
     expect((await app.inject({method:'GET',url:'/api/resources'})).statusCode).toBe(401);
     expect((await app.inject({method:'GET',url:'/api/resources',headers:auth})).statusCode).toBe(200);
   });

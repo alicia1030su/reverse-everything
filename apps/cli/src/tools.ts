@@ -122,5 +122,12 @@ export function createMcpServer(localFileRead = false): McpServer {
   register('list_demos', 'List built-in automated acceptance demos', {}, () => api('/api/demos'));
   register('run_demo', 'Run a built-in demo through the shared task engine', { name: z.string() }, args => api(`/api/demos/${encodeURIComponent(String(args.name))}/run`, { method: 'POST' }));
   register('get_plain_report', 'Get a plain-language report derived from task evidence', { taskId: z.string(), format: z.enum(['markdown','json','html']).optional() }, args => api(`/api/tasks/${String(args.taskId)}/report/plain?format=${encodeURIComponent(String(args.format ?? 'markdown'))}`));
+  register('list_game_profiles', 'List game revival research profiles and evidence levels', {}, () => api('/api/game/profiles'));
+  register('save_game_profile', 'Create or update an authorized game revival profile', { projectId: z.string(), profile: z.record(z.string(), z.unknown()) }, args => api(`/api/projects/${String(args.projectId)}/game-profile`, { method: 'PUT', body: JSON.stringify(args.profile) }));
+  register('scan_game_directory', 'Incrementally scan an authorized local game directory without uploading its files', { projectId: z.string(), rootPath: z.string(), authorized: z.literal(true) }, args => { if(args.authorized!==true)throw new Error('Explicit authorization is required'); return api(`/api/projects/${String(args.projectId)}/game-scan`, { method: 'POST', body: JSON.stringify({ rootPath: args.rootPath }) }); });
+  register('create_game_server_spec', 'Create an evidence-bounded independent game server specification', { projectId: z.string() }, args => api(`/api/projects/${String(args.projectId)}/game-spec`, { method: 'POST', body: '{}' }));
+  register('list_game_rebuilds', 'List generated multiplayer server rebuild and validation reports', {}, () => api('/api/game/rebuilds'));
+  register('create_game_rebuild', 'Generate, build and validate an independent multiplayer game server', { specId: z.string() }, args => api('/api/game/rebuilds', { method: 'POST', body: JSON.stringify({ specId: args.specId }) }));
+  register('get_game_rebuild', 'Get multiplayer server validation evidence and deployment readiness', { rebuildId: z.string() }, args => api(`/api/game/rebuilds/${encodeURIComponent(String(args.rebuildId))}`));
   return server;
 }

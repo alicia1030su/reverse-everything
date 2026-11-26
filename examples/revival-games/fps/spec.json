@@ -1,0 +1,25 @@
+{
+  "id": "owned-fps",
+  "name": "自有庭院对抗",
+  "kind": "fps",
+  "version": "1.0.0",
+  "modules": ["auth", "lobby", "rooms", "maps", "movement", "actions", "combat", "rounds", "scoring", "reconnect", "persistence"],
+  "maps": [
+    { "id": "courtyard", "name": "自有庭院", "checksum": "own-courtyard-v1", "bounds": 100 },
+    { "id": "foundry", "name": "自有铸造所", "checksum": "own-foundry-v1", "bounds": 100 }
+  ],
+  "rules": {
+    "transport": "websocket-json",
+    "messageEnvelope": { "type": "string", "payload": "object", "requestId": "optional string" },
+    "capacityPerRoom": 4,
+    "startingHp": 100,
+    "maximumDamagePerHit": 50,
+    "roundEndsWhenClientRequests": true,
+    "score": "round winner team +1",
+    "movementBounds": 100,
+    "requiredPlayersForRound": 2,
+    "disconnectPreservesRoom": true
+  },
+  "ports": { "default": 3901, "capture": 0 },
+  "evidence": ["captured-trace.json"]
+}

@@ -50,3 +50,36 @@ jobs:
       - name: Verify CLI inside container
         run: docker compose exec -T reverse-everything node apps/cli/dist/cli.js health
       - run: docker compose down -v
+  game-docker:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      matrix:
+        genre: [fps, rpg]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - run: npm run build
+      - name: Generate and validate ${{ matrix.genre }} with Docker Compose
+        run: node scripts/validate-game-docker.mjs --genre ${{ matrix.genre }}
+      - name: Independently verify ${{ matrix.genre }} Docker evidence
+        run: |
+          node scripts/verify-game-docker-evidence.mjs \
+            --genre ${{ matrix.genre }} \
+            --report .artifacts/game-docker-${{ matrix.genre }}/docker-validation.json \
+            --evidence .artifacts/game-docker-${{ matrix.genre }}/docker-deployment-evidence.json \
+            --sums .artifacts/game-docker-${{ matrix.genre }}/SHA256SUMS.txt
+      - name: Upload Docker validation evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: game-docker-${{ matrix.genre }}
+          path: |
+            .artifacts/game-docker-${{ matrix.genre }}/docker-validation.json
+            .artifacts/game-docker-${{ matrix.genre }}/docker-deployment-evidence.json
+            .artifacts/game-docker-${{ matrix.genre }}/SHA256SUMS.txt
+          if-no-files-found: error

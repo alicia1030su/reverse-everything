@@ -1,0 +1,670 @@
+name: Release v006
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Immutable main commit to freeze as the release candidate
+        required: true
+        default: main
+        type: string
+      publish:
+        description: Create an annotated Tag and publish only after acceptance and asset verification
+        required: false
+        default: false
+        type: boolean
+      confirmation:
+        description: Type PUBLISH v<version> using the version printed by the candidate job
+        required: false
+        default: ''
+        type: string
+
+permissions:
+  contents: read
+  checks: read
+  actions: read
+
+concurrency:
+  group: release-v006-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  freeze:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      commit: ${{ steps.meta.outputs.commit }}
+      version: ${{ steps.meta.outputs.version }}
+      tag: ${{ steps.meta.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+          fetch-depth: 0
+          persist-credentials: false
+      - id: meta
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          WORKFLOW_NAME: ${{ github.workflow }}
+        run: |
+          set -euo pipefail
+          test -z "$(git status --porcelain)"
+          commit="$(git rev-parse HEAD)"
+          git fetch origin main
+          test "$commit" = "$(git rev-parse origin/main)"
+          version="$(node scripts/release-atomic.mjs version --root .)"
+          tag="v$version"
+          export COMMIT="$commit"
+          node scripts/verify-release-workflows.mjs --repo "$GITHUB_REPOSITORY" --commit "$COMMIT" --branch main --current-workflow "$WORKFLOW_NAME" --current-run-id "$GITHUB_RUN_ID"
+          echo "commit=$commit" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "Frozen candidate: $commit ($tag)"
+
+  candidate-linux:
+    needs: freeze
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    outputs:
+      commit: ${{ steps.meta.outputs.commit }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.freeze.outputs.commit }}
+          fetch-depth: 0
+          persist-credentials: false
+      - id: meta
+        shell: bash
+        env:
+          EXPECTED_COMMIT: ${{ needs.freeze.outputs.commit }}
+          EXPECTED_VERSION: ${{ needs.freeze.outputs.version }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_COMMIT"
+          test "$(node scripts/release-atomic.mjs version --root .)" = "$EXPECTED_VERSION"
+          test -z "$(git status --porcelain)"
+          echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - run: npx playwright install --with-deps chromium
+      - run: npm run build
+      - run: npm run typecheck
+      - run: npm run docs:check
+      - run: npm run version:check
+      - run: npm run lint
+      - run: npm run check:secrets
+      - run: npm run licenses
+      - run: npm audit --omit=dev
+      - run: npm test
+      - run: npm run test:e2e
+      - run: node scripts/generate-openapi.mjs
+      - run: node scripts/generate-sbom.mjs
+      - run: npm run validate:skill
+      - run: node scripts/package-cli.mjs
+      - run: node scripts/package-server.mjs
+      - run: node scripts/package-skill.mjs
+      - name: Audit final standalone dependency trees
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm audit --omit=dev --prefix dist/release/cli
+          npm audit --omit=dev --prefix dist/release/server
+      - name: Assemble Linux candidate assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(node scripts/release-atomic.mjs version --root .)"
+          mkdir -p dist/release
+          cp "docs/api/openapi-v$version.json" dist/release/
+          test -s "dist/release/reverse-everything-cli-$version.tgz"
+          test -s "dist/release/reverse-everything-server-$version.tar.gz"
+          test -s "dist/release/reverse-everything-skill-$version.zip"
+          test -s "dist/release/SBOM-v$version.json"
+      - name: Clean CLI, server and Skill smoke
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(node scripts/release-atomic.mjs version --root .)"
+          npm install -g "./dist/release/reverse-everything-cli-$version.tgz" --no-audit --no-fund
+          cli_version="$(reverse-everything --version)"
+          node -e 'const value=JSON.parse(process.argv[1]);if(value.version!==process.argv[2])process.exit(1)' "$cli_version" "$version"
+          reverse-everything --help >/dev/null
+          rm -rf /tmp/re-release-server /tmp/re-release-data /tmp/re-release-skill
+          mkdir -p /tmp/re-release-server /tmp/re-release-skill
+          tar -xzf "dist/release/reverse-everything-server-$version.tar.gz" -C /tmp/re-release-server
+          test -s /tmp/re-release-server/server/scripts/ghidra-analyze-headless.mjs
+          cmp scripts/ghidra-analyze-headless.mjs /tmp/re-release-server/server/scripts/ghidra-analyze-headless.mjs
+          unzip -q "dist/release/reverse-everything-skill-$version.zip" -d /tmp/re-release-skill
+          cd /tmp/re-release-server/server
+          npm ci --omit=dev --no-audit --no-fund
+          setsid env RE_DATA_DIR=/tmp/re-release-data npm start >/tmp/re-release-server.log 2>&1 &
+          server_pid=$!
+          trap 'kill -- -"$server_pid" 2>/dev/null || true' EXIT
+          ready=0
+          for _ in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:4173/api/health >/dev/null; then ready=1; break; fi
+            sleep 1
+          done
+          if [ "$ready" != 1 ]; then cat /tmp/re-release-server.log; exit 1; fi
+          token="$(cat /tmp/re-release-data/local-token)"
+          curl -fsS -H "Authorization: Bearer $token" http://127.0.0.1:4173/api/openapi.json | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const value=JSON.parse(s);if(value.info.version!==process.argv[1])process.exit(1)})' "$version"
+          curl -fsS -H "Authorization: Bearer $token" http://127.0.0.1:4173/api/demo/trace >/dev/null
+          RE_API_URL=http://127.0.0.1:4173 node /tmp/re-release-skill/reverse-everything/scripts/check-environment.mjs | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const value=JSON.parse(s);if(value.api?.ok!==true)process.exit(1)})'
+          RE_API_URL=http://127.0.0.1:4173 RE_DATA_DIR=/tmp/re-release-data reverse-everything capabilities >/dev/null
+      - name: Docker image build and health evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(node scripts/release-atomic.mjs version --root .)"
+          commit="$(git rev-parse HEAD)"
+          docker build -t "reverse-everything:$version" .
+          docker run -d --name re-release-docker -p 127.0.0.1:4173:4173 -e RE_ALLOW_REMOTE=true -e RE_ALLOWED_HOSTS=127.0.0.1:4173 "reverse-everything:$version"
+          ready=0
+          for _ in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:4173/api/health >/dev/null; then ready=1; break; fi
+            sleep 1
+          done
+          if [ "$ready" != 1 ]; then docker logs re-release-docker; docker rm -f re-release-docker; exit 1; fi
+          image_id="$(docker image inspect --format '{{.Id}}' "reverse-everything:$version")"
+          node -e 'require("node:fs").writeFileSync("dist/release/docker-image.json",JSON.stringify({image:process.argv[1],imageId:process.argv[2],commit:process.argv[3],version:process.argv[4]},null,2)+"\n")' "reverse-everything:$version" "$image_id" "$commit" "$version"
+          docker rm -f re-release-docker
+      - name: Validate real FPS and RPG Docker deployments
+        shell: bash
+        env:
+          EXPECTED_COMMIT: ${{ needs.freeze.outputs.commit }}
+          EXPECTED_VERSION: ${{ needs.freeze.outputs.version }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_COMMIT"
+          test "$(node scripts/release-atomic.mjs version --root .)" = "$EXPECTED_VERSION"
+          mkdir -p dist/game-docker
+          node scripts/validate-game-docker.mjs --genre fps --output dist/game-docker/fps
+          node scripts/validate-game-docker.mjs --genre rpg --output dist/game-docker/rpg
+          node --input-type=module <<'NODE'
+          import { readFile, writeFile } from 'node:fs/promises';
+          const reports = {};
+          for (const genre of ['fps', 'rpg']) {
+            const report = JSON.parse(await readFile(`dist/game-docker/${genre}/docker-validation.json`, 'utf8'));
+            reports[genre] = report;
+          }
+          await writeFile('dist/game-docker/docker-validation.json', JSON.stringify({ schemaVersion: 1, commit: process.env.EXPECTED_COMMIT, version: process.env.EXPECTED_VERSION, reports }, null, 2) + '\n');
+          NODE
+      - name: Independently verify real FPS and RPG Docker evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          for genre in fps rpg; do
+            node scripts/verify-game-docker-evidence.mjs \
+              --genre "$genre" \
+              --report "dist/game-docker/$genre/docker-validation.json" \
+              --evidence "dist/game-docker/$genre/docker-deployment-evidence.json" \
+              --sums "dist/game-docker/$genre/SHA256SUMS.txt"
+          done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: docker-validation
+          if-no-files-found: error
+          path: |
+            dist/game-docker/docker-validation.json
+            dist/game-docker/*/docker-validation.json
+            dist/game-docker/*/docker-deployment-evidence.json
+            dist/game-docker/*/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: candidate-linux
+          if-no-files-found: error
+          path: |
+            dist/release/*.tgz
+            dist/release/*.tar.gz
+            dist/release/*.zip
+            dist/release/*.json
+
+  candidate-game-docker:
+    needs: [freeze, candidate-linux]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      commit: ${{ steps.meta.outputs.commit }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.freeze.outputs.commit }}
+          persist-credentials: false
+      - id: meta
+        shell: bash
+        env:
+          EXPECTED_COMMIT: ${{ needs.freeze.outputs.commit }}
+          EXPECTED_VERSION: ${{ needs.freeze.outputs.version }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_COMMIT"
+          test "$(node scripts/release-atomic.mjs version --root .)" = "$EXPECTED_VERSION"
+          test -z "$(git status --porcelain)"
+          echo "commit=$EXPECTED_COMMIT" >> "$GITHUB_OUTPUT"
+      - uses: actions/download-artifact@v4
+        with:
+          name: docker-validation
+          path: dist/game-docker
+      - name: Require real FPS and RPG Docker evidence
+        shell: bash
+        env:
+          EXPECTED_COMMIT: ${{ needs.freeze.outputs.commit }}
+          EXPECTED_VERSION: ${{ needs.freeze.outputs.version }}
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'NODE'
+          import { readFile } from 'node:fs/promises';
+          const summary = JSON.parse(await readFile('dist/game-docker/docker-validation.json', 'utf8'));
+          if (summary.commit !== process.env.EXPECTED_COMMIT || summary.version !== process.env.EXPECTED_VERSION) throw new Error('Docker evidence identity mismatch');
+          for (const genre of ['fps', 'rpg']) {
+            const report = JSON.parse(await readFile(`dist/game-docker/${genre}/docker-validation.json`, 'utf8'));
+            if (JSON.stringify(summary.reports?.[genre]) !== JSON.stringify(report)) throw new Error(`${genre} Docker summary mismatch`);
+          }
+          NODE
+          for genre in fps rpg; do
+            node scripts/verify-game-docker-evidence.mjs \
+              --genre "$genre" \
+              --report "dist/game-docker/$genre/docker-validation.json" \
+              --evidence "dist/game-docker/$genre/docker-deployment-evidence.json" \
+              --sums "dist/game-docker/$genre/SHA256SUMS.txt"
+          done
+
+  candidate-windows:
+    needs: freeze
+    runs-on: windows-latest
+    timeout-minutes: 50
+    outputs:
+      commit: ${{ steps.meta.outputs.commit }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.freeze.outputs.commit }}
+          fetch-depth: 0
+          persist-credentials: false
+      - id: meta
+        shell: bash
+        env:
+          EXPECTED_COMMIT: ${{ needs.freeze.outputs.commit }}
+          EXPECTED_VERSION: ${{ needs.freeze.outputs.version }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_COMMIT"
+          test "$(node scripts/release-atomic.mjs version --root .)" = "$EXPECTED_VERSION"
+          test -z "$(git status --porcelain)"
+          echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - run: npm run build
+      - run: npm run typecheck
+      - run: node scripts/package-runtime.mjs
+      - name: Verify runtime Ghidra launcher layouts
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $expected = (Get-FileHash 'scripts/ghidra-analyze-headless.mjs' -Algorithm SHA256).Hash
+          foreach ($relative in @('dist/desktop-runtime/scripts/ghidra-analyze-headless.mjs', 'dist/desktop-runtime/node_modules/scripts/ghidra-analyze-headless.mjs')) {
+            if (-not (Test-Path -LiteralPath $relative -PathType Leaf)) { throw "Missing runtime Ghidra launcher: $relative" }
+            if ((Get-FileHash $relative -Algorithm SHA256).Hash -ne $expected) { throw "Runtime Ghidra launcher mismatch: $relative" }
+          }
+      - run: npm run dist -w @reverse/desktop
+      - name: Normalize portable name
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $version = node scripts/release-atomic.mjs version --root .
+          $source = Join-Path (Get-Location) "dist/desktop/Reverse-Everything-Setup-$version-win-x64.zip"
+          $target = Join-Path (Get-Location) "dist/desktop/Reverse-Everything-Portable-$version-win-x64.zip"
+          if (-not (Test-Path -LiteralPath $source -PathType Leaf)) { throw "Portable source not found: $source" }
+          if (Test-Path -LiteralPath $target) { throw "Portable target already exists: $target" }
+          [System.IO.File]::Move($source, $target)
+      - name: Silent install smoke
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $version = node scripts/release-atomic.mjs version --root .
+          $installer = Get-ChildItem dist/desktop/*.exe | Select-Object -First 1
+          $dest = Join-Path $env:RUNNER_TEMP 're-release-install'
+          $process = Start-Process -FilePath $installer.FullName -ArgumentList '/S',"/D=$dest" -PassThru -Wait
+          if ($process.ExitCode -ne 0) { throw "Installer exited $($process.ExitCode)" }
+          $exe = Get-ChildItem $dest -Filter *.exe -Recurse | Where-Object { $_.Name -like '*Reverse Everything*' } | Select-Object -First 1
+          if (-not $exe) { throw 'Installed executable not found' }
+          $expectedLauncher = (Get-FileHash 'scripts/ghidra-analyze-headless.mjs' -Algorithm SHA256).Hash
+          $launchers = @(Get-ChildItem $dest -Filter 'ghidra-analyze-headless.mjs' -Recurse -File)
+          foreach ($pattern in @('\\resources\\scripts\\ghidra-analyze-headless\.mjs$', '\\resources\\node_modules\\scripts\\ghidra-analyze-headless\.mjs$')) {
+            $launcher = $launchers | Where-Object { $_.FullName -match $pattern } | Select-Object -First 1
+            if (-not $launcher) { throw "Installed Ghidra launcher layout missing: $pattern" }
+            if ((Get-FileHash $launcher.FullName -Algorithm SHA256).Hash -ne $expectedLauncher) { throw "Installed Ghidra launcher mismatch: $($launcher.FullName)" }
+          }
+          $env:RE_DATA_DIR = "$env:RUNNER_TEMP/re-release-data"
+          $env:RE_SMOKE_OUTPUT = "$env:RUNNER_TEMP/re-release-smoke.json"
+          Remove-Item Env:ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue
+          Remove-Item Env:NODE_OPTIONS -ErrorAction SilentlyContinue
+          $process = Start-Process -FilePath $exe.FullName -ArgumentList '--smoke-test' -PassThru -Wait
+          if ($process.ExitCode -ne 0) { throw "Desktop smoke exited $($process.ExitCode)" }
+          $result = Get-Content $env:RE_SMOKE_OUTPUT -Raw | ConvertFrom-Json
+          if (-not $result.ok -or $result.version -ne $version) { throw 'Desktop smoke result mismatch' }
+          if ($result.gameRevival.genre -ne 'fps' -or -not $result.gameRevival.valid -or $result.gameRevival.errors.Count -ne 0) { throw 'Installed Game Revival rebuild smoke failed' }
+          if ($result.gameRevival.nodeRuntime -ne 'packaged Electron node.cmd shim' -or $result.gameRevival.npmCli -notlike '*\resources\node_modules\npm\bin\npm-cli.js') { throw 'Installed Game Revival smoke did not use packaged npm/Electron' }
+          foreach ($check in @('install', 'build', 'unit-tests', 'independent-start')) {
+            if (-not ($result.gameRevival.checks | Where-Object { $_.id -eq $check -and $_.passed })) { throw "Installed Game Revival smoke missing passing check: $check" }
+          }
+          Copy-Item $env:RE_SMOKE_OUTPUT 'dist/desktop/windows-install-smoke.json'
+      - name: Portable smoke
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $version = node scripts/release-atomic.mjs version --root .
+          $zip = Get-ChildItem dist/desktop/*.zip | Select-Object -First 1
+          $dest = Join-Path $env:RUNNER_TEMP 're-release-portable'
+          Expand-Archive $zip.FullName -DestinationPath $dest
+          $exe = Get-ChildItem $dest -Filter *.exe -Recurse | Where-Object { $_.Name -like '*Reverse Everything*' } | Select-Object -First 1
+          if (-not $exe) { throw 'Portable executable not found' }
+          $expectedLauncher = (Get-FileHash 'scripts/ghidra-analyze-headless.mjs' -Algorithm SHA256).Hash
+          $launchers = @(Get-ChildItem $dest -Filter 'ghidra-analyze-headless.mjs' -Recurse -File)
+          foreach ($pattern in @('\\resources\\scripts\\ghidra-analyze-headless\.mjs$', '\\resources\\node_modules\\scripts\\ghidra-analyze-headless\.mjs$')) {
+            $launcher = $launchers | Where-Object { $_.FullName -match $pattern } | Select-Object -First 1
+            if (-not $launcher) { throw "Portable Ghidra launcher layout missing: $pattern" }
+            if ((Get-FileHash $launcher.FullName -Algorithm SHA256).Hash -ne $expectedLauncher) { throw "Portable Ghidra launcher mismatch: $($launcher.FullName)" }
+          }
+          $env:RE_DATA_DIR = "$env:RUNNER_TEMP/re-release-portable-data"
+          $env:RE_SMOKE_OUTPUT = "$env:RUNNER_TEMP/re-release-portable-smoke.json"
+          Remove-Item Env:ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue
+          Remove-Item Env:NODE_OPTIONS -ErrorAction SilentlyContinue
+          $process = Start-Process -FilePath $exe.FullName -ArgumentList '--smoke-test' -PassThru -Wait
+          if ($process.ExitCode -ne 0) { throw "Portable smoke exited $($process.ExitCode)" }
+          $result = Get-Content $env:RE_SMOKE_OUTPUT -Raw | ConvertFrom-Json
+          if (-not $result.ok -or $result.version -ne $version) { throw 'Portable smoke result mismatch' }
+          if ($result.gameRevival.genre -ne 'fps' -or -not $result.gameRevival.valid -or $result.gameRevival.errors.Count -ne 0) { throw 'Portable Game Revival rebuild smoke failed' }
+          if ($result.gameRevival.nodeRuntime -ne 'packaged Electron node.cmd shim' -or $result.gameRevival.npmCli -notlike '*\resources\node_modules\npm\bin\npm-cli.js') { throw 'Portable Game Revival smoke did not use packaged npm/Electron' }
+          foreach ($check in @('install', 'build', 'unit-tests', 'independent-start')) {
+            if (-not ($result.gameRevival.checks | Where-Object { $_.id -eq $check -and $_.passed })) { throw "Portable Game Revival smoke missing passing check: $check" }
+          }
+          Copy-Item $env:RE_SMOKE_OUTPUT 'dist/desktop/windows-portable-smoke.json'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-smoke-evidence
+          if-no-files-found: error
+          path: dist/desktop/windows-*-smoke.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: candidate-windows
+          if-no-files-found: error
+          path: |
+            dist/desktop/*.exe
+            dist/desktop/*.zip
+
+  candidate-acceptance:
+    needs: [freeze, candidate-linux, candidate-game-docker, candidate-windows]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    outputs:
+      commit: ${{ steps.meta.outputs.commit }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.freeze.outputs.commit }}
+          persist-credentials: false
+      - id: meta
+        shell: bash
+        env:
+          EXPECTED_COMMIT: ${{ needs.freeze.outputs.commit }}
+          EXPECTED_VERSION: ${{ needs.freeze.outputs.version }}
+          LINUX_COMMIT: ${{ needs.candidate-linux.outputs.commit }}
+          GAME_DOCKER_COMMIT: ${{ needs.candidate-game-docker.outputs.commit }}
+          WINDOWS_COMMIT: ${{ needs.candidate-windows.outputs.commit }}
+        run: |
+          set -euo pipefail
+          test "$LINUX_COMMIT" = "$WINDOWS_COMMIT"
+          test "$(git rev-parse HEAD)" = "$EXPECTED_COMMIT"
+          test "$EXPECTED_COMMIT" = "$LINUX_COMMIT"
+          test "$EXPECTED_COMMIT" = "$GAME_DOCKER_COMMIT"
+          test "$(node scripts/release-atomic.mjs version --root .)" = "$EXPECTED_VERSION"
+          test -z "$(git status --porcelain)"
+          echo "commit=$EXPECTED_COMMIT" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: candidate-*
+          path: dist/release
+          merge-multiple: true
+      - uses: actions/download-artifact@v4
+        with:
+          name: docker-validation
+          path: dist/game-docker
+      - name: Require v0.0.6 OpenAPI and real game Docker reports
+        shell: bash
+        env:
+          COMMIT: ${{ needs.freeze.outputs.commit }}
+          VERSION: ${{ needs.freeze.outputs.version }}
+        run: |
+          set -euo pipefail
+          test "$VERSION" = "0.0.6"
+          test -s dist/release/openapi-v0.0.6.json
+          node --input-type=module <<'NODE'
+          import { readFile } from 'node:fs/promises';
+          const summary = JSON.parse(await readFile('dist/game-docker/docker-validation.json', 'utf8'));
+          if (summary.commit !== process.env.COMMIT || summary.version !== process.env.VERSION) throw new Error('Docker evidence identity mismatch');
+          for (const genre of ['fps', 'rpg']) {
+            const report = JSON.parse(await readFile(`dist/game-docker/${genre}/docker-validation.json`, 'utf8'));
+            if (JSON.stringify(summary.reports?.[genre]) !== JSON.stringify(report)) throw new Error(`${genre} Docker summary mismatch`);
+          }
+          NODE
+          for genre in fps rpg; do
+            node scripts/verify-game-docker-evidence.mjs \
+              --genre "$genre" \
+              --report "dist/game-docker/$genre/docker-validation.json" \
+              --evidence "dist/game-docker/$genre/docker-deployment-evidence.json" \
+              --sums "dist/game-docker/$genre/SHA256SUMS.txt"
+          done
+      - name: Generate independent acceptance and provenance
+        shell: bash
+        env:
+          COMMIT: ${{ needs.freeze.outputs.commit }}
+          VERSION: ${{ needs.freeze.outputs.version }}
+          TAG: ${{ needs.freeze.outputs.tag }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          for asset in \
+            "reverse-everything-cli-$VERSION.tgz" \
+            "reverse-everything-server-$VERSION.tar.gz" \
+            "reverse-everything-skill-$VERSION.zip" \
+            "Reverse-Everything-Setup-$VERSION-win-x64.exe" \
+            "Reverse-Everything-Portable-$VERSION-win-x64.zip" \
+            "openapi-v0.0.6.json" \
+            "SBOM-v$VERSION.json" \
+            "docker-image.json"; do
+            test -s "dist/release/$asset" || { echo "Missing candidate asset: $asset" >&2; exit 1; }
+          done
+          node scripts/release-provenance.mjs generate \
+            --dir dist/release --commit "$COMMIT" --ref refs/heads/main \
+            --version "$VERSION" --tag "$TAG" --run-id "$RUN_ID" --acceptance-run-id "$RUN_ID" \
+            --check frozen-main-commit --check linux-quality --check docs-version-skill \
+            --check clean-cli-server-skill-smoke --check docker-health --check game-fps-rpg-docker-validation \
+            --check windows-install-smoke --check windows-portable-smoke --check windows-game-revival-smoke \
+            --check server-ghidra-launcher-layout --check desktop-ghidra-launcher-layout \
+            --check required-assets-present
+          node scripts/release-provenance.mjs verify \
+            --dir dist/release --tag "$TAG" --version "$VERSION" \
+            --tag-commit "$COMMIT" --skip-tag-check
+          node --input-type=module <<'NODE'
+          import { readFile, readdir } from 'node:fs/promises';
+          const manifest = JSON.parse(await readFile('dist/release/RELEASE-MANIFEST.json', 'utf8'));
+          const files = (await readdir('dist/release', { withFileTypes: true })).filter(entry => entry.isFile());
+          if (manifest.assets.length !== 8 || files.length !== 12) throw new Error(`Expected 8 candidate assets and 12 Release assets, got ${manifest.assets.length} and ${files.length}`);
+          NODE
+      - uses: actions/upload-artifact@v4
+        with:
+          name: candidate-${{ needs.freeze.outputs.version }}
+          if-no-files-found: error
+          path: dist/release/*
+      - name: Summarize accepted candidate
+        shell: bash
+        env:
+          COMMIT: ${{ needs.freeze.outputs.commit }}
+          TAG: ${{ needs.freeze.outputs.tag }}
+        run: |
+          {
+            echo "## Accepted $TAG candidate"
+            echo "- Commit: \`$COMMIT\`"
+            echo '- Linux quality, docs/version/Skill checks, clean package smoke and Docker health: passed'
+            echo '- Real FPS/RPG Docker deployment evidence: passed'
+            echo '- Windows installer and portable smoke, including packaged npm/Electron Game Revival rebuild: passed'
+            echo '- ACCEPTANCE, BUILD-INFO, RELEASE-MANIFEST and SHA256SUMS: verified'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  tag-draft:
+    if: ${{ inputs.publish && inputs.confirmation == format('PUBLISH {0}', needs.freeze.outputs.tag) }}
+    needs: [freeze, candidate-acceptance]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: release-v006
+    permissions:
+      contents: write
+    outputs:
+      tag: ${{ needs.freeze.outputs.tag }}
+      version: ${{ needs.freeze.outputs.version }}
+      commit: ${{ needs.candidate-acceptance.outputs.commit }}
+      release_id: ${{ steps.draft.outputs.release_id }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.candidate-acceptance.outputs.commit }}
+          fetch-depth: 0
+          persist-credentials: true
+      - uses: actions/download-artifact@v4
+        with:
+          name: candidate-${{ needs.freeze.outputs.version }}
+          path: dist/release
+      - name: Verify immutable candidate and annotated Tag
+        shell: bash
+        env:
+          COMMIT: ${{ needs.candidate-acceptance.outputs.commit }}
+          VERSION: ${{ needs.freeze.outputs.version }}
+          TAG: ${{ needs.freeze.outputs.tag }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$COMMIT"
+          test -z "$(git status --porcelain)"
+          test "$(node scripts/release-atomic.mjs version --root .)" = "$VERSION"
+          test "$TAG" = "v$VERSION"
+          remote_tag="$(git ls-remote --tags origin "refs/tags/$TAG" | awk -v ref="refs/tags/$TAG" '$2 == ref { print $1 }')"
+          if [ -n "$remote_tag" ]; then
+            git fetch origin "refs/tags/$TAG:refs/tags/$TAG"
+          elif git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
+            remote_tag=local
+          else
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git tag -a "$TAG" "$COMMIT" -m "Reverse Everything $TAG"
+            remote_tag=local
+          fi
+          test "$(git cat-file -t "refs/tags/$TAG")" = tag
+          test "$(git rev-parse "$TAG^{commit}")" = "$COMMIT"
+          node scripts/release-provenance.mjs verify --dir dist/release --tag "$TAG" --version "$VERSION"
+          if [ "$remote_tag" = local ]; then git push origin "refs/tags/$TAG"; fi
+          git fetch origin "refs/tags/$TAG:refs/tags/$TAG"
+          test "$(git cat-file -t "refs/tags/$TAG")" = tag
+          test "$(git rev-parse "$TAG^{commit}")" = "$COMMIT"
+      - name: Create Draft or verify completed Release
+        id: draft
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          COMMIT: ${{ needs.candidate-acceptance.outputs.commit }}
+          TAG: ${{ needs.freeze.outputs.tag }}
+        run: |
+          set -euo pipefail
+          node scripts/release-atomic.mjs ensure-draft \
+            --dir dist/release --tag "$TAG" --commit "$COMMIT" --repo "$GITHUB_REPOSITORY"
+          release_id="$(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100" --jq ".[] | select(.tag_name == \"$TAG\") | .id")"
+          test -n "$release_id"
+          echo "release_id=$release_id" >> "$GITHUB_OUTPUT"
+
+  upload-verify:
+    needs: tag-draft
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: release-v006
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.tag-draft.outputs.commit }}
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: candidate-${{ needs.tag-draft.outputs.version }}
+          path: dist/release
+      - name: Upload missing Draft assets without overwriting
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          COMMIT: ${{ needs.tag-draft.outputs.commit }}
+          TAG: ${{ needs.tag-draft.outputs.tag }}
+          RELEASE_ID: ${{ needs.tag-draft.outputs.release_id }}
+        run: |
+          set -euo pipefail
+          node scripts/release-atomic.mjs upload \
+            --dir dist/release --tag "$TAG" --commit "$COMMIT" --repo "$GITHUB_REPOSITORY" --release-id "$RELEASE_ID"
+      - name: Verify every Release asset name, size and digest
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          COMMIT: ${{ needs.tag-draft.outputs.commit }}
+          TAG: ${{ needs.tag-draft.outputs.tag }}
+          RELEASE_ID: ${{ needs.tag-draft.outputs.release_id }}
+        run: |
+          set -euo pipefail
+          node scripts/release-atomic.mjs verify-draft \
+            --dir dist/release --tag "$TAG" --commit "$COMMIT" --repo "$GITHUB_REPOSITORY" --release-id "$RELEASE_ID"
+
+  publish-stable:
+    needs: [tag-draft, upload-verify]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: release-v006
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.tag-draft.outputs.commit }}
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: candidate-${{ needs.tag-draft.outputs.version }}
+          path: dist/release
+      - name: Publish stable latest once and verify the public address
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          COMMIT: ${{ needs.tag-draft.outputs.commit }}
+          TAG: ${{ needs.tag-draft.outputs.tag }}
+          RELEASE_ID: ${{ needs.tag-draft.outputs.release_id }}
+        run: |
+          set -euo pipefail
+          node scripts/release-atomic.mjs publish \
+            --dir dist/release --tag "$TAG" --commit "$COMMIT" --repo "$GITHUB_REPOSITORY" --release-id "$RELEASE_ID"
+      - name: Re-download public assets and verify checksums
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          COMMIT: ${{ needs.tag-draft.outputs.commit }}
+          TAG: ${{ needs.tag-draft.outputs.tag }}
+          RELEASE_ID: ${{ needs.tag-draft.outputs.release_id }}
+        run: |
+          set -euo pipefail
+          node scripts/release-atomic.mjs verify-public \
+            --dir dist/release --tag "$TAG" --commit "$COMMIT" --repo "$GITHUB_REPOSITORY" --release-id "$RELEASE_ID"

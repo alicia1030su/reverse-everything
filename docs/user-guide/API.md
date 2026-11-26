@@ -1,9 +1,9 @@
-# REST API（v0.0.5）
+# REST API（v0.0.6）
 
 - 基础地址：`http://127.0.0.1:4173/api/v1`
 - 兼容地址：`/api`，两者路由相同
 - 认证：`Authorization: Bearer <local-token>`；Web 使用 HttpOnly、SameSite=Strict cookie
-- OpenAPI：`GET /api/openapi.json`，规范版本 **0.0.5**；可运行 `npm run openapi` 生成 `docs/api/openapi-v0.0.5.json`
+- OpenAPI：`GET /api/openapi.json`，规范版本 **0.0.6**；可运行 `npm run openapi` 生成 `docs/api/openapi-v0.0.6.json`
 - 错误：`{error:{code,message,requestId,details?}}`
 - 列表：支持 `limit` / `offset`；项目/任务保留数组响应并提供 `x-total-count`
 
@@ -55,6 +55,20 @@ Android 使用 `software` + `apk`；开发板复用 `hardware`，固件镜像使
 | GET | `/api/console/support` | 支持矩阵与官方开发环境指引 |
 | POST | `/api/console/diagnose-usb` | 只读 USB 枚举摘要诊断；不打开设备 |
 | GET/PUT | `/api/projects/:id/console-profile` | 读取/保存 C0-C5 证据等级档案 |
+
+## Game Revival
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| GET | `/api/game/profiles` | 游戏复活档案与 L0-L7 等级 |
+| GET/PUT | `/api/projects/:id/game-profile` | 读取/保存合法游戏档案 |
+| POST | `/api/projects/:id/game-scan` | 只读增量扫描允许的游戏目录 |
+| GET/POST | `/api/projects/:id/game-specs` | 规格列表/生成证据分级规格 |
+| GET/POST | `/api/game/rebuilds` | 重建列表/创建独立服务端 |
+| GET | `/api/game/rebuilds/:id` | 构建、联机与部署验证报告 |
+| GET | `/api/game/rebuilds/:id/archive` | 下载已验证服务端 ZIP |
+
+`game-scan` 的 `rootPath` 必须是绝对路径，且位于 API 服务端 `RE_GAME_ROOTS` 显式允许的目录内。未配置或越界返回 403 `FORBIDDEN`；CLI、stdio/HTTP MCP 均不能绕过。生成物为独立兼容实现，不是原始服务端，不保证商业原客户端兼容。当前本地最高实测 L6，Docker/L7 待 CI。
 
 ## 授权、计划与工具
 

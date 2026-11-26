@@ -1,15 +1,15 @@
 # 逆向万物 · Reverse Everything
 
-**AI 辅助的本地逆向工程、主机研究与数字软件兼容重建工作台 · v0.0.5**
+**AI 辅助的本地逆向工程、主机研究与数字软件兼容重建工作台 · v0.0.6**
 
 [![CI](https://github.com/alicia1030su/reverse-everything/actions/workflows/ci.yml/badge.svg)](https://github.com/alicia1030su/reverse-everything/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
-[![Release](https://img.shields.io/badge/release-v0.0.5-blue.svg)](https://github.com/alicia1030su/reverse-everything/releases/latest)
+[![Release](https://img.shields.io/badge/release-v0.0.6-blue.svg)](https://github.com/alicia1030su/reverse-everything/releases/latest)
 [English](README.en.md)
 
 ![逆向万物横幅](docs/assets/banner.svg)
 
-逆向万物把**已授权目标**转化为可追溯的分析任务：真实工具输出、持久化阶段、可恢复状态、可重复验证和可下载产物。v0.0.5 新增游戏主机研究实验室、智能逆向向导、自动分析计划和受限 AI V3 工作流，让没有逆向工程经验的用户也能完成安全的离线分析。
+逆向万物把**已授权目标**转化为可追溯的分析任务：真实工具输出、持久化阶段、可恢复状态、可重复验证和可下载产物。v0.0.6 以 Game Revival 为主题，新增游戏复活工作台、L0-L7 证据等级、自有多人 FPS/RPG 服务端生成、管理后台与独立部署产物。
 
 ## 界面预览
 
@@ -19,15 +19,14 @@
 
 > 仅分析你拥有或明确获授权的目标。不得绕过登录、验证码、付费、DRM、反作弊或访问控制。本项目不提供主机越狱、权限提升、安全启动绕过、自动漏洞利用或未授权设备访问。完整声明见 [DISCLAIMER.md](DISCLAIMER.md)。
 
-## v0.0.5 新增
+## v0.0.6：Game Revival
 
-- **Console Research Lab**：PS5 / PS4 / Xbox / Android TV / 开放式嵌入式设备档案、USB 连接诊断、C0-C5 证据等级与官方开发环境指引。
-- **智能逆向向导**：小白、专业、AI Agent 三种模式，自动检测目标、环境、授权和分析器。
-- **自动分析计划**：目标识别 → 环境检测 → 授权检查 → 能力匹配 → 计划 → 执行 → 证据 → 验证 → 报告。
-- **AI V3**：按任务动态调用设备、固件、原生软件、Android、网页、协议、游戏、防御安全和证据验证角色；所有调用受白名单、权限和预算约束。
-- **内置演示中心**：网页、游戏、APK、UF2、USB、HAR、安全样本一键运行。
-- **双视图报告**：普通用户视图与专业视图，可导出 Markdown、JSON、HTML。
-- **授权范围中心**：所有 Web、REST、CLI、MCP、Skill 入口共用同一授权、隐私和预算机制。
+- **Game Revival Studio**：保存合法保留的游戏档案，只读增量扫描本机目录，生成有证据边界的服务端规格。
+- **L0-L7**：从档案、文件指纹、规格、生成构建、独立启动、真实同场联机到持久化/重连与 Docker 部署逐级验证；文件生成不等于复活成功。
+- **自有多人 FPS/RPG**：生成独立 TypeScript/Node/WebSocket 服务端，包含权威状态、房间隔离、断线重连、持久化、结算、多房间并发与认证管理后台。
+- **独立生成服务端**：产物不依赖本平台 API，可下载 ZIP 后在隔离环境构建、启动和部署。
+- **全入口**：新增 `game profile|scan|spec|rebuild|status|download` CLI 命令、REST 路由与 7 个 MCP 工具，MCP 总数改为 44。
+- **实测边界**：当前本地最高实测 L6；本机 Docker 不可用，Docker/L7 待 CI，未标为通过。
 
 ## 六种使用方式
 
@@ -67,7 +66,19 @@ docker compose down          # 保留数据
 docker compose down -v       # 删除数据卷
 ```
 
-宿主端口只绑定 `127.0.0.1`；默认不映射 USB，也不使用 privileged。
+宿主端口只绑定 `127.0.0.1`；默认不映射 USB，也不使用 privileged。Windows 可使用安装包、Portable 或上述 Node.js 流程；Linux 使用 Node.js 22.13+ 或 Docker Compose。游戏目录扫描还需在 API 服务端显式配置 `RE_GAME_ROOTS`（Windows 用 `;` 分隔，Linux/Docker 用 `:` 分隔），只允许绝对路径及其子目录。Docker 只读挂载与配置示例见 [docker-compose.yml](docker-compose.yml) 和 [.env.example](.env.example)；当前本地 Docker 不可用，部署说明不代表 Docker/L7 已通过。
+
+## Game Revival Studio
+
+在“创建项目”中选择“游戏复活”，进入游戏复活工作台：
+
+1. 保存游戏名称、FPS/RPG 类型、来源、授权范围与尚未恢复功能。
+2. 配置 API 服务端 `RE_GAME_ROOTS`，填入允许目录内的本机绝对路径；未配置或越界均返回 403。
+3. 只读增量扫描目录并计算文件指纹，不上传原始游戏文件。
+4. 生成证据分级规格，再创建独立服务端重建任务。
+5. 查看真实构建、双客户端同场、房间隔离、持久化、重连、结算与并发报告；下载通过验证的 ZIP。
+
+L0 档案 → L1 扫描指纹 → L2 规格 → L3 生成并构建 → L4 独立启动与管理认证 → L5 双客户端同场/权威状态/房间隔离 → L6 持久化/重连/结算/多房间并发 → L7 Docker 部署。等级只由验证报告推进，不保证商业原客户端兼容，也不代表原始服务端恢复。
 
 ## 开始智能分析
 
@@ -125,6 +136,12 @@ reverse-everything plans execute <planId>
 reverse-everything demos list
 reverse-everything demos run firmware
 reverse-everything report plain <taskId> ./report.md
+reverse-everything game profile <projectId> "自有 FPS" fps /absolute/games/owned-fps --authorized
+reverse-everything game scan <projectId> /absolute/games/owned-fps --authorized
+reverse-everything game spec <projectId>
+reverse-everything game rebuild <specId>
+reverse-everything game status <rebuildId>
+reverse-everything game download <rebuildId> ./server.zip
 reverse-everything mcp stdio
 reverse-everything mcp http --port 4174
 ```
@@ -135,7 +152,7 @@ reverse-everything mcp http --port 4174
 
 - API：`http://127.0.0.1:4173/api/v1`；兼容 `/api`。
 - OpenAPI：运行时 `GET /api/openapi.json`。
-- MCP：stdio 与 Streamable HTTP 共用 API，提供项目、任务、报告、能力、硬件、证据、缓存、主机研究、授权、计划、工具和演示工具。
+- MCP：stdio 与 Streamable HTTP 共用 API，共 **44 个工具**，新增 `list_game_profiles`、`save_game_profile`、`scan_game_directory`、`create_game_server_spec`、`list_game_rebuilds`、`create_game_rebuild`、`get_game_rebuild`。
 - Skill：`skills/reverse-everything`，优先使用 MCP，否则使用 CLI/API。
 
 所有入口共用后端授权、Schema、预算和结构化错误。清理、设备打开、实时捕获、刷写、驱动安装和任意宿主任意命令执行不暴露给 MCP。
@@ -155,11 +172,11 @@ reverse-everything mcp http --port 4174
 
 | 平台 / 形态 | 文件 |
 |---|---|
-| Windows 安装包 | [Reverse-Everything-Setup-0.0.5-win-x64.exe](https://github.com/alicia1030su/reverse-everything/releases/latest/download/Reverse-Everything-Setup-0.0.5-win-x64.exe) |
-| Windows Portable | [Reverse-Everything-Portable-0.0.5-win-x64.zip](https://github.com/alicia1030su/reverse-everything/releases/latest/download/Reverse-Everything-Portable-0.0.5-win-x64.zip) |
-| CLI | [reverse-everything-cli-0.0.5.tgz](https://github.com/alicia1030su/reverse-everything/releases/latest/download/reverse-everything-cli-0.0.5.tgz) |
-| Server | [reverse-everything-server-0.0.5.tar.gz](https://github.com/alicia1030su/reverse-everything/releases/latest/download/reverse-everything-server-0.0.5.tar.gz) |
-| Skill | [reverse-everything-skill-0.0.5.zip](https://github.com/alicia1030su/reverse-everything/releases/latest/download/reverse-everything-skill-0.0.5.zip) |
+| Windows 安装包 | [Reverse-Everything-Setup-0.0.6-win-x64.exe](https://github.com/alicia1030su/reverse-everything/releases/latest/download/Reverse-Everything-Setup-0.0.6-win-x64.exe) |
+| Windows Portable | [Reverse-Everything-Portable-0.0.6-win-x64.zip](https://github.com/alicia1030su/reverse-everything/releases/latest/download/Reverse-Everything-Portable-0.0.6-win-x64.zip) |
+| CLI | [reverse-everything-cli-0.0.6.tgz](https://github.com/alicia1030su/reverse-everything/releases/latest/download/reverse-everything-cli-0.0.6.tgz) |
+| Server | [reverse-everything-server-0.0.6.tar.gz](https://github.com/alicia1030su/reverse-everything/releases/latest/download/reverse-everything-server-0.0.6.tar.gz) |
+| Skill | [reverse-everything-skill-0.0.6.zip](https://github.com/alicia1030su/reverse-everything/releases/latest/download/reverse-everything-skill-0.0.6.zip) |
 
 下载 `SHA256SUMS.txt` 后运行 `sha256sum -c SHA256SUMS.txt` 验证资产。Windows 安装包未签名，可能触发 SmartScreen；不伪造代码签名。
 
@@ -175,12 +192,12 @@ npm run validate:skill
 npm run version:check
 ```
 
-测试数量、跳过项、CI Run ID 与门禁结论以 [v0.0.5 测试结果](docs/development/V005-TEST-RESULTS.md) 为准；未运行的检查不标为通过。
+测试数量、跳过项、CI Run ID 与门禁结论以 [v0.0.6 测试结果](docs/development/V006-TEST-RESULTS.md) 为准；未运行的检查不标为通过。当前本地 Docker 不可用，最高实测 L6，L7 待 CI。
 
 - [PRD](docs/PRD.md) · [架构](docs/ARCHITECTURE.md) · [安全模型](docs/SECURITY-MODEL.md) · [路线图](docs/ROADMAP.md)
 - [小白指南](docs/user-guide/BEGINNER.md) · [主机研究](docs/user-guide/CONSOLE-RESEARCH.md)
 - [CLI](docs/user-guide/CLI.md) · [CLI/MCP](docs/user-guide/CLI-MCP.md) · [API](docs/user-guide/API.md) · [Skill](docs/user-guide/SKILL.md)
-- [Windows](docs/user-guide/WINDOWS.md) · [升级](docs/user-guide/UPGRADE.md) · [能力矩阵](docs/development/V005-CAPABILITY-MATRIX.md)
+- [Windows](docs/user-guide/WINDOWS.md) · [升级](docs/user-guide/UPGRADE.md) · [能力矩阵](docs/development/V006-CAPABILITY-MATRIX.md)
 
 ## 许可证
 

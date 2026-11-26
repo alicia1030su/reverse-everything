@@ -20,6 +20,7 @@ describe('Ghidra release package layout', () => {
     expect(source).toContain("'packages/firmware'");
     expect(source).toContain("'packages/console'");
     expect(source).toContain("'packages/planner'");
+    expect(source).toContain("'packages/game-revival'");
   });
 
   it('places the launcher at the path resolved by the desktop runtime adapter', async () => {

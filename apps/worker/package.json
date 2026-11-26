@@ -1,6 +1,6 @@
 {
   "name": "@reverse/worker",
-  "version": "0.0.5",
+  "version": "0.0.6",
   "private": true,
   "type": "module",
   "scripts": {
@@ -8,9 +8,9 @@
     "start": "node dist/worker.js"
   },
   "dependencies": {
-    "@reverse/core": "0.0.5",
-    "@reverse/security": "0.0.5",
-    "@reverse/workflow": "0.0.5"
+    "@reverse/core": "0.0.6",
+    "@reverse/security": "0.0.6",
+    "@reverse/workflow": "0.0.6"
   },
   "devDependencies": {
     "typescript": "5.9.3",

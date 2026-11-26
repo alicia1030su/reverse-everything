@@ -1,4 +1,4 @@
-import type { AiSettings, CreateProjectInput, Stats, TaskDetail, Task, Project, Upload, AdapterName, Evidence, Finding, Artifact, CapabilityInfo, Page, ProductInfo, BackupInfo, BackupPreview, ResourceSnapshot } from '@reverse/contracts';
+import type { AiSettings, CreateProjectInput, Stats, TaskDetail, Task, Project, Upload, AdapterName, Evidence, Finding, Artifact, CapabilityInfo, Page, ProductInfo, BackupInfo, BackupPreview, ResourceSnapshot, GameProfile, GameRebuildRecord } from '@reverse/contracts';
 import type { ConsoleDevice, ConsoleProfile, ConsoleSupportEntry, ConsoleUsbDiagnosis, OfficialDevelopmentEnvironment, UsbEnumerationSummary, ConsoleEvidence, ConsoleLevel, ActualAccess, ConsoleEvidenceKind } from '@reverse/console';
 import type { AnalysisPlan, AnalyzerCapability, AnalyzerId, AuthorizationScope, PlanBudget, TargetKind } from '@reverse/planner';
 export type EvidenceSearchItem=Evidence&{projectId:string;projectName:string;adapter:AdapterName};
@@ -79,6 +79,13 @@ export const api={
   demos:()=>request<DemosResponse>('/demos'),
   runDemo:(name:string)=>request<DemoRunResponse>(`/demos/${encodeURIComponent(name)}/run`,{method:'POST'}),
   taskReportPlain:(id:string,format:'markdown'|'json'|'html'='markdown')=>request<PlainReport>(`/tasks/${encodeURIComponent(id)}/report/plain?format=${format}`),
-  resources:()=>request<ResourcesResponse>('/resources')
+  resources:()=>request<ResourcesResponse>('/resources'),
+  gameProfiles:()=>request<{items:GameProfile[]}>('/game/profiles'),
+  saveGameProfile:(id:string,value:Record<string,unknown>)=>request<{profile:GameProfile}>(`/projects/${encodeURIComponent(id)}/game-profile`,{method:'PUT',body:JSON.stringify(value)}),
+  scanGame:(id:string,rootPath:string)=>request<{filesScanned:number;bytesScanned:number;truncated:boolean;files:unknown[];skipped:unknown[]}>(`/projects/${encodeURIComponent(id)}/game-scan`,{method:'POST',body:JSON.stringify({rootPath})}),
+  createGameSpec:(id:string)=>request<{spec:{id:string;name:string;genre:string;level:string;modules:unknown[];limitations:string[]}}>(`/projects/${encodeURIComponent(id)}/game-spec`,{method:'POST',body:'{}'}),
+  gameRebuilds:()=>request<{items:GameRebuildRecord[]}>('/game/rebuilds'),
+  createGameRebuild:(specId:string)=>request<GameRebuildRecord>('/game/rebuilds',{method:'POST',body:JSON.stringify({specId})}),
+  gameRebuild:(id:string)=>request<GameRebuildRecord>(`/game/rebuilds/${encodeURIComponent(id)}`)
 };
 export type {TaskDetail,Task,Evidence,Finding,Artifact,BackupInfo,BackupPreview,ConsoleDevice,ConsoleProfile,ConsoleSupportEntry,ConsoleUsbDiagnosis,UsbEnumerationSummary,ConsoleEvidence,ConsoleLevel,ActualAccess,ConsoleEvidenceKind,AnalyzerCapability,TargetKind,AnalyzerId,PlanBudget,AuthorizationScope};

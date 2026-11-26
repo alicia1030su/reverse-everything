@@ -19,6 +19,7 @@ import { registerHardwareRoutes } from './hardware.js';
 import { registerDesktopMetricsRoutes } from './desktop-metrics.js';
 import { recoverProjectDeletions, removeManagedPaths } from './project-deletion.js';
 import { registerResearchRoutes } from './research.js';
+import { registerGameRevivalRoutes } from './game-revival.js';
 
 export interface ServerOptions { dataDir?: string; db?: Database; token?: string; webDir?: string; resourceDir?: string; logger?: boolean; backgroundResources?: boolean; rateLimitPerMinute?: number }
 const KINDS: ProjectKind[] = ['website','software','game','security','protocol','hardware','firmware','console'];
@@ -83,6 +84,7 @@ export async function buildServer(options:ServerOptions={}) {
   registerHardwareRoutes(app);
   registerDesktopMetricsRoutes(app,db,retention);
   registerResearchRoutes(app,{db,engine,dataDir,resourceDir});
+  registerGameRevivalRoutes(app,{db,dataDir});
   app.get('/api/health',async()=>({ok:true,product:'reverse-everything',version:VERSION,schemaVersion:SCHEMA_VERSION}));
   app.get('/api/version',async()=>({product:'reverse-everything',version:VERSION,schemaVersion:SCHEMA_VERSION,apiVersions:['v1','legacy'],evidenceModelVersion:EVIDENCE_MODEL_VERSION,securityPolicyVersion:SECURITY_POLICY_VERSION}));
   app.get('/api/session',async()=>({authenticated:true}));
@@ -99,12 +101,12 @@ export async function buildServer(options:ServerOptions={}) {
   app.get<{Params:{id:string}}>('/api/projects/:id',async(req)=>{const project=db.getProject(req.params.id);if(!project)throw new AppError('NOT_FOUND','Project not found',404);return {...project,uploads:db.uploads(project.id)};});
   app.delete<{Params:{id:string}}>('/api/projects/:id',async(req)=>serializeProjectMutation(req.params.id,async()=>{
     const project=db.getProject(req.params.id);if(!project)throw new AppError('NOT_FOUND','Project not found',404);
-    const tasks=db.projectTasks(project.id);const active=tasks.find(t=>ACTIVE.has(t.status));if(active)throw new AppError('CONFLICT','Project has active tasks',409,{taskId:active.id});
+    const tasks=db.projectTasks(project.id);const active=tasks.find(t=>ACTIVE.has(t.status));const activeRebuild=db.raw.prepare("SELECT id FROM game_rebuilds WHERE project_id=? AND status='RUNNING' LIMIT 1").get(project.id) as {id:string}|undefined;if(active||activeRebuild)throw new AppError('CONFLICT','Project has active tasks',409,{taskId:active?.id??activeRebuild?.id});
     const body=req.body as {confirm?:string};if(body?.confirm!==project.name)throw new AppError('BAD_REQUEST','Confirm deletion by sending the exact project name',400);
     const taskIds=tasks.map(t=>t.id),cacheRoot=path.resolve(dataDir,'cache');
     const retainedPayloads=new Set((db.raw.prepare("SELECT payload_path FROM cache_entries WHERE NOT (scope='project' AND project_id=?)").all(project.id) as {payload_path:string}[]).map(row=>path.resolve(row.payload_path)));
     const payloads=(db.raw.prepare("SELECT payload_path FROM cache_entries WHERE scope='project' AND project_id=?").all(project.id) as {payload_path:string}[]).map(row=>path.resolve(row.payload_path)).filter(file=>{const relative=path.relative(cacheRoot,file);return relative!=='..'&&!relative.startsWith(`..${path.sep}`)&&!path.isAbsolute(relative)&&!retainedPayloads.has(file);});
-    const paths=[path.join(dataDir,'uploads',project.id),...taskIds.map(id=>path.join(dataDir,'tasks',id)),...new Set(payloads)].map(file=>path.relative(dataDir,file));
+    const paths=[path.join(dataDir,'uploads',project.id),...taskIds.map(id=>path.join(dataDir,'tasks',id)),...(db.raw.prepare('SELECT output_path FROM game_rebuilds WHERE project_id=? AND output_path IS NOT NULL').all(project.id) as {output_path:string}[]).map(row=>row.output_path),...new Set(payloads)].map(file=>path.relative(dataDir,file));
     const now=new Date().toISOString(),intentId=randomUUID();
     db.raw.exec('BEGIN IMMEDIATE');
     try{

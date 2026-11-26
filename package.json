@@ -1,6 +1,6 @@
 {
   "name": "reverse-everything",
-  "version": "0.0.5",
+  "version": "0.0.6",
   "private": true,
   "description": "Evidence-first local reverse engineering and compatibility reconstruction workbench",
   "license": "Apache-2.0",
@@ -14,7 +14,7 @@
   ],
   "scripts": {
     "dev": "node scripts/start.mjs",
-    "build": "npm run build -w @reverse/contracts && npm run build -w @reverse/evidence && npm run build -w @reverse/security && npm run build -w @reverse/ai && npm run build -w @reverse/workflow && npm run build -w @reverse/hardware && npm run build -w @reverse/firmware && npm run build -w @reverse/console && npm run build -w @reverse/planner && npm run build -w @reverse/core && npm run build -w @reverse/api && npm run build -w @reverse/worker && npm run build -w @reverse/cli && npm run build -w @reverse/desktop && npm run build -w @reverse/web",
+    "build": "npm run build -w @reverse/contracts && npm run build -w @reverse/evidence && npm run build -w @reverse/security && npm run build -w @reverse/ai && npm run build -w @reverse/workflow && npm run build -w @reverse/hardware && npm run build -w @reverse/firmware && npm run build -w @reverse/console && npm run build -w @reverse/planner && npm run build -w @reverse/game-revival && npm run build -w @reverse/core && npm run build -w @reverse/api && npm run build -w @reverse/worker && npm run build -w @reverse/cli && npm run build -w @reverse/desktop && npm run build -w @reverse/web",
     "start": "node scripts/start.mjs",
     "test": "vitest run",
     "test:unit": "vitest run tests/unit",
@@ -51,6 +51,7 @@
     "eslint-plugin-react-refresh": "0.4.24",
     "globals": "16.4.0",
     "jsdom": "26.1.0",
+    "npm": "10.9.7",
     "typescript": "5.9.3",
     "typescript-eslint": "8.46.2",
     "vite": "6.4.5",
