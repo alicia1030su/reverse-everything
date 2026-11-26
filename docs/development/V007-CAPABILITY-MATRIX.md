@@ -49,8 +49,8 @@
 | Schema 6 | VERIFIED | `game_profiles.behavior_json` 自动迁移与完整性检查 |
 | Node24 Actions | VERIFIED | checkout v7、setup-node v7、upload-artifact v7、download-artifact v8 |
 | 9 项历史跳过跨平台覆盖 | VERIFIED | Ubuntu 6、Windows 1、Android/Ghidra 2；7 项指定安全测试必须 passed |
-| Windows v0.0.6 覆盖升级 | IMPLEMENTED | 门禁已实现，正式候选 Windows 作业验收后回填 VERIFIED |
-| 发行资产 | IMPLEMENTED | 保留原 10 项，新增游戏兼容演示 ZIP、Legacy 演示 ZIP、demo-evidence.json，共 13 项；候选验收后回填 VERIFIED |
+| Windows v0.0.6 覆盖升级 | VERIFIED | 候选 Run `45907562071` 完成 v0.0.6→v0.0.7 覆盖安装、Schema 6 迁移、用户数据/项目保留与 Game/Legacy smoke |
+| 发行资产 | VERIFIED | 保留原 10 项，新增游戏兼容演示 ZIP、Legacy 演示 ZIP、demo-evidence.json，共 13 项；候选 Run `45907562071` 验收通过，SHA256SUMS 全量校验一致 |
 | macOS/代码签名 | EXTERNAL_BLOCKED | 无签名凭证与 macOS 验收环境 |
 | 真实商业游戏客户端/物理设备 | EXTERNAL_BLOCKED | 无客户端、协议记录、授权或设备；不得计入通过能力 |
 

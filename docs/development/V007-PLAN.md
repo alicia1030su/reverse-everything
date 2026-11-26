@@ -79,5 +79,6 @@
 | Legacy 真实恢复 | `web-v007.spec.ts` | 共享 Worker 恢复、预览、导出与截图 | 通过 |
 | 独立软件重建 | `package-demo-assets.mjs` | INI 编辑器真实测试与 HTTP 启动 | VERIFIED |
 | 跳过覆盖 | `skip-coverage.test.ts` | 9 项映射、7 项必过断言 | 18 项发行/跳过专项测试通过 |
+| v0.0.7 候选验收 | Release Run `45907562071` | Linux/Windows/Docker/升级/Legacy/Game smoke 全通过；13 项 manifest 资产与 15 个候选文件 SHA256SUMS 一致 | 通过 |
 
 每完成 5 个文件或一个 Wave 更新本计划与检查点；失败项保留证据，不静默跳过。
