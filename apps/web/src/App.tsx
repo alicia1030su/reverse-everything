@@ -12,6 +12,13 @@ import Security from './pages/Security';
 import Validation from './pages/Validation';
 import Settings from './pages/Settings';
 import Operations from './pages/Operations';
+import ConsoleLab from './pages/ConsoleLab';
+import Wizard from './pages/Wizard';
+import Plans from './pages/Plans';
+import Tools from './pages/Tools';
+import Demos from './pages/Demos';
+import Authorizations from './pages/Authorizations';
+import Reports from './pages/Reports';
 
 export default function App() {
   return <Routes><Route element={<Layout/>}>
@@ -34,6 +41,15 @@ export default function App() {
     <Route path="settings" element={<Settings/>}/>
     <Route path="operations" element={<Navigate to="/operations/system" replace/>}/>
     <Route path="operations/:section" element={<Operations/>}/>
+    <Route path="wizard" element={<Wizard/>}/>
+    <Route path="console-lab" element={<ConsoleLab/>}/>
+    <Route path="console-lab/:projectId" element={<ConsoleLab/>}/>
+    <Route path="plans" element={<Plans/>}/>
+    <Route path="plans/:id" element={<Plans/>}/>
+    <Route path="tools" element={<Tools/>}/>
+    <Route path="demos" element={<Demos/>}/>
+    <Route path="authorizations" element={<Authorizations/>}/>
+    <Route path="reports" element={<Reports/>}/>
     <Route path="*" element={<Navigate to="/" replace/>}/>
   </Route></Routes>;
 }

@@ -51,7 +51,7 @@ export function createMcpServer(localFileRead = false): McpServer {
   register('list_projects', 'List local projects', {}, () => api('/api/projects'));
   register('create_project', 'Create an authorized project', {
     name: z.string(),
-    kind: z.enum(['website', 'software', 'game', 'security', 'protocol', 'hardware', 'firmware']),
+    kind: z.enum(['website', 'software', 'game', 'security', 'protocol', 'hardware', 'firmware', 'console']),
     target: z.string().optional(),
     authorized: z.literal(true),
   }, args => api('/api/projects', { method: 'POST', body: JSON.stringify({ name: args.name, kind: args.kind, target: args.target ?? '', authorizationConfirmed: true }) }));
@@ -77,7 +77,7 @@ export function createMcpServer(localFileRead = false): McpServer {
   });
   register('create_task', 'Create a task through the shared engine', {
     projectId: z.string(),
-    adapter: z.enum(['website', 'file', 'security', 'game', 'network', 'apk', 'ghidra', 'hardware', 'firmware']),
+    adapter: z.enum(['website', 'file', 'security', 'game', 'network', 'apk', 'ghidra', 'hardware', 'firmware', 'console']),
     options: z.record(z.string(), z.unknown()).optional(),
     confirmLocal: z.literal(true).optional(),
   }, args => {
@@ -106,5 +106,21 @@ export function createMcpServer(localFileRead = false): McpServer {
   register('get_artifact_manifest', 'Get artifact names hashes and download paths', { taskId: z.string() }, args => api(`/api/tasks/${String(args.taskId)}/artifact-manifest`));
   register('list_cache_entries', 'List cache entries; destructive cleanup is not exposed', { projectId: z.string().optional(), limit: z.number().optional(), offset: z.number().optional() }, args => api(`/api/cache?projectId=${encodeURIComponent(String(args.projectId ?? ''))}&limit=${Number(args.limit ?? 100)}&offset=${Number(args.offset ?? 0)}`));
   register('get_cache_statistics', 'Get cache hit rate size and integrity counters', {}, () => api('/api/cache/stats'));
+  register('list_console_devices', 'List supported console research device categories and evidence boundaries', {}, () => api('/api/console/devices'));
+  register('get_console_device', 'Get one console device category and its research support matrix', { deviceId: z.string() }, args => api(`/api/console/devices/${encodeURIComponent(String(args.deviceId))}`));
+  register('diagnose_console_usb', 'Diagnose a read-only USB enumeration summary without opening a device', { summary: z.record(z.string(), z.unknown()) }, args => api('/api/console/diagnose-usb', { method: 'POST', body: JSON.stringify(args.summary) }));
+  register('save_console_profile', 'Create or update an evidence-graded console research profile', { projectId: z.string(), profile: z.record(z.string(), z.unknown()) }, args => api(`/api/projects/${String(args.projectId)}/console-profile`, { method: 'PUT', body: JSON.stringify(args.profile) }));
+  register('get_console_profile', 'Get a console research profile', { projectId: z.string() }, args => api(`/api/projects/${String(args.projectId)}/console-profile`));
+  register('create_authorization_scope', 'Create an explicit authorization scope for a project', { projectId: z.string(), target: z.string(), scope: z.array(z.string()), allowedInterfaces: z.array(z.string()), allowedOperations: z.array(z.string()), dataAccess: z.array(z.string()), remoteAiAllowed: z.boolean().optional(), expiresAt: z.string().optional() }, args => api(`/api/projects/${String(args.projectId)}/authorizations`, { method: 'POST', body: JSON.stringify({ target: args.target, scope: args.scope, allowedInterfaces: args.allowedInterfaces, allowedOperations: args.allowedOperations, dataAccess: args.dataAccess, remoteAiAllowed: args.remoteAiAllowed, expiresAt: args.expiresAt }) }));
+  register('list_authorization_scopes', 'List authorization scopes for a project', { projectId: z.string() }, args => api(`/api/projects/${String(args.projectId)}/authorizations`));
+  register('revoke_authorization_scope', 'Revoke an authorization scope', { authorizationId: z.string() }, args => api(`/api/authorizations/${String(args.authorizationId)}/revoke`, { method: 'POST' }));
+  register('create_analysis_plan', 'Create a deterministic bounded analysis plan', { projectId: z.string(), mode: z.enum(['beginner','professional','agent']), objective: z.string(), uploadId: z.string().optional(), fileName: z.string().optional(), size: z.number().optional(), headHex: z.string().optional(), declaredKind: z.string().optional(), authorizationId: z.string().optional(), authorization: z.record(z.string(), z.unknown()).optional(), budget: z.record(z.string(), z.unknown()).optional(), maxSteps: z.number().optional(), maxDepth: z.number().optional(), adapterAllowlist: z.array(z.string()).optional() }, args => api(`/api/projects/${String(args.projectId)}/plans`, { method: 'POST', body: JSON.stringify({ mode: args.mode, objective: args.objective, uploadId: args.uploadId, fileName: args.fileName, size: args.size, headHex: args.headHex, declaredKind: args.declaredKind, authorizationId: args.authorizationId, authorization: args.authorization, budget: args.budget, maxSteps: args.maxSteps, maxDepth: args.maxDepth, adapterAllowlist: args.adapterAllowlist }) }));
+  register('list_analysis_plans', 'List analysis plans for a project', { projectId: z.string() }, args => api(`/api/projects/${String(args.projectId)}/plans`));
+  register('get_analysis_plan', 'Get an analysis plan', { planId: z.string() }, args => api(`/api/plans/${String(args.planId)}`));
+  register('execute_analysis_plan', 'Execute a verified analysis plan through the shared task engine', { planId: z.string() }, args => api(`/api/plans/${String(args.planId)}/execute`, { method: 'POST' }));
+  register('list_analysis_tools', 'List analyzer capabilities and installation boundaries', {}, () => api('/api/tools'));
+  register('list_demos', 'List built-in automated acceptance demos', {}, () => api('/api/demos'));
+  register('run_demo', 'Run a built-in demo through the shared task engine', { name: z.string() }, args => api(`/api/demos/${encodeURIComponent(String(args.name))}/run`, { method: 'POST' }));
+  register('get_plain_report', 'Get a plain-language report derived from task evidence', { taskId: z.string(), format: z.enum(['markdown','json','html']).optional() }, args => api(`/api/tasks/${String(args.taskId)}/report/plain?format=${encodeURIComponent(String(args.format ?? 'markdown'))}`));
   return server;
 }

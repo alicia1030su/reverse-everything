@@ -55,4 +55,13 @@ describe('release workflow identity gate', () => {
     expect(workflow).not.toContain('$dest = "$env:RUNNER_TEMP/re-release-install"');
     expect(workflow).not.toContain('$dest = "$env:RUNNER_TEMP/re-release-portable"');
   });
+
+  it('drives v0.0.5 upload publish and public verification by Release ID', async () => {
+    const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
+    const workflow = await readFile(path.join(root, '.github/workflows/release-v005.yml'), 'utf8');
+    expect(workflow).toContain('release_id: ${{ steps.draft.outputs.release_id }}');
+    expect(workflow).toContain('--release-id "$RELEASE_ID"');
+    expect(workflow).toContain('node scripts/release-atomic.mjs verify-public');
+    expect(workflow).toContain('environment: release-v005');
+  });
 });

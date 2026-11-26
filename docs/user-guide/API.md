@@ -1,9 +1,9 @@
-# REST API（v0.0.4）
+# REST API（v0.0.5）
 
 - 基础地址：`http://127.0.0.1:4173/api/v1`
 - 兼容地址：`/api`，两者路由相同
 - 认证：`Authorization: Bearer <local-token>`；Web 使用 HttpOnly、SameSite=Strict cookie
-- OpenAPI：`GET /api/openapi.json`，规范版本 **0.0.4**；可运行 `npm run openapi` 生成 `docs/api/openapi-v0.0.4.json`
+- OpenAPI：`GET /api/openapi.json`，规范版本 **0.0.5**；可运行 `npm run openapi` 生成 `docs/api/openapi-v0.0.5.json`
 - 错误：`{error:{code,message,requestId,details?}}`
 - 列表：支持 `limit` / `offset`；项目/任务保留数组响应并提供 `x-total-count`
 
@@ -40,10 +40,41 @@
 | GET | `/api/tasks/:id/artifact-manifest` | 产物哈希与下载路径 |
 | GET | `/api/tasks/:id/artifacts/:name` | 下载产物 |
 | GET | `/api/tasks/:id/report` | 下载 Markdown 报告 |
+| GET | `/api/tasks/:id/report/plain` | 普通用户报告；`format=markdown|json|html` |
 
-项目 kind：`website`、`software`、`game`、`security`、`protocol`、`hardware`、`firmware`。任务 adapter：`website`、`file`、`security`、`game`、`network`、`apk`、`ghidra`、`hardware`、`firmware`。
+项目 kind：`website`、`software`、`game`、`security`、`protocol`、`hardware`、`firmware`、`console`。任务 adapter：`website`、`file`、`security`、`game`、`network`、`apk`、`ghidra`、`hardware`、`firmware`、`console`。
 
 Android 使用 `software` + `apk`；开发板复用 `hardware`，固件镜像使用 `firmware`，不存在 `board` adapter。
+
+## 主机研究
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| GET | `/api/console/devices` | 主机设备目录与能力边界 |
+| GET | `/api/console/devices/:id` | 单个设备与支持矩阵 |
+| GET | `/api/console/support` | 支持矩阵与官方开发环境指引 |
+| POST | `/api/console/diagnose-usb` | 只读 USB 枚举摘要诊断；不打开设备 |
+| GET/PUT | `/api/projects/:id/console-profile` | 读取/保存 C0-C5 证据等级档案 |
+
+## 授权、计划与工具
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| GET/POST | `/api/projects/:id/authorizations` | 授权范围列表/创建 |
+| POST | `/api/authorizations/:id/revoke` | 撤销授权范围 |
+| GET/POST | `/api/projects/:id/plans` | 分析计划列表/创建 |
+| GET | `/api/plans/:id` | 计划详情、步骤与预算 |
+| POST | `/api/plans/:id/execute` | 通过统一任务引擎执行计划 |
+| GET | `/api/tools` | 分析器能力与安装边界 |
+
+计划默认确定性生成；AI 建议只能标记为 `INFERENCE`，不能扩大授权、adapter、目标类型、深度或预算。
+
+## 演示
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| GET | `/api/demos` | 内置演示目录 |
+| POST | `/api/demos/:name/run` | 运行内置演示并创建真实任务 |
 
 ## 硬件
 
@@ -54,7 +85,7 @@ Android 使用 `software` + `apk`；开发板复用 `hardware`，固件镜像使
 | GET | `/api/hardware/devices` | OS 可见 USB 身份、拓扑与描述符；序列号脱敏 |
 | GET | `/api/hardware/serial` | 串口列表；`opened=false`、`liveCapture=false` |
 
-全部为只读枚举，仅本机回环可用。接口不打开设备、不改变 DTR/RTS、不启动捕获。离线 USB/HID 分析通过项目上传与 `hardware` 任务执行。
+全部为只读枚举，仅本机回环可用。接口不打开设备、不改变 DTR/RTS、不启动捕获。
 
 ## 缓存、维护与备份
 
@@ -74,9 +105,7 @@ Android 使用 `software` + `apk`；开发板复用 `hardware`，固件镜像使
 | POST | `/api/backups/:id/preview` | 隔离恢复预览 |
 | POST | `/api/backups/:id/restore` | 隔离恢复；需 `confirm=RESTORE_BACKUP` |
 
-保留策略不自动删除原始上传或正式任务产物。活动任务的临时文件与日志受保护；删除项目需精确项目名且不能有活动任务。
-
-## 设置与演示
+## 设置
 
 | 方法 | 路径 | 说明 |
 |---|---|---|

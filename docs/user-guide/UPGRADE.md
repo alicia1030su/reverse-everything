@@ -1,24 +1,30 @@
-# 从 v0.0.3 升级到 v0.0.4
+# 从 v0.0.4 升级到 v0.0.5
 
-v0.0.4 仍是开发版本，正式升级前以最终发行门禁与哈希清单为准。
+v0.0.5 引入 Schema 4、主机研究档案、分析计划、授权范围、工具与演示表。升级前请备份 `data/`，不要删除旧数据库。
 
-1. 停止 v0.0.3 API、Worker 与桌面进程。
-2. 备份整个数据目录，尤其是 SQLite、`local-token`、`secret.key`、上传、任务产物、缓存与备份。
-3. 安装/解包 v0.0.4 后启动，检查 `/api/version`：产品版本应为 `0.0.4`，当前 `schemaVersion=3`。
-4. 核对项目、任务 ID、上传哈希、证据引用、报告、加密设置与备份可验证性。
-5. 检查 `capabilities`、`hardware doctor`、`resources status` 与 `retention show` 的真实状态。
+## 升级步骤
 
-## 兼容与回滚
+1. 停止 API、Worker 与桌面端。
+2. 备份整个 `data/` 目录，包括 SQLite、WAL/SHM、上传、产物、`secret.key` 与 `local-token`。
+3. 安装 v0.0.5 或替换应用目录。
+4. 启动后检查 `/api/version`：产品版本应为 `0.0.5`，当前 `schemaVersion=4`。
+5. 检查现有项目、任务、证据、缓存、设置与备份是否完整。
+6. 如迁移失败，保留备份与错误信息，不要手工删除数据库文件。
 
-- 项目/任务 ID、上传哈希、证据引用与加密设置应保留；不得通过删除旧数据库“修复”升级。
-- 当前 schema 为 3；若目标构建包含事务迁移，启动会生成迁移前备份。回滚前停止新版本进程并恢复完整备份。
-- 缓存可在校验后清理，但清缓存不等于删除原始上传或正式报告。
-- 保留策略更新只影响后续维护预览/应用，不自动删除原始上传或正式任务产物。
-- 回滚到旧版本前确认其不支持新 adapter 产生的任务/产物，不要用旧 Worker 处理 v0.0.4 队列。
+## 自动迁移
 
-## v0.0.4 新边界
+- Schema 3 → 4 会新增 `console_profiles`、`analysis_plans`、`authorization_scopes`、`tool_installations`、`demo_runs`、`project_deletion_intents`。
+- 迁移前自动创建 `pre-v4-*.sqlite` 备份。
+- 旧项目、任务、证据、缓存与加密设置保持不变。
+- 新 adapter `console` 不会自动修改旧任务。
 
-- 硬件枚举只读且仅本机回环；不打开设备、不实时捕获、不刷写固件。
-- 开发板复用 `hardware` adapter，不引入新数据库 kind；固件镜像使用独立 `firmware` 入口。
-- Ghidra/JADX 已通过官方工具已知答案 CI；最终发行包仍由候选工作流重新构建与 smoke。
-- 桌面资源指标可能包含采样限制；不要将不完整指标当作完整进程树。
+## 回滚
+
+回滚到 v0.0.4 前应恢复升级前备份。旧版本不认识 Schema 4 新表，不要用旧 Worker 处理 v0.0.5 队列或新 adapter 任务。
+
+## v0.0.5 新边界
+
+- 默认只读、本地保存、凭证脱敏。
+- 远程 AI 共享需显式同意。
+- 主机 C0-C5 是证据等级，不是权限。
+- 真实 PS5/Xbox/Android TV 未提供时，相关能力保持 `BLOCKED` / `UNKNOWN`。

@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process';
+import { runExternalTool } from './external-tool.js';
 import { lstat, mkdir, mkdtemp, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -292,11 +292,6 @@ async function headlessInfo():Promise<HeadlessInfo|undefined> {
   const install=process.env.RE_GHIDRA_INSTALL_DIR;if(!install)return undefined;const root=path.resolve(install),candidate=path.join(root,'support',process.platform==='win32'?'analyzeHeadless.bat':'analyzeHeadless');if(!await isFile(candidate))return undefined;if(process.platform==='win32'){const required=[path.join(root,'Ghidra','application.properties'),path.join(root,'Ghidra','Framework','Utility','lib','Utility.jar'),path.join(root,'support','LaunchSupport.jar')];if(!await isFile(NODE_ANALYZE_HEADLESS)||!(await Promise.all(required.map(isFile))).every(Boolean))return undefined;const java=process.env.RE_JAVA?path.resolve(process.env.RE_JAVA):process.env.JAVA_HOME?path.join(path.resolve(process.env.JAVA_HOME),'bin','java.exe'):undefined;if(!java||!await isFile(java))return undefined;return {command:process.execPath,prefix:[NODE_ANALYZE_HEADLESS],detail:`Windows Node analyzeHeadless launcher (direct Java process): ${root}`};}return {command:candidate,prefix:[],detail:`Ghidra analyzeHeadless: ${candidate}`};
 }
 function assertAuthorized(authorized:boolean):void { if(!authorized)throw new Error('Explicit authorization confirmation is required before Ghidra analysis'); }
-async function killTree(child:{pid?:number|undefined;kill(signal?:NodeJS.Signals):boolean},platform=process.platform):Promise<void> {
-  if(child.pid===undefined)return;
-  if(platform==='win32'){await new Promise<void>(resolve=>{const killer=spawn('taskkill',['/PID',String(child.pid),'/T','/F'],{stdio:'ignore',shell:false});let done=false;const finish=()=>{if(done)return;done=true;clearTimeout(timer);resolve();};const timer=setTimeout(finish,3_000);killer.once('error',finish);killer.once('exit',finish);});return;}
-  try{process.kill(-child.pid,'SIGKILL');}catch{try{child.kill('SIGKILL');}catch{/* process already exited */}}
-}
 function metadataArray<T>(value:unknown,label:string,valid:(item:unknown)=>item is T):T[] {
   if(value===undefined)return [];
   if(!Array.isArray(value)||!value.every(valid))throw new Error(`Ghidra postScript produced malformed ${label} metadata`);
@@ -336,24 +331,10 @@ async function readMetadata(file:string,maxBytes:number):Promise<GhidraMetadata>
 async function runHeadless(info:HeadlessInfo,args:string[],cwd:string,signal:AbortSignal,maxOutputBytes:number,timeoutMs:number,limits:HeadlessLimits):Promise<{code:number;stdout:string;stderr:string;truncated:boolean}> {
   if(signal.aborted)throw signal.reason??new DOMException('Aborted','AbortError');
   const env=info.command===process.execPath&&process.versions.electron?{...process.env,ELECTRON_RUN_AS_NODE:'1'}:process.env;
-  const child=spawn(info.command,[...info.prefix,...args],{cwd,env,stdio:['ignore','pipe','pipe'],shell:false,detached:process.platform!=='win32',windowsHide:true});
-  return new Promise((resolve,reject)=>{
-    let stdoutHead='',stderrHead='',stdoutTail='',stderrTail='',stdoutChars=0,stderrChars=0,outputBytes=0,truncated=false,settled=false,killing=false,diskChecking=false,unregisterProcess:(()=>void)|undefined;
-    const append=(kind:'stdout'|'stderr',chunk:Buffer)=>{outputBytes+=chunk.length;if(outputBytes>maxOutputBytes)truncated=true;const text=chunk.toString('utf8');if(kind==='stdout'){stdoutChars+=text.length;if(stdoutHead.length<4_000)stdoutHead+=text.slice(0,4_000-stdoutHead.length);stdoutTail=(stdoutTail+text).slice(-12_000);}else{stderrChars+=text.length;if(stderrHead.length<4_000)stderrHead+=text.slice(0,4_000-stderrHead.length);stderrTail=(stderrTail+text).slice(-12_000);}};
-    const diagnostics=(head:string,tail:string,chars:number)=>chars<=12_000?tail:`${head}${head&&tail?'\n...[diagnostics truncated]...\n':''}${tail}`;
-    const cleanup=()=>{clearTimeout(timer);clearInterval(metadataMonitor);clearInterval(diskMonitor);signal.removeEventListener('abort',onAbort);unregisterProcess?.();};
-    const rejectOnce=(error:unknown)=>{if(settled)return;settled=true;cleanup();reject(error);};
-    const terminate=(reason:()=>Error)=>{if(settled||killing)return;killing=true;void killTree(child).then(()=>rejectOnce(reason()));};
-    const onAbort=()=>terminate(()=>signal.reason??new DOMException('Aborted','AbortError'));
-    const timer=setTimeout(()=>terminate(()=>new Error(`Ghidra headless timeout after ${timeoutMs}ms`)),timeoutMs);
-    const checkMetadata=async()=>{if(settled||killing)return;try{const info=await stat(limits.metadataFile);if(info.size>limits.maxMetadataBytes)terminate(()=>new Error(`Ghidra metadata output exceeds ${limits.maxMetadataBytes}-byte limit`));}catch{/* metadata may not exist yet */}};
-    const checkDisk=async()=>{if(settled||killing||diskChecking)return;diskChecking=true;try{const usage=await directoryBytes(limits.taskDir);if(settled||killing)return;try{assertDiskBudget(usage,limits.maxDiskBytes);}catch(error){terminate(()=>error instanceof Error?error:new Error(String(error)));}}finally{diskChecking=false;}};
-    const metadataMonitor=setInterval(()=>{void checkMetadata();},25),diskMonitor=setInterval(()=>{void checkDisk();},100);void checkMetadata();void checkDisk();
-    signal.addEventListener('abort',onAbort,{once:true});child.stdout?.on('data',(chunk:Buffer)=>append('stdout',chunk));child.stderr?.on('data',(chunk:Buffer)=>append('stderr',chunk));
-    child.once('error',error=>{if(!killing)rejectOnce(new Error(`Unable to start Ghidra analyzeHeadless: ${error.message}`));});
-    child.once('close',code=>{if(settled||killing)return;settled=true;cleanup();resolve({code:code??-1,stdout:diagnostics(stdoutHead,stdoutTail,stdoutChars),stderr:diagnostics(stderrHead,stderrTail,stderrChars),truncated});});
-    if(child.pid!==undefined&&limits.registerProcess){try{unregisterProcess=limits.registerProcess(child.pid);}catch(error){terminate(()=>error instanceof Error?error:new Error(String(error)));}}
-  });
+  return runExternalTool({label:'Ghidra headless',command:info.command,args:[...info.prefix,...args],cwd,env,timeoutMs,maxOutputBytes,signal,registerProcess:limits.registerProcess,monitor:async({terminate})=>{
+    try{const metadata=await stat(limits.metadataFile);if(metadata.size>limits.maxMetadataBytes)terminate(new Error(`Ghidra metadata output exceeds ${limits.maxMetadataBytes}-byte limit`));}catch{/* metadata may not exist yet */}
+    try{const usage=await directoryBytes(limits.taskDir);assertDiskBudget(usage,limits.maxDiskBytes);}catch(error){terminate(error instanceof Error?error:new Error(String(error)));}
+  }});
 }
 
 export const ghidraAdapter=defineAdapter({

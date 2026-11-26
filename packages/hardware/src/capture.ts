@@ -1,4 +1,6 @@
 import { createHash } from 'node:crypto';
+import { createReadStream } from 'node:fs';
+import { StringDecoder } from 'node:string_decoder';
 import { UNKNOWN, type UsbCaptureRecord } from './types.js';
 
 export type { UsbCaptureRecord };
@@ -6,8 +8,8 @@ export interface DescriptorCandidate { descriptorType:string; requestType:string
 export interface UsbTransaction { tag:string;requestIndex:number;responseIndex?:number;requestLength:number;responseLength:number;complete:boolean }
 export interface UsbCaptureStats { records:number;requests:number;responses:number;bytes:number;dataRecords:number;errors:number;truncatedDataRecords:number;transferTypes:Record<string,number>;devices:Record<string,number>;interfaces:Record<string,number>;endpoints:Record<string,number> }
 export interface UsbCaptureAnalysis { format:'PCAP'|'PCAPNG'|'USBMON';linkType:number|string;byteOrder:'little'|'big'|'UNKNOWN';sourceBytes:number;bytesRead:number;recordCount:number;records:UsbCaptureRecord[];timeline:UsbCaptureRecord[];transactions:UsbTransaction[];descriptorCandidates:DescriptorCandidate[];stats:UsbCaptureStats;anomalies:string[];truncated:boolean;limitations:string[];interfaceLinkTypes:number[];skippedPackets:number }
-export interface CaptureLimits { maxRecords?:number;maxTimeline?:number;maxTransactions?:number;maxDescriptors?:number;maxInterfaces?:number;maxIsoPackets?:number;maxPayloadBytes?:number }
-const LIMITS={maxRecords:20_000,maxTimeline:20_000,maxTransactions:5_000,maxDescriptors:1_000,maxInterfaces:1_000,maxIsoPackets:1_024,maxPayloadBytes:65_536};
+export interface CaptureLimits { maxRecords?:number;maxTimeline?:number;maxTransactions?:number;maxDescriptors?:number;maxInterfaces?:number;maxIsoPackets?:number;maxPayloadBytes?:number;maxLineBytes?:number }
+const LIMITS={maxRecords:20_000,maxTimeline:20_000,maxTransactions:5_000,maxDescriptors:1_000,maxInterfaces:1_000,maxIsoPackets:1_024,maxPayloadBytes:65_536,maxLineBytes:1_000_000};
 const TRANSFERS=['ISOCHRONOUS','INTERRUPT','CONTROL','BULK'];
 const DESCRIPTORS:Record<number,string>={1:'DEVICE',2:'CONFIGURATION',3:'STRING',4:'INTERFACE',5:'ENDPOINT',6:'DEVICE_QUALIFIER',7:'OTHER_SPEED_CONFIGURATION',0x21:'HID',0x22:'REPORT',0x29:'HUB',0x33:'BOS'};
 function limit(options:CaptureLimits,key:keyof CaptureLimits):number { const fallback=LIMITS[key];const value=options[key];return typeof value==='number'&&Number.isFinite(value)&&value>0?Math.min(Math.floor(value),fallback):fallback; }
@@ -133,50 +135,73 @@ async function parsePcapng(buffer:Buffer,options:CaptureLimits):Promise<UsbCaptu
   for(const request of requests.values()){request.candidate.state='REQUEST_ONLY';if(result.descriptorCandidates.length<maxDescriptors)result.descriptorCandidates.push(request.candidate);else bounded(result,`Descriptor candidate limit ${maxDescriptors} reached`);}
   return result;
 }
-export function parseUsbmon(text:string,options:CaptureLimits={}):UsbCaptureAnalysis{
-  const result=base('USBMON',Buffer.byteLength(text),Buffer.byteLength(text)),maxRecords=limit(options,'maxRecords'),maxTimeline=limit(options,'maxTimeline'),maxTransactions=limit(options,'maxTransactions'),maxDescriptors=limit(options,'maxDescriptors'),maxInterfaces=limit(options,'maxInterfaces'),maxPayload=limit(options,'maxPayloadBytes'),maxIso=limit(options,'maxIsoPackets'),pairer=new Pairer(result,maxTransactions),pendingCandidates=new Map<string,DescriptorCandidate>();let rawOffset=0;
-  const lines=text.split('\n');
-  for(const [lineIndex,rawLine] of lines.entries()){
-    const line=rawLine.endsWith('\r')?rawLine.slice(0,-1):rawLine,lineOffset=rawOffset,lineBytes=Buffer.byteLength(rawLine);rawOffset+=lineBytes+(lineIndex<lines.length-1?1:0);
-    if(result.recordCount>=maxRecords){bounded(result,`Record limit ${maxRecords} reached`);break;}if(!line.trim())continue;const parts=line.trim().split(/\s+/);if(parts.length<6){anomaly(result,`offset ${lineOffset}: malformed usbmon row`);continue;}
+interface UsbmonLine { line:string; offset:number; truncated?:boolean }
+function createUsbmonParser(sourceBytes:number,options:CaptureLimits={}):{push:(item:UsbmonLine)=>boolean;finish:()=>UsbCaptureAnalysis}{
+  const result=base('USBMON',sourceBytes,sourceBytes),maxRecords=limit(options,'maxRecords'),maxTimeline=limit(options,'maxTimeline'),maxTransactions=limit(options,'maxTransactions'),maxDescriptors=limit(options,'maxDescriptors'),maxInterfaces=limit(options,'maxInterfaces'),maxPayload=limit(options,'maxPayloadBytes'),maxIso=limit(options,'maxIsoPackets'),maxLineBytes=limit(options,'maxLineBytes'),pairer=new Pairer(result,maxTransactions),pendingCandidates=new Map<string,DescriptorCandidate>();
+  const push=(item:UsbmonLine):boolean=>{
+    const rawLine=item.line,lineOffset=item.offset;
+    if(item.truncated){anomaly(result,`offset ${lineOffset}: usbmon line exceeded ${maxLineBytes}-byte limit and was skipped`);return true;}
+    const line=rawLine.endsWith('\r')?rawLine.slice(0,-1):rawLine;
+    if(result.recordCount>=maxRecords){bounded(result,`Record limit ${maxRecords} reached`);return false;}if(!line.trim())return true;const parts=line.trim().split(/\s+/);if(parts.length<6){anomaly(result,`offset ${lineOffset}: malformed usbmon row`);return true;}
     const [tag,timestampWord,event,address,statusWord]=parts as [string,string,string,string,string];const match=/^([CZIB])([io])(?::(\d+))?:(\d+):(\d+)$/.exec(address),timestampMicros=Number(timestampWord);
-    if(!tag||tag.length>128||!['S','C','E'].includes(event!)||!match||!/^\d+$/.test(timestampWord!)||!Number.isSafeInteger(timestampMicros)){anomaly(result,`offset ${lineOffset}: invalid usbmon tag/timestamp/event/address`);continue;}
-    const transferCode=match[1]!,directionCode=match[2]!,bus=match[3]??UNKNOWN,deviceNumber=Number(match[4]),epNumber=Number(match[5]),device=String(deviceNumber);if(!Number.isInteger(deviceNumber)||deviceNumber<0||deviceNumber>127||!Number.isInteger(epNumber)||epNumber<0||epNumber>255){anomaly(result,`offset ${lineOffset}: invalid endpoint`);continue;}
+    if(!tag||tag.length>128||!['S','C','E'].includes(event!)||!match||!/^\d+$/.test(timestampWord!)||!Number.isSafeInteger(timestampMicros)){anomaly(result,`offset ${lineOffset}: invalid usbmon tag/timestamp/event/address`);return true;}
+    const transferCode=match[1]!,directionCode=match[2]!,bus=match[3]??UNKNOWN,deviceNumber=Number(match[4]),epNumber=Number(match[5]),device=String(deviceNumber);if(!Number.isInteger(deviceNumber)||deviceNumber<0||deviceNumber>127||!Number.isInteger(epNumber)||epNumber<0||epNumber>255){anomaly(result,`offset ${lineOffset}: invalid endpoint`);return true;}
     const transfer=transferCode==='Z'?'ISOCHRONOUS':transferCode==='I'?'INTERRUPT':transferCode==='C'?'CONTROL':'BULK',direction=directionCode==='i'?'IN':'OUT',info=event==='C'||event==='E'?'COMPLETION':'SUBMISSION';let cursor=5,status=0,interval:number|undefined,startFrame:number|undefined,statusIsoErrors:number|undefined;
     if(statusWord==='s'||statusWord==='a'){
       if(statusWord==='a')anomaly(result,`offset ${lineOffset}: setup packet was present but not captured`);
     }else{
-      const statusMatch=/^(-?\d+)(?::(\d+))?(?::(\d+))?(?::(\d+))?$/.exec(statusWord!);if(!statusMatch){anomaly(result,`offset ${lineOffset}: invalid usbmon status`);continue;}
-      status=Number(statusMatch[1]);if(!Number.isSafeInteger(status)||status<-2_147_483_648||status>0xffffffff){anomaly(result,`offset ${lineOffset}: usbmon status exceeds int32 bound`);continue;}
+      const statusMatch=/^(-?\d+)(?::(\d+))?(?::(\d+))?(?::(\d+))?$/.exec(statusWord!);if(!statusMatch){anomaly(result,`offset ${lineOffset}: invalid usbmon status`);return true;}
+      status=Number(statusMatch[1]);if(!Number.isSafeInteger(status)||status<-2_147_483_648||status>0xffffffff){anomaly(result,`offset ${lineOffset}: usbmon status exceeds int32 bound`);return true;}
       interval=optionalUint(statusMatch[2]);startFrame=optionalUint(statusMatch[3]);statusIsoErrors=optionalUint(statusMatch[4]);
     }
     const setup=Buffer.alloc(8);let rowValid=true;
     if(statusWord==='s'){
-      if(parts.length<cursor+5){anomaly(result,`offset ${lineOffset}: truncated setup packet`);continue;}const widths=[1,1,2,2,2];let setupOffset=0;
+      if(parts.length<cursor+5){anomaly(result,`offset ${lineOffset}: truncated setup packet`);return true;}const widths=[1,1,2,2,2];let setupOffset=0;
       for(let index=0;index<5;index++){const word=parts[cursor+index]!;if(!/^(?:0x)?[0-9a-f]+$/i.test(word)){anomaly(result,`offset ${lineOffset}: invalid setup word`);rowValid=false;break;}const value=Number.parseInt(word,16),width=widths[index]!;if(!Number.isSafeInteger(value)||value>=2**(width*8)){anomaly(result,`offset ${lineOffset}: setup word exceeds field width`);rowValid=false;break;}for(let byte=0;byte<width;byte++)setup[setupOffset+byte]=(value>>>(8*byte))&255;setupOffset+=width;}
-      if(!rowValid)continue;cursor+=5;
+      if(!rowValid)return true;cursor+=5;
     }
     let isoPacketCount:number|undefined,isoErrorCount:number|undefined;
     if(transfer==='ISOCHRONOUS'&&bus!==UNKNOWN&&parts[cursor]&&/^\d+$/.test(parts[cursor]!)){
-      const count=Number(parts[cursor++]!);if(!Number.isSafeInteger(count)||count>maxIso||cursor+count>=parts.length){anomaly(result,`offset ${lineOffset}: isochronous descriptor count ${count} exceeds bound or capacity`);continue;}isoPacketCount=count;isoErrorCount=statusIsoErrors;
+      const count=Number(parts[cursor++]!);if(!Number.isSafeInteger(count)||count>maxIso||cursor+count>=parts.length){anomaly(result,`offset ${lineOffset}: isochronous descriptor count ${count} exceeds bound or capacity`);return true;}isoPacketCount=count;isoErrorCount=statusIsoErrors;
       for(let index=0;index<count;index++){
         const descriptor=/^(-?\d+):(\d+):(\d+)$/.exec(parts[cursor+index]!),values=descriptor?.slice(1).map(Number);
         if(!descriptor||!values||!values.every(Number.isSafeInteger)||values[1]!<0||values[1]!>0xffffffff||values[2]!<0||values[2]!>0xffffffff||values[0]!<-2_147_483_648||values[0]!>0xffffffff||values[1]!+values[2]!>0x1_0000_0000){anomaly(result,`offset ${lineOffset}: invalid isochronous descriptor`);rowValid=false;break;}
         if(info==='COMPLETION'&&values[0]!==0&&statusIsoErrors===undefined)isoErrorCount=(isoErrorCount??0)+1;
       }
-      if(!rowValid)continue;if(isoErrorCount!==undefined&&isoErrorCount>0xffffffff){anomaly(result,`offset ${lineOffset}: isochronous error count exceeds uint32 bound`);continue;}cursor+=count;
+      if(!rowValid)return true;if(isoErrorCount!==undefined&&isoErrorCount>0xffffffff){anomaly(result,`offset ${lineOffset}: isochronous error count exceeds uint32 bound`);return true;}cursor+=count;
     }else if(statusIsoErrors!==undefined)isoErrorCount=statusIsoErrors;
-    if(cursor>=parts.length){anomaly(result,`offset ${lineOffset}: missing data length`);continue;}const lengthWord=parts[cursor++]!;if(!/^\d+$/.test(lengthWord)){anomaly(result,`offset ${lineOffset}: invalid data length`);continue;}const declared=Number(lengthWord);if(!Number.isSafeInteger(declared)||declared>0xffffffff){anomaly(result,`offset ${lineOffset}: data length exceeds uint32 bound`);continue;}
-    let saved:number|undefined;if(parts[cursor]&&/^\d+$/.test(parts[cursor]!)&&parts[cursor+1]&&['=','>','<'].includes(parts[cursor+1]!)){saved=Number(parts[cursor++]);if(!Number.isSafeInteger(saved)){anomaly(result,`offset ${lineOffset}: saved length exceeds safe integer bound`);continue;}}
+    if(cursor>=parts.length){anomaly(result,`offset ${lineOffset}: missing data length`);return true;}const lengthWord=parts[cursor++]!;if(!/^\d+$/.test(lengthWord)){anomaly(result,`offset ${lineOffset}: invalid data length`);return true;}const declared=Number(lengthWord);if(!Number.isSafeInteger(declared)||declared>0xffffffff){anomaly(result,`offset ${lineOffset}: data length exceeds uint32 bound`);return true;}
+    let saved:number|undefined;if(parts[cursor]&&/^\d+$/.test(parts[cursor]!)&&parts[cursor+1]&&['=','>','<'].includes(parts[cursor+1]!)){saved=Number(parts[cursor++]);if(!Number.isSafeInteger(saved)){anomaly(result,`offset ${lineOffset}: saved length exceeds safe integer bound`);return true;}}
     let dataBytes=Buffer.alloc(0);
-    if(parts[cursor]==='='){const words=parts.slice(cursor+1);if(words.some(word=>!/^(?:[0-9a-f]{2}){1,4}$/i.test(word))){anomaly(result,`offset ${lineOffset}: invalid payload hex word`);continue;}dataBytes=Buffer.from(words.join(''),'hex');}
-    else if(parts[cursor]&&parts[cursor]!=='>'&&parts[cursor]!=='<'){anomaly(result,`offset ${lineOffset}: invalid usbmon data tag`);continue;}
+    if(parts[cursor]==='='){const words=parts.slice(cursor+1);if(words.some(word=>!/^(?:[0-9a-f]{2}){1,4}$/i.test(word))){anomaly(result,`offset ${lineOffset}: invalid payload hex word`);return true;}dataBytes=Buffer.from(words.join(''),'hex');}
+    else if(parts[cursor]&&parts[cursor]!=='>'&&parts[cursor]!=='<'){anomaly(result,`offset ${lineOffset}: invalid usbmon data tag`);return true;}
     saved=Math.min(saved??dataBytes.length,declared,maxPayload);const dateMs=Math.floor(timestampMicros/1_000),timestamp=dateMs<=8_640_000_000_000_000?new Date(dateMs).toISOString():'UNKNOWN';
     const record:UsbCaptureRecord={recordIndex:result.recordCount,format:'USBMON',timestamp,timestampMicros,bus,device,deviceAddress:device,interfaceNumber:UNKNOWN,interfaceAlternateSetting:UNKNOWN,endpoint:`0x${epNumber.toString(16).padStart(2,'0')}`,endpointNumber:epNumber&15,direction,transferType:transfer,status:statusName(status),irpId:tag,info,length:declared,dataLength:declared,capturedLength:saved,dataTruncated:saved<declared,dataOffset:UNKNOWN,rawOffset:lineOffset,rawLength:Buffer.byteLength(line),payloadSha256:createHash('sha256').update(dataBytes.subarray(0,saved)).digest('hex'),anomalies:[],...(interval!==undefined?{interval}:{}),...(startFrame!==undefined?{startFrame}:{}),...(isoPacketCount!==undefined?{isoPacketCount}:{}),...(isoErrorCount!==undefined?{isoErrorCount}: {})};
     if(saved<declared)record.anomalies.push('capture truncation');for(const item of record.anomalies)anomaly(result,`record ${record.recordIndex}: ${item}`);finalizeRecord(result,record,setup,maxTimeline,maxDescriptors,maxInterfaces);pairer.apply(record);
     if(record.descriptorCandidate){const key=pairingKey(record);if(pendingCandidates.size<maxDescriptors)pendingCandidates.set(key,record.descriptorCandidate);if(result.descriptorCandidates.length<maxDescriptors)result.descriptorCandidates.push(record.descriptorCandidate);}
     if(info==='COMPLETION'){const key=pairingKey(record),candidate=pendingCandidates.get(key);if(candidate&&candidate.device===device)candidate.state=saved<candidate.length?'TRUNCATED':'OBSERVED';pendingCandidates.delete(key);}
-  }
-  pairer.incomplete();return result;
+    return true;
+  };
+  return {push,finish:()=>{pairer.incomplete();return result;}};
 }
+function parseUsbmonLines(lines:Iterable<UsbmonLine>,sourceBytes:number,options:CaptureLimits={}):UsbCaptureAnalysis{const parser=createUsbmonParser(sourceBytes,options);for(const item of lines){if(!parser.push(item))break;}return parser.finish();}
+export function parseUsbmon(text:string,options:CaptureLimits={}):UsbCaptureAnalysis{
+  const lines:UsbmonLine[]=[];let offset=0;for(const raw of text.split('\n')){lines.push({line:raw,offset});offset+=Buffer.byteLength(raw)+1;}return parseUsbmonLines(lines,Buffer.byteLength(text),options);
+}
+function throwIfAborted(signal?:AbortSignal):void{if(signal?.aborted)throw signal.reason instanceof Error?signal.reason:new DOMException('The operation was aborted','AbortError');}
+async function* usbmonLines(file:string,maxLineBytes:number,signal?:AbortSignal):AsyncGenerator<UsbmonLine>{
+  const decoder=new StringDecoder('utf8'),stream=createReadStream(file,{highWaterMark:65_536});let pending='',baseBytes=0,discarding=false;
+  try{
+    for await(const chunk of stream){
+      throwIfAborted(signal);pending+=decoder.write(Buffer.isBuffer(chunk)?chunk:Buffer.from(chunk));
+      if(discarding){const newline=pending.indexOf('\n');if(newline<0){pending='';continue;}baseBytes+=Buffer.byteLength(pending.slice(0,newline+1));pending=pending.slice(newline+1);discarding=false;continue;}
+      let newline:number;while((newline=pending.indexOf('\n'))>=0){const raw=pending.slice(0,newline),offset=baseBytes;baseBytes+=Buffer.byteLength(raw)+1;pending=pending.slice(newline+1);if(Buffer.byteLength(raw)>maxLineBytes)yield {line:'',offset,truncated:true};else yield {line:raw.endsWith('\r')?raw.slice(0,-1):raw,offset};}
+      if(Buffer.byteLength(pending)>maxLineBytes){const offset=baseBytes;baseBytes+=Buffer.byteLength(pending);pending='';discarding=true;yield {line:'',offset,truncated:true};}
+    }
+    pending+=decoder.end();
+    if(discarding){const newline=pending.indexOf('\n');if(newline>=0){baseBytes+=Buffer.byteLength(pending.slice(0,newline+1));pending=pending.slice(newline+1);discarding=false;}}
+    if(!discarding&&pending){const offset=baseBytes;if(Buffer.byteLength(pending)>maxLineBytes)yield {line:'',offset,truncated:true};else yield {line:pending.endsWith('\r')?pending.slice(0,-1):pending,offset};}
+  }finally{stream.destroy();}
+}
+export async function parseUsbmonStream(file:string,sourceBytes:number,options:CaptureLimits={},signal?:AbortSignal):Promise<UsbCaptureAnalysis>{const parser=createUsbmonParser(sourceBytes,options);for await(const item of usbmonLines(file,limit(options,'maxLineBytes'),signal)){if(!parser.push(item))break;}return parser.finish();}
 function optionalUint(value:string|undefined):number|undefined{if(value===undefined)return undefined;const parsed=Number(value);return Number.isSafeInteger(parsed)&&parsed>=0&&parsed<=0xffffffff?parsed:undefined;}

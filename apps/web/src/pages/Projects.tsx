@@ -8,11 +8,11 @@ import type { AdapterName, ProjectKind } from '@reverse/contracts';
 
 const kindLabels: Record<ProjectKind, string> = {
   website: '网页项目', software: '软件项目', game: '游戏项目', security: '安全项目',
-  protocol: '协议项目', hardware: '硬件项目', firmware: '固件项目',
+  protocol: '协议项目', hardware: '硬件项目', firmware: '固件项目', console: '主机研究项目',
 };
 const defaultAdapters: Record<ProjectKind, AdapterName> = {
   website: 'website', software: 'file', game: 'game', security: 'security',
-  protocol: 'network', hardware: 'hardware', firmware: 'firmware',
+  protocol: 'network', hardware: 'hardware', firmware: 'firmware', console: 'console',
 };
 const pageSize = 12;
 
