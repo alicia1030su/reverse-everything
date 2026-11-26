@@ -4,6 +4,7 @@ export { BackupService } from './backups.js';
 export type { BackupEvent, BackupVerification } from './backups.js';
 export { WorkflowEngine } from './engine.js';
 export type { EngineOptions, AiRuntimeConfig } from './engine.js';
+export { TaskInputAuthorizationError } from './types.js';
 export type { AdapterDefinition, Detection, TaskContext } from './types.js';
 export { AnalysisCache } from './cache.js';
 export type { CacheIdentity, CacheOptions } from './cache.js';

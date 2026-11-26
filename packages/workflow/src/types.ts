@@ -1,5 +1,7 @@
 import type { AdapterName, EvidenceKind, JsonObject, Project, Severity, Stage, Upload } from '@reverse/contracts';
 
+export class TaskInputAuthorizationError extends Error { constructor(message:string){super(message);this.name='TaskInputAuthorizationError';} }
+
 export interface TaskContext {
   taskId: string;
   project: Project;
@@ -28,7 +30,7 @@ export interface AdapterDefinition {
   version: string;
   description: string;
   available(): Promise<{ available: boolean; detail: string }>;
-  validateInput?(ctx: TaskContext): Promise<void>;
+  validateInput?(ctx: Pick<TaskContext, 'options' | 'upload'>): Promise<void>;
   detect(ctx: TaskContext): Promise<Detection>;
   prepare(ctx: TaskContext): Promise<unknown>;
   analyze(ctx: TaskContext): Promise<unknown>;

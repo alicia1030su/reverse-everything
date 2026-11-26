@@ -4,7 +4,7 @@ import { lstat, realpath } from 'node:fs/promises';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import { analyzeLegacySoftware, createReconstructionSpec, generateReconstructionProject, recoverLegacyData, writeReconstructionProject, type LegacyAnalysis, type LegacyReconstructionSpec } from '@reverse/legacy-revival';
-import type { TaskContext } from '@reverse/workflow';
+import { TaskInputAuthorizationError, type TaskContext } from '@reverse/workflow';
 import { defineAdapter, output, uploadPath } from './base.js';
 
 const run=promisify(execFile);
@@ -12,7 +12,7 @@ function minimalEnv(overrides:NodeJS.ProcessEnv={}):NodeJS.ProcessEnv{const allo
 function isWithin(root:string,candidate:string):boolean{const relative=path.relative(root,candidate);return relative===''||(relative!=='..'&&!relative.startsWith(`..${path.sep}`)&&!path.isAbsolute(relative));}
 async function allowedLegacyPath(value:unknown):Promise<string>{
   if(typeof value!=='string'||!path.isAbsolute(value))throw new Error('Legacy analysis requires an uploaded file or absolute local path');const original=await lstat(value);if(original.isSymbolicLink())throw new Error('Legacy path must not be a symbolic link or junction');
-  const roots=(process.env.RE_LEGACY_ROOTS??'').split(path.delimiter).map(item=>item.trim()).filter(Boolean);if(!roots.length)throw new Error('RE_LEGACY_ROOTS must explicitly allow local software directories');const resolved=await realpath(value);const allowed=await Promise.all(roots.map(root=>realpath(root)));if(!allowed.some(root=>isWithin(root,resolved)))throw new Error('Legacy path is outside RE_LEGACY_ROOTS');return resolved;
+  const roots=(process.env.RE_LEGACY_ROOTS??'').split(path.delimiter).map(item=>item.trim()).filter(Boolean);if(!roots.length)throw new TaskInputAuthorizationError('RE_LEGACY_ROOTS must explicitly allow local software directories');const resolved=await realpath(value);const allowed=await Promise.all(roots.map(root=>realpath(root)));if(!allowed.some(root=>isWithin(root,resolved)))throw new TaskInputAuthorizationError('Legacy path is outside RE_LEGACY_ROOTS');return resolved;
 }
 async function sourcePath(ctx:TaskContext):Promise<string>{
   const value=ctx.options.path;if(value!==undefined){if(ctx.upload)throw new Error('Legacy path input cannot be combined with an upload');if(typeof value!=='string'||!path.isAbsolute(value))throw new Error('Legacy analysis requires an uploaded file or absolute local path');

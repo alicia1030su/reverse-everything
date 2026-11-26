@@ -73,7 +73,7 @@
 | 发布证据 | GitHub Run `45792899427` | 8 阶段 success | v0.0.6 原子发布成立 |
 | 真实性审计 | `spec.ts`/`templates.ts`/`validator.ts` | 固定模板 + 内部客户端 | 需要 V5 改造，不得宣称原游戏兼容 |
 | 反模板验收 | `game-revival.test.ts` | 4 个保留样本、不同规格/代码/联机结果；behavior-runtime 逐项断言 | 通过；内部客户端标签正确 |
-| 最终全量回归 | `npm test` / `npm run test:e2e` | 67 files，778 passed / 9 skipped；E2E 29/29 | 通过 |
+| 最终全量回归 | `npm test` / `npm run test:e2e` | 67 files，779 passed / 9 skipped；E2E 29/29 | 通过 |
 | 发行静态门禁 | build/typecheck/lint/docs/version/skill/secrets/licenses/audit/defects | build、typecheck、lint（0 error）、docs、version、skill、secrets、licenses、defects 均通过；audit 0 vulnerabilities | 通过 |
 | 原客户端兼容 | `artifacts/v007-game-compat/*.json` | Pixelknight/Tron 原始客户端、双人操作、重连 | VERIFIED；Pixelknight 重启持久化、Tron 对局结束 |
 | Legacy 真实恢复 | `web-v007.spec.ts` | 共享 Worker 恢复、预览、导出与截图 | 通过 |

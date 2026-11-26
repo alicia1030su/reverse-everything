@@ -43,6 +43,13 @@ describe('API safety and recovery boundaries',()=>{
     const {app}=await setup();
     for(const kind of ['hardware','firmware']){const response=await app.inject({method:'POST',url:'/api/projects',headers:{...auth,'content-type':'application/json'},body:JSON.stringify({name:`${kind} project`,kind,authorizationConfirmed:true})});expect(response.statusCode,response.body).toBe(201);expect(response.json().kind).toBe(kind);}
   });
+  it('rejects Legacy direct paths outside RE_LEGACY_ROOTS with 403 before creating a task',async()=>{
+    const {app,db,dataDir}=await setup();const allowed=path.join(dataDir,'allowed');await mkdir(allowed);const outside=path.join(dataDir,'outside.ini');await writeFile(outside,'[general]\nname=outside\n');const created=await app.inject({method:'POST',url:'/api/projects',headers:{...auth,'content-type':'application/json'},body:JSON.stringify({name:'legacy allowlist',kind:'software',authorizationConfirmed:true})});expect(created.statusCode,created.body).toBe(201);const projectId=created.json().id as string;
+    await withEnv({RE_LEGACY_ROOTS:allowed},async()=>{
+      const denied=await app.inject({method:'POST',url:`/api/projects/${projectId}/tasks`,headers:{...auth,'content-type':'application/json'},body:JSON.stringify({adapter:'legacy',options:{path:outside}})});expect(denied.statusCode,denied.body).toBe(403);expect(db.raw.prepare('SELECT COUNT(*) count FROM tasks WHERE project_id=?').get(projectId)).toEqual({count:0});
+      const permitted=path.join(allowed,'sample.ini');await writeFile(permitted,'[general]\nname=allowed\n');const accepted=await app.inject({method:'POST',url:`/api/projects/${projectId}/tasks`,headers:{...auth,'content-type':'application/json'},body:JSON.stringify({adapter:'legacy',options:{path:permitted}})});expect(accepted.statusCode,accepted.body).toBe(201);
+    });
+  });
   it('accepts bounded local desktop metrics and rejects remote or forged snapshots',async()=>{
     const {app,db}=await setup();const snapshot={sampledAt:new Date().toISOString(),source:'desktop',treeRssMB:100,selfRssMB:60,childRssMB:40,heapUsedMB:20,cpuPercent:5,handles:10,processes:[{pid:100,ppid:1,rssMB:60,name:'main'},{pid:101,ppid:100,rssMB:40,name:'renderer'}],systemFreeMemoryMB:2048,systemTotalMemoryMB:8192,dataDirBytes:1024,diskAvailableBytes:1048576,queuedTasks:0,runningTasks:0,peakTreeRssMB:100,pressure:'normal',limitations:[]};const headers={...auth,'content-type':'application/json'};const body=JSON.stringify(snapshot);
     expect((await app.inject({method:'POST',url:'/api/resources/desktop',headers:{'content-type':'application/json'},body})).statusCode).toBe(401);
