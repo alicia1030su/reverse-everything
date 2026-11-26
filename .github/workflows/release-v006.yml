@@ -501,7 +501,7 @@ jobs:
           import { readFile, readdir } from 'node:fs/promises';
           const manifest = JSON.parse(await readFile('dist/release/RELEASE-MANIFEST.json', 'utf8'));
           const files = (await readdir('dist/release', { withFileTypes: true })).filter(entry => entry.isFile());
-          if (manifest.assets.length !== 8 || files.length !== 12) throw new Error(`Expected 8 candidate assets and 12 Release assets, got ${manifest.assets.length} and ${files.length}`);
+          if (manifest.assets.length !== 10 || files.length !== 12) throw new Error(`Expected 8 candidate assets plus ACCEPTANCE/BUILD-INFO and 12 Release files, got ${manifest.assets.length} and ${files.length}`);
           NODE
       - uses: actions/upload-artifact@v4
         with:
