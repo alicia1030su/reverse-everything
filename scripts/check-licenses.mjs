@@ -1,7 +1,7 @@
 import { readFile, realpath } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import path from 'node:path';
-const root=process.cwd();const workspaceDirs=['apps/api','apps/worker','apps/cli','apps/web','packages/core','packages/security','packages/workflow','packages/evidence','packages/ai','packages/contracts'];
+const root=process.cwd();const workspaceDirs=['apps/api','apps/worker','apps/cli','apps/web','packages/core','packages/security','packages/workflow','packages/evidence','packages/ai','packages/contracts','packages/hardware','packages/firmware','packages/console','packages/planner'];
 const queue=[];for(const dir of workspaceDirs){const pkg=JSON.parse(await readFile(path.join(root,dir,'package.json'),'utf8'));for(const name of Object.keys(pkg.dependencies??{}))queue.push({name,from:path.join(root,dir)});}
 const seen=new Set();const records=[];const disallowed=[];
 async function findPackage(name,from){const require=createRequire(path.join(from,'package.json'));let entry;try{entry=require.resolve(name);}catch{try{entry=require.resolve(`${name}/package.json`);}catch{return null;}}let dir=path.dirname(entry);while(dir!==path.dirname(dir)){try{const pkg=JSON.parse(await readFile(path.join(dir,'package.json'),'utf8'));if(pkg.name===name)return {dir,pkg};}catch{}dir=path.dirname(dir);}return null;}
