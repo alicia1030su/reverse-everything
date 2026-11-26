@@ -102,7 +102,7 @@ describe('release workflow identity gate', () => {
     expect(workflow).toContain('--check windows-game-revival-smoke');
     expect(workflow).not.toContain('report.valid !== true || report.capabilities?.dockerDeployment !== true');
     expect(workflow).toContain('--check game-fps-rpg-docker-validation');
-    expect(workflow).toContain('manifest.assets.length !== 8 || files.length !== 12');
+    expect(workflow).toContain('manifest.assets.length !== 10 || files.length !== 12');
     expect(workflow).toContain('test "$(git cat-file -t "refs/tags/$TAG")" = tag');
     expect(workflow).toContain('node scripts/release-atomic.mjs ensure-draft');
     expect(workflow).toContain('node scripts/release-atomic.mjs verify-draft');
