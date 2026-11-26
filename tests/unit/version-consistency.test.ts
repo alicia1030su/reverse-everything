@@ -39,6 +39,32 @@ describe('version single source', () => {
     }
   });
 
+  it('builds every internal dependency before its dependent workspace', async () => {
+    const rootPackage = await json('package.json');
+    const build = String(rootPackage.scripts?.build ?? '');
+    const order = [...build.matchAll(/npm run build -w (@reverse\/[a-z0-9-]+)/g)].map(match => match[1]);
+    expect(new Set(order).size).toBe(order.length);
+    for (const { file, pkg } of await workspaceManifests()) {
+      const name = String(pkg.name ?? '');
+      if (!name.startsWith('@reverse/')) continue;
+      const dependentIndex = order.indexOf(name);
+      if (dependentIndex < 0) {
+        expect(pkg.scripts?.build, `${file} has a build script and must be present in the root build script`).toBeUndefined();
+        continue;
+      }
+      for (const dependency of Object.keys((pkg.dependencies ?? {}) as Record<string, unknown>)) {
+        if (!dependency.startsWith('@reverse/')) continue;
+        const dependencyIndex = order.indexOf(dependency);
+        if (dependencyIndex < 0) {
+          const dependencyManifest = (await workspaceManifests()).find(item => item.pkg.name === dependency);
+          expect(dependencyManifest?.pkg.scripts?.build, `${file}: ${dependency} has a build script and must be present before ${name}`).toBeUndefined();
+          continue;
+        }
+        expect(dependencyIndex, `${file}: ${dependency} must build before ${name}`).toBeLessThan(dependentIndex);
+      }
+    }
+  });
+
   it('keeps lockfile workspace versions and CLI build version aligned', async () => {
     const rootPackage = await json('package.json');
     const lock = await json('package-lock.json');

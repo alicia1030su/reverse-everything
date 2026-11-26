@@ -21,5 +21,6 @@
 | V008-015 | P1 | v0.0.8 候选打包演示资产时缺少当前提交的原客户端 E2E 证据 | `package-demo-assets.mjs` 要求 `GAME_COMPAT_EVIDENCE_DIR`，Release 工作流未生成 | 先运行 `game-compat.spec.ts`，再通过同一临时目录绑定 `package:demos`；工作流顺序与环境变量断言通过 | VERIFIED |
 | V008-016 | P2 | Provider 成本单位曾放大 100 倍，导致费用统计与预算提前耗尽 | `costMicrousd` 旧换算未按每百万 Token 美元价格正确换算 | 统一以 micro-USD 记账，预算按 `1_000_000` 换算为 USD；`model-providers.test.ts` 累计用例断言 10 次调用 `costUsd=0.0011`，Provider 核心/API 21/21 通过 | VERIFIED |
 | V008-017 | P1 | Tron 原客户端 E2E 在服务端重启前卡死于 `close()` | Socket.IO `io.close()` 回调等待 HTTP server 关闭，活跃连接又阻塞该回调 | 先启动关闭并强制断开所有 HTTP 连接，再等待 Socket.IO 关闭；Tron 原客户端刷新/重启用例单独重跑 1/1 通过 | VERIFIED |
+| V008-018 | P1 | 干净 CI 构建因 workspace 拓扑顺序错误失败 | 根 build 先构建 `@reverse/workflow`，但其类型依赖 `@reverse/planner`；本机旧 dist 掩盖问题 | 调整根 build 与 tsconfig references 顺序，补 workflow 依赖声明与构建拓扑回归；清除全部 dist 后从零构建通过 | VERIFIED |
 
 > 本表在 Phase 0 独立审计后追加全部可复现缺陷；不得用删除测试或降低断言关闭缺陷。V008-003 为外部凭证阻塞的 OPEN P2，不影响 P0/P1 清零判定，但不得宣称真实远程模型已验证。
