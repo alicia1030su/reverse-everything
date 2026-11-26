@@ -1,4 +1,4 @@
-# 逆向万物 v0.0.5 技术架构
+# 逆向万物 v0.0.6 技术架构
 
 ## 1. 选型决策
 
@@ -25,10 +25,11 @@ Independent Worker ── Adapter Registry ────┘
         ├── apk/ghidra: Android metadata + optional real external tools
         ├── hardware: read-only enumeration + offline USB/HID parsers
         ├── firmware: bounded streaming static analysis
-        └── console: evidence-graded profiles, USB diagnosis and offline samples
+        ├── console: evidence-graded profiles, USB diagnosis and offline samples
+        └── game-revival: read-only directory scan, spec, standalone FPS/RPG server generation
 ```
 
-API 不执行重型分析；Worker 默认并发 1。`scripts/start.mjs` 同时启动两个进程并转发退出信号。Docker Compose 使用同一入口。
+API 不执行常规重型 adapter 分析；Worker 默认并发 1。游戏复活重建由 API 异步触发，在独立输出目录生成并通过真实进程验证。`scripts/start.mjs` 同时启动两个进程并转发退出信号。Docker Compose 使用同一入口。
 
 ## 3. 包结构
 
@@ -40,6 +41,7 @@ API 不执行重型分析；Worker 默认并发 1。`scripts/start.mjs` 同时�
 - `packages/hardware`：Windows/Linux 只读枚举、USB PCAP/PCAPNG/usbmon、HID 与热插拔身份。
 - `packages/firmware`：BIN/IMG、HEX、UF2、ELF、布局、熵、字符串、组件与 SBOM 线索。
 - `packages/console`：主机设备目录、C0-C5 证据等级、档案、USB 诊断与报告。
+- `packages/game-revival`：游戏目录增量扫描、L0-L7 规格、独立 FPS/RPG 服务端生成与真实联机验证。
 - `packages/planner`：目标检测、分析器选择、确定性计划、预算与自适应重规划。
 - `packages/core`：统一 Adapter 与十个实现。
 - `apps/api`：REST、认证、上传、SSE、硬件、桌面指标、静态站点。
@@ -79,9 +81,10 @@ API 不执行重型分析；Worker 默认并发 1。`scripts/start.mjs` 同时�
 | artifacts | name, stored_path, size, sha256, mime |
 | settings/cache/resource_samples/backups | 加密设置、缓存、指标、备份与审计 |
 | console_profiles/analysis_plans/authorization_scopes | 主机档案、计划与授权范围 |
+| game_profiles/game_files/game_specs/game_rebuilds | 游戏档案、文件指纹、规格、独立服务端与验证报告 |
 | tool_installations/demo_runs/project_deletion_intents | 工具、演示与删除恢复 |
 
-上传位于 `data/uploads/<projectId>/<random>`；产物位于 `data/tasks/<taskId>/artifacts/`。用户文件名只作为元数据，不直接作为路径。当前 schema 为 4。
+上传位于 `data/uploads/<projectId>/<random>`；产物位于 `data/tasks/<taskId>/artifacts/`。用户文件名只作为元数据，不直接作为路径。当前 schema 为 5。
 
 ## 6. 任务执行与恢复
 
@@ -116,9 +119,9 @@ validate(ctx) → reproducible checks and limitations
 
 ## 9. API、MCP 与 Skill
 
-- REST：`/api/v1` 与 `/api` 同路由；运行时 OpenAPI 版本 0.0.5。
+- REST：`/api/v1` 与 `/api` 同路由；运行时 OpenAPI 版本 0.0.6。
 - 认证：本地 Bearer token 或 HttpOnly SameSite=Strict cookie；Host/Origin 校验。
-- MCP：stdio 与 Streamable HTTP 共用 API，注册 37 个工具；不暴露破坏性维护或设备执行能力。
+- MCP：stdio 与 Streamable HTTP 共用 API，注册 44 个工具（新增 7 个游戏复活工具）；不暴露破坏性维护或设备执行能力。
 - CLI：命令由 `apps/cli/src/cli.ts` 单一解析器提供；文档以 `--help` 为准。
 - Skill：环境检查与工作流封装，不拥有独立业务逻辑。
 
@@ -141,6 +144,8 @@ validate(ctx) → reproducible checks and limitations
 - API runtime lease 与 Electron 单实例锁防止并发写同一数据目录。
 - 硬件只读枚举仅本机回环；不打开设备、不实时捕获、不刷写。
 - 固件与 USB/HID 输入有界解析；原始 payload、凭证与键盘报告不进入证据。
+- 游戏目录扫描仅接受 API 服务端 `RE_GAME_ROOTS` 显式允许的绝对目录及其子目录；未配置或越界返回 403。stdio/HTTP MCP 与 CLI 均调用同一 API，不能绕过；HTTP MCP 不接受本机路径上传。
+- 游戏生成物是独立兼容实现，不是原始服务端；不保证商业原客户端兼容，不绕过 DRM/反作弊/认证，不分发未授权资源。
 
 完整边界见 [安全模型](SECURITY-MODEL.md)。
 
@@ -152,4 +157,4 @@ validate(ctx) → reproducible checks and limitations
 4. **固定 DNS + 同源浏览器**：兼顾真实采集与 SSRF 边界。
 5. **独立兼容服务而非伪造原始恢复**：只生成可验证实现。
 6. **九类入口共享 adapter 契约**：UI 名称不扩大执行权限。
-7. **实现与验收分离**：真实外部工具、物理设备与 CI 证据决定 `VERIFIED`。
+7. **实现与验收分离**：真实外部工具、物理设备与 CI 证据决定 `VERIFIED`；L0-L7 由真实报告推进，当前最高实测 L6，Docker/L7 待 CI。

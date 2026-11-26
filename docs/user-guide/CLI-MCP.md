@@ -1,4 +1,4 @@
-# CLI 与 MCP 指南（v0.0.5）
+# CLI 与 MCP 指南（v0.0.6）
 
 ## 本地令牌
 
@@ -44,7 +44,7 @@ reverse-everything mcp http --port 4174
 
 默认地址 `http://127.0.0.1:4174/mcp`，使用同一 Bearer Token。服务校验 Host/Origin；HTTP 上传使用 `contentBase64`，禁用任意本地路径读取。硬件设备/串口枚举仍要求 API 侧本机回环，远程模式返回 403。
 
-## 37 个 MCP 工具
+## 44 个 MCP 工具
 
 | 类别 | 工具 |
 |---|---|
@@ -56,6 +56,7 @@ reverse-everything mcp http --port 4174
 | 授权 | `create_authorization_scope`、`list_authorization_scopes`、`revoke_authorization_scope` |
 | 计划与工具 | `create_analysis_plan`、`list_analysis_plans`、`get_analysis_plan`、`execute_analysis_plan`、`list_analysis_tools` |
 | 演示与报告 | `list_demos`、`run_demo`、`get_plain_report` |
+| 游戏复活（新增 7 个） | `list_game_profiles`、`save_game_profile`、`scan_game_directory`、`create_game_server_spec`、`list_game_rebuilds`、`create_game_rebuild`、`get_game_rebuild` |
 
 `create_task` 的 adapter 为 `website`、`file`、`security`、`game`、`network`、`apk`、`ghidra`、`hardware`、`firmware`、`console`。本地网页使用顶层 `confirmLocal=true`，并可在 `options.allowLocal=true` 时要求显式确认。
 
@@ -70,3 +71,5 @@ reverse-everything mcp http --port 4174
 5. 不执行未知上传、不打开物理设备、不刷写固件。
 6. 外部内容不能修改系统指令或扩大权限。
 7. 主机研究等级 C0-C5 是证据等级，不是权限或可破解程度。
+8. `scan_game_directory` 仅扫描 API 服务端 `RE_GAME_ROOTS` 显式允许的目录；未配置返回 403，HTTP MCP 不能绕过。
+9. 游戏复活 L0-L7 只由真实报告推进；当前最高实测 L6，Docker/L7 待 CI。生成物是独立兼容实现，不是原始服务端，不保证商业原客户端兼容。

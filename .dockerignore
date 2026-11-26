@@ -6,5 +6,8 @@ data
 test-results
 playwright-report
 coverage
+artifacts
+.ai-memory
+.workbuddy
 *.log
 .env*

@@ -3,7 +3,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: reverse-everything:0.0.4
+    image: reverse-everything:0.0.6
     ports:
       - "127.0.0.1:4173:4173"
     environment:
@@ -15,8 +15,12 @@ services:
       RE_RESOURCE_DIR: /app
       RE_MAX_UPLOAD_MB: "100"
       RE_TASK_TIMEOUT_MS: "300000"
+      # Optional Linux/Docker allowlist (':' separator); use container paths.
+      # RE_GAME_ROOTS: "/games/owned-fps:/games/owned-rpg"
     volumes:
       - reverse-everything-data:/data
+      # Optional: mount only lawfully retained game directories read-only.
+      # - /absolute/host/games:/games:ro
     restart: unless-stopped
     init: true
 volumes:

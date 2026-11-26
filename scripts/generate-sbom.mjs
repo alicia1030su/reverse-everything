@@ -8,6 +8,11 @@ for(const [key,value] of Object.entries(lock.packages??{})){
   const name=value.name??key.slice('node_modules/'.length);
   components.push({type:'library',name,version:value.version??'unknown',purl:'pkg:npm/'+name.replace(/^@/,'%40').replace('/','%2F')+'@'+(value.version??'unknown'),licenses:value.license?[{license:{id:value.license}}]:[]});
 }
+for(const [key,value] of Object.entries(lock.packages??{})){
+  if(!/^(apps|packages)\/[^/]+$/.test(key)||value.link)continue;
+  const name=value.name??key;
+  components.push({type:'library',name,version:value.version??root.version,purl:'pkg:npm/'+name.replace(/^@/,'%40').replace('/','%2F')+'@'+(value.version??root.version),licenses:value.license?[{license:{id:value.license}}]:[{license:{id:'Apache-2.0'}}]});
+}
 const bom={bomFormat:'CycloneDX',specVersion:'1.5',serialNumber:'urn:uuid:'+randomUUID(),version:1,metadata:{timestamp:new Date().toISOString(),tools:[{vendor:'Node.js',name:'node',version:process.version}],component:{type:'application',name:root.name,version:root.version}},components};
 await mkdir('dist/release',{recursive:true});
 await writeFile('dist/release/SBOM-v'+root.version+'.json',JSON.stringify(bom,null,2));

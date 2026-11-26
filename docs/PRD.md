@@ -1,4 +1,4 @@
-# 逆向万物 v0.0.5 产品需求文档
+# 逆向万物 v0.0.6 产品需求文档
 
 ## 1. 定位与目标
 
@@ -8,7 +8,7 @@
 
 核心原则：证据驱动、自动化优先、可验证、可恢复、可扩展、安全隔离。不能可靠实现的能力必须标为 `UNKNOWN`、`PARTIAL` 或 `BLOCKED`，不得伪装成完成。
 
-v0.0.5 聚焦游戏主机研究实验室、智能逆向向导、自动分析计划、AI V3、自动化验收、双视图报告、授权范围与全入口一致性；本版本状态以最终测试、CI 与发布记录为准。
+v0.0.6 聚焦 Game Revival Studio、L0-L7 证据等级、自有多人 FPS/RPG 独立服务端、管理后台与 Docker/Windows/Linux 部署；本版本状态以最终测试、CI 与发布记录为准。
 
 ## 2. 用户与场景
 
@@ -53,7 +53,8 @@ v0.0.5 聚焦游戏主机研究实验室、智能逆向向导、自动分析计�
 - 任务工作台：阶段、当前工具、日志、控制按钮、证据/发现/报告/产物。
 - 证据探索器：搜索、过滤、关系、只读代码查看；原始内容不作为 HTML 渲染。
 - 协议中心：消息类型、字段出现次数、转换与未知项。
-- 复活实验室：等级、E2E 检查、独立重建声明。
+- 复活实验室：L0-L7 等级、E2E 检查、独立重建声明。
+- Game Revival Studio：游戏档案、允许目录只读扫描、服务端规格、重建状态、验证报告与 ZIP 下载。
 - 安全中心：候选发现、证据、置信度与修复建议。
 - 硬件实验室：真实只读 USB 拓扑、描述符、串口与离线任务入口。
 - 主机研究实验室：设备目录、能力矩阵、USB 诊断、C0-C5 档案与报告。
@@ -65,9 +66,9 @@ v0.0.5 聚焦游戏主机研究实验室、智能逆向向导、自动分析计�
 
 ## 6. 自动化入口
 
-- CLI：`health`、`capabilities`、`analyzers`、`projects`、`analyze`、`tasks`、`report`、`hardware`、`firmware`、`console`、`plans`、`tools`、`demos`、`resources`、`cache`、`retention`、`mcp`。
-- REST：`/api/v1` 与 `/api` 同路由；OpenAPI v0.0.5。
-- MCP：stdio 与 Streamable HTTP，共 37 个工具；不暴露清理、设备打开、实时捕获或刷写。
+- CLI：`health`、`capabilities`、`analyzers`、`projects`、`analyze`、`tasks`、`report`、`hardware`、`firmware`、`console`、`game profile|scan|spec|rebuild|status|download`、`plans`、`tools`、`demos`、`resources`、`cache`、`retention`、`mcp`。
+- REST：`/api/v1` 与 `/api` 同路由；OpenAPI v0.0.6。
+- MCP：stdio 与 Streamable HTTP，共 44 个工具；新增游戏档案、目录扫描、规格、重建列表/创建/状态 7 个工具。
 - Skill：授权检查、环境检测、任务查询与九类工作流；优先 MCP，否则 CLI/API。
 
 所有入口共享项目/任务 ID、令牌、队列、预算与证据契约。
@@ -82,7 +83,7 @@ v0.0.5 聚焦游戏主机研究实验室、智能逆向向导、自动分析计�
 - `MISSING`：未实现。
 - `VERIFIED` 只能用于可重复测试证据，不能仅凭代码存在。
 
-Ghidra/JADX 仅在官方 CI 已知答案范围内可标 `VERIFIED`，不扩展到未测试格式、架构或物理设备。物理设备、实时 USB 捕获与刷写在未授权时保持 `BLOCKED` 或禁用。
+Ghidra/JADX 仅在官方 CI 已知答案范围内可标 `VERIFIED`，不扩展到未测试格式、架构或物理设备。游戏复活 L0-L7 只由真实报告推进：文件生成不算联机或部署成功；当前本地最高实测 L6，Docker 不可用，L7 待 CI。物理设备、实时 USB 捕获与刷写在未授权时保持 `BLOCKED` 或禁用。
 
 ## 8. 硬件、固件与安全需求
 
@@ -106,5 +107,5 @@ Ghidra/JADX 仅在官方 CI 已知答案范围内可标 `VERIFIED`，不扩展�
 - P0 阻塞缺陷为 0；失败测试不得删除或伪造通过。
 - CLI 命令按当前 `--help` 核对；所有本地文档链接存在。
 - Ghidra/JADX 真实工具 CI、官方离线样本、Windows/Web/桌面与打包入口由最终门禁验收。
-- 测试数量、跳过项、CI Run ID 与性能数据以最终 `V005-TEST-RESULTS.md` 为准；未定稿处写“以最终门禁为准”。
+- 测试数量、跳过项、CI Run ID 与性能数据以最终 `V006-TEST-RESULTS.md` 为准；未定稿处写“以最终门禁为准”。
 - 不得提前宣称 Tag、Release、签名、物理设备或未运行检查已通过。

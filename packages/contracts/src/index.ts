@@ -1,5 +1,11 @@
-export const VERSION = '0.0.5' as const;
-export const SCHEMA_VERSION = 4 as const;
+export const VERSION = '0.0.6' as const;
+export const SCHEMA_VERSION = 5 as const;
+export type GameRevivalLevel = 'L0' | 'L1' | 'L2' | 'L3' | 'L4' | 'L5' | 'L6' | 'L7';
+export type GameEvidenceStatus = 'OBSERVED' | 'INFERRED' | 'VERIFIED' | 'UNKNOWN' | 'INACCESSIBLE' | 'NOT_IMPLEMENTED';
+export interface GameProfile { id:string; projectId:string; name:string; genre:string; publisher:string; region:string; clientVersion:string; shutdownDate:string; engine:string; source:string; authorizationScope:string; knownProtocols:string[]; retainedMaterials:string[]; existingImplementations:string[]; level:GameRevivalLevel; unrecoveredFeatures:string[]; rootPath?:string; createdAt:string; updatedAt:string }
+export interface GameFileRecord { path:string; size:number; mtimeMs:number; sha256:string; kind:string }
+export interface GameSpecRecord { id:string; projectId:string; spec:Record<string,unknown>; evidenceStatus:GameEvidenceStatus; createdAt:string }
+export interface GameRebuildRecord { id:string; projectId:string; specId:string; status:'CREATED'|'RUNNING'|'COMPLETED'|'FAILED'|'BLOCKED'; level:GameRevivalLevel; outputPath:string|null; error:string|null; validation:Record<string,unknown>|null; createdAt:string; updatedAt:string }
 export const EVIDENCE_MODEL_VERSION = '3.0.0' as const;
 export const SECURITY_POLICY_VERSION = '3.0.0' as const;
 export const CACHE_POLICY_VERSION = '3.0.0' as const;

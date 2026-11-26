@@ -1,4 +1,4 @@
-# CLI 指南（v0.0.5）
+# CLI 指南（v0.0.6）
 
 ## 启动与认证
 
@@ -123,6 +123,36 @@ reverse-everything report plain <taskId> ./plain-report.md
 ```
 
 `plans create` 会创建显式授权范围、读取文件头部并生成确定性计划；不会自动安装工具或扩大权限。`demos run` 创建真实项目与任务，不伪造成功结果。
+
+## 游戏复活（Game Revival）
+
+先创建 `game` 项目，并在 **API 服务端**配置 `RE_GAME_ROOTS`。Windows 使用 `;` 分隔多个绝对目录，Linux 使用 `:`；仅允许目录本身及其子目录。未配置或路径越界返回 403，HTTP MCP 也不能绕过。
+
+```bash
+reverse-everything projects create "自有 FPS" game --authorized
+reverse-everything game profile <projectId> "自有 FPS" fps /absolute/games/owned-fps --authorized
+reverse-everything game scan <projectId> /absolute/games/owned-fps --authorized
+reverse-everything game spec <projectId>
+reverse-everything game rebuild <specId>
+reverse-everything game status <rebuildId>
+reverse-everything game download <rebuildId> ./server.zip
+```
+
+`profile` 的类型为 `fps|rpg|unknown`；`scan` 只读、增量扫描并保存指纹，不上传游戏文件；`spec` 生成证据分级规格；`rebuild` 异步生成并验证独立服务端；`status` 返回真实阶段与 L0-L7 报告；`download` 仅在重建完成且通过验证后提供 ZIP。
+
+生成服务包含自有多人 FPS/RPG、权威状态、房间隔离、持久化、重连、结算、多房间并发与认证管理后台，可独立构建/启动，不依赖平台 API。当前本地最高实测 L6；Docker 不可用，Docker/L7 待 CI。产物不是原始服务端，不保证商业原客户端兼容。
+
+### 独立服务端部署
+
+解压 ZIP 后，Windows/Linux 使用 Node.js 22.13+：
+
+```bash
+npm ci
+npm run build
+npm start
+```
+
+启动前按生成物 `.env.example` 通过环境变量设置至少 16 字符的 `ADMIN_TOKEN`、`GAME_PORT`、`ADMIN_PORT` 与数据路径（生成服务不自动读取 `.env` 文件）；管理后台/API 默认仅回环，必须 Bearer 认证。Docker 环境可在生成物目录运行 `docker compose up -d --build`，其 Compose 文件包含健康检查与数据卷；该命令是部署说明，当前本地未实跑，不能据此宣称 L7 通过。
 
 ## MCP
 

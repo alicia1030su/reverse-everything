@@ -1,9 +1,10 @@
 import { app, BrowserWindow, Menu, Tray, nativeImage, shell, session } from 'electron';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { createServer } from 'node:net';
-import { access, mkdir, readFile, writeFile } from 'node:fs/promises';
+import { access, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import {
   createDesktopMetricsCollector,
   isUsableDesktopSnapshot,
@@ -18,6 +19,8 @@ const product = 'reverse-everything';
 const version = app.getVersion();
 const smoke = process.argv.includes('--smoke-test') || process.env.RE_SMOKE_TEST === '1';
 const resourceDir = path.resolve(process.env.RE_RESOURCE_DIR ?? process.resourcesPath);
+const npmCli = path.join(resourceDir, 'node_modules', 'npm', 'bin', 'npm-cli.js');
+process.env.RE_NPM_CLI = npmCli;
 const dataDir = path.resolve(process.env.RE_DATA_DIR ?? path.join(app.getPath('appData'), product));
 const logDir = path.join(dataDir, 'logs');
 let api: ChildProcess | undefined;
@@ -250,7 +253,55 @@ async function createWindow(): Promise<void> {
   }
 }
 
+async function runGameRevivalSmoke(): Promise<{ valid: boolean; genre: string; sha256: string; errors: string[]; checks: Array<{ id: string; passed: boolean }>; npmCli: string; nodeRuntime: string }> {
+  const temporary = await mkdtemp(path.join(dataDir, 'game-revival-smoke-'));
+  const previousPath = process.env.PATH;
+  const previousElectronRunAsNode = process.env.ELECTRON_RUN_AS_NODE;
+  try {
+    const { createGameServerSpec, generateGameServer, scanGameDirectory, validateGeneratedServer } = await import(pathToFileURL(path.join(resourceDir, 'node_modules', '@reverse', 'game-revival', 'dist', 'index.js')).href);
+    const assets = path.join(temporary, 'assets');
+    await mkdir(assets);
+    await writeFile(path.join(assets, 'fps-map.json'), JSON.stringify({ name: 'windows-smoke-arena', width: 96, height: 64 }));
+    await writeFile(path.join(temporary, 'client.exe'), Buffer.from([0x4d, 0x5a, 1, 2, 3]));
+    const scan = await scanGameDirectory(temporary);
+    const spec = createGameServerSpec(
+      { name: 'windows-smoke-fps', root: temporary, genre: 'fps', assets: ['assets'], observations: [{ path: 'client.exe', detail: 'Windows 安装 smoke 自有夹具' }], limitations: [] },
+      scan.files,
+      [{ kind: 'map', ref: 'assets/fps-map.json', detail: '地图尺寸', value: { name: 'windows-smoke-arena', width: 96, height: 64 }, status: 'OBSERVED' }],
+    );
+    const output = path.join(temporary, 'generated');
+    await generateGameServer(spec, output);
+    process.env.ELECTRON_RUN_AS_NODE = '1';
+    process.env.RE_NPM_CLI = npmCli;
+    let nodeRuntime = 'process.execPath';
+    if (process.platform === 'win32') {
+      const bin = path.join(temporary, 'bin');
+      await mkdir(bin);
+      await writeFile(path.join(bin, 'node.cmd'), `@"${process.execPath}" %*\r\n`);
+      const systemRoot = process.env.SystemRoot;
+      if (!systemRoot) throw new Error('SystemRoot is required for the isolated Windows smoke PATH');
+      process.env.PATH = `${bin};${path.join(systemRoot, 'System32')};${systemRoot}`;
+      nodeRuntime = 'packaged Electron node.cmd shim';
+    }
+    const report = await validateGeneratedServer(output, { players: 4, rounds: 1, commandTimeoutMs: 180000 }) as {
+      valid: boolean;
+      genre: string;
+      sha256: string;
+      errors: string[];
+      checks: Array<{ id: string; passed: boolean }>;
+    };
+    const result = { valid: report.valid, genre: report.genre, sha256: report.sha256, errors: report.errors, checks: report.checks.map(check => ({ id: check.id, passed: check.passed })), npmCli, nodeRuntime };
+    if (!report.valid || report.errors.length || report.checks.some(check => !check.passed)) throw new Error(`Game Revival smoke failed: ${report.errors.join('; ')}`);
+    return result;
+  } finally {
+    if (previousPath === undefined) delete process.env.PATH; else process.env.PATH = previousPath;
+    if (previousElectronRunAsNode === undefined) delete process.env.ELECTRON_RUN_AS_NODE; else process.env.ELECTRON_RUN_AS_NODE = previousElectronRunAsNode;
+    await rm(temporary, { recursive: true, force: true });
+  }
+}
+
 async function runSmoke(): Promise<void> {
+  const gameRevival = await runGameRevivalSmoke();
   const result = await window!.webContents.executeJavaScript(`(async()=>{const health=await fetch('/api/health');const capabilities=await fetch('/api/capabilities');const resources=await fetch('/api/resources');return {healthStatus:health.status,health:await health.json(),capabilitiesStatus:capabilities.status,capabilities:await capabilities.json(),resourcesStatus:resources.status,resources:await resources.json()};})()`) as {
     healthStatus?: number;
     health?: { product?: string; version?: string };
@@ -263,7 +314,8 @@ async function runSmoke(): Promise<void> {
   const metricsStatus = lastMetricsReport?.ok && isUsableDesktopSnapshot(desktop) ? 'reported' : lastMetricsReport ? 'failed' : 'unavailable';
   const ok = result.health?.product === product && result.health?.version === version
     && result.capabilities?.product?.version === version
-    && metricsStatus === 'reported';
+    && metricsStatus === 'reported'
+    && gameRevival.valid;
   const output = process.env.RE_SMOKE_OUTPUT;
   if (output) {
     await writeFile(output, JSON.stringify({
@@ -271,6 +323,7 @@ async function runSmoke(): Promise<void> {
       version: result.capabilities?.product?.version,
       dataDir,
       resourceDir,
+      gameRevival,
       diagnostics: result,
       desktopMetrics: {
         status: metricsStatus,

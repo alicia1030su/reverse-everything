@@ -5,16 +5,24 @@ export const REQUIRED_RELEASE_WORKFLOWS = Object.freeze([
   'CI',
   'Android v0.0.4 real JADX',
   'Ghidra V004 Real Verification',
+  'Release v006',
 ]);
 
-export function verifyReleaseWorkflowRuns(runs, { commit, branch = 'main' } = {}) {
+const WORKFLOW_DISPATCH_RELEASES = new Set(['Release v006']);
+
+export function verifyReleaseWorkflowRuns(runs, { commit, branch = 'main', currentWorkflow, currentRunId } = {}) {
   if (!/^[0-9a-f]{40}$/i.test(String(commit ?? ''))) return ['A full frozen commit SHA is required'];
   if (!Array.isArray(runs)) return ['Workflow runs response is invalid'];
-  const matching = runs.filter(run => run?.head_sha === commit && run?.event === 'push' && run?.head_branch === branch);
+  const matching = runs.filter(run => run?.head_sha === commit && run?.head_branch === branch);
   const errors = [];
   for (const workflow of REQUIRED_RELEASE_WORKFLOWS) {
-    const candidates = matching.filter(run => run?.name === workflow).sort((left, right) => String(right.created_at ?? '').localeCompare(String(left.created_at ?? '')));
+    const event = WORKFLOW_DISPATCH_RELEASES.has(workflow) ? 'workflow_dispatch' : 'push';
+    const candidates = matching.filter(run => run?.name === workflow && run?.event === event).sort((left, right) => String(right.created_at ?? '').localeCompare(String(left.created_at ?? '')));
     const latest = candidates[0];
+    const current = WORKFLOW_DISPATCH_RELEASES.has(workflow) && workflow === currentWorkflow && currentRunId !== undefined
+      ? candidates.find(run => String(run?.id) === String(currentRunId))
+      : undefined;
+    if (current && current === latest && (current.status === 'queued' || current.status === 'in_progress')) continue;
     if (!latest) errors.push(`Required workflow is missing: ${workflow}`);
     else if (latest.status !== 'completed' || latest.conclusion !== 'success') errors.push(`Required workflow is not successful: ${workflow}`);
   }
@@ -27,9 +35,15 @@ function argument(name) {
 }
 
 async function main() {
+  if (process.argv.includes('--help')) {
+    console.log('Usage: node scripts/verify-release-workflows.mjs --repo <owner/repo> --commit <40-hex-sha> [--branch main] [--current-workflow <name> --current-run-id <id>]');
+    return;
+  }
   const repo = argument('repo') ?? process.env.GITHUB_REPOSITORY;
   const commit = argument('commit') ?? process.env.COMMIT;
   const branch = argument('branch') ?? 'main';
+  const currentWorkflow = argument('current-workflow') ?? process.env.WORKFLOW_NAME;
+  const currentRunId = argument('current-run-id') ?? process.env.GITHUB_RUN_ID;
   const token = process.env.GH_TOKEN ?? process.env.GITHUB_TOKEN;
   if (!repo || !/^[^/]+\/[^/]+$/.test(repo)) throw new Error('A valid --repo or GITHUB_REPOSITORY is required');
   if (!token) throw new Error('GH_TOKEN or GITHUB_TOKEN is required');
@@ -39,7 +53,7 @@ async function main() {
   });
   if (!response.ok) throw new Error(`Workflow runs API returned HTTP ${response.status}`);
   const body = await response.json();
-  const errors = verifyReleaseWorkflowRuns(body.workflow_runs, { commit, branch });
+  const errors = verifyReleaseWorkflowRuns(body.workflow_runs, { commit, branch, currentWorkflow, currentRunId });
   if (errors.length) throw new Error(errors.join('\n'));
   console.log(`Required release workflows passed for ${commit}: ${REQUIRED_RELEASE_WORKFLOWS.join(', ')}`);
 }

@@ -1,0 +1,1888 @@
+{
+  "schemaVersion": 1,
+  "game": "owned-rpg",
+  "capturedAt": "2026-11-26T03:07:13.321Z",
+  "source": "original-server.mjs + real WebSocket clients",
+  "messageCount": 82,
+  "messages": [
+    {
+      "sequence": 1,
+      "at": "2026-11-26T03:07:12.621Z",
+      "direction": "server-to-client",
+      "client": "player-one",
+      "type": "welcome",
+      "payload": {
+        "game": "owned-rpg",
+        "version": "1.0.0",
+        "scene": "greenvale",
+        "heartbeatMs": 30000
+      }
+    },
+    {
+      "sequence": 2,
+      "at": "2026-11-26T03:07:12.627Z",
+      "direction": "server-to-client",
+      "client": "player-two",
+      "type": "welcome",
+      "payload": {
+        "game": "owned-rpg",
+        "version": "1.0.0",
+        "scene": "greenvale",
+        "heartbeatMs": 30000
+      }
+    },
+    {
+      "sequence": 3,
+      "at": "2026-11-26T03:07:12.628Z",
+      "direction": "client-to-server",
+      "client": "player-one",
+      "type": "auth.register",
+      "payload": {
+        "username": "ranger_owned",
+        "password": "owned-rpg-password"
+      }
+    },
+    {
+      "sequence": 4,
+      "at": "2026-11-26T03:07:12.633Z",
+      "direction": "server-to-client",
+      "client": "player-one",
+      "type": "auth.ok",
+      "payload": {
+        "token": "e009b5b0-257f-4607-b59c-afb6aa1383e3",
+        "account": {
+          "username": "ranger_owned",
+          "characterIds": []
+        }
+      }
+    },
+    {
+      "sequence": 5,
+      "at": "2026-11-26T03:07:12.633Z",
+      "direction": "client-to-server",
+      "client": "player-two",
+      "type": "auth.register",
+      "payload": {
+        "username": "mage_owned",
+        "password": "owned-rpg-password"
+      }
+    },
+    {
+      "sequence": 6,
+      "at": "2026-11-26T03:07:12.634Z",
+      "direction": "server-to-client",
+      "client": "player-two",
+      "type": "auth.ok",
+      "payload": {
+        "token": "f383aeb6-7bdf-49df-a9b7-89ff4c0e4403",
+        "account": {
+          "username": "mage_owned",
+          "characterIds": []
+        }
+      }
+    },
+    {
+      "sequence": 7,
+      "at": "2026-11-26T03:07:12.635Z",
+      "direction": "client-to-server",
+      "client": "player-one",
+      "type": "auth.login",
+      "payload": {
+        "username": "ranger_owned",
+        "password": "owned-rpg-password"
+      }
+    },
+    {
+      "sequence": 8,
+      "at": "2026-11-26T03:07:12.635Z",
+      "direction": "server-to-client",
+      "client": "player-one",
+      "type": "auth.ok",
+      "payload": {
+        "token": "3dafbef8-c370-44ad-a620-4331594691d6",
+        "account": {
+          "username": "ranger_owned",
+          "characterIds": []
+        }
+      }
+    },
+    {
+      "sequence": 9,
+      "at": "2026-11-26T03:07:12.636Z",
+      "direction": "client-to-server",
+      "client": "player-two",
+      "type": "auth.login",
+      "payload": {
+        "username": "mage_owned",
+        "password": "owned-rpg-password"
+      }
+    },
+    {
+      "sequence": 10,
+      "at": "2026-11-26T03:07:12.636Z",
+      "direction": "server-to-client",
+      "client": "player-two",
+      "type": "auth.ok",
+      "payload": {
+        "token": "59a768e6-c3bf-4edb-8e20-bbc419882af0",
+        "account": {
+          "username": "mage_owned",
+          "characterIds": []
+        }
+      }
+    },
+    {
+      "sequence": 11,
+      "at": "2026-11-26T03:07:12.637Z",
+      "direction": "client-to-server",
+      "client": "player-one",
+      "type": "character.create",
+      "payload": {
+        "name": "林溪"
+      }
+    },
+    {
+      "sequence": 12,
+      "at": "2026-11-26T03:07:12.642Z",
+      "direction": "server-to-client",
+      "client": "player-one",
+      "type": "character.created",
+      "payload": {
+        "character": {
+          "id": "6f8964b2-735e-4df8-b900-67947d0c226d",
+          "owner": "ranger_owned",
+          "name": "林溪",
+          "level": 1,
+          "hp": 100,
+          "position": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+          },
+          "inventory": [],
+          "quests": {
+            "first_steps": "available",
+            "grove_guardian": "locked"
+          },
+          "sceneVersion": 1
+        },
+        "scene": {
+          "id": "greenvale",
+          "name": "自有绿谷",
+          "version": 1,
+          "entities": [
+            {
+              "id": "iron_sword",
+              "name": "自有铁剑",
+              "kind": "weapon",
+              "scene": "greenvale"
+            },
+            {
+              "id": "health_herb",
+              "name": "自有草药",
+              "kind": "consumable",
+              "scene": "greenvale"
+            },
+            {
+              "id": "moon_stone",
+              "name": "月纹石",
+              "kind": "quest",
+              "scene": "greenvale"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "sequence": 13,
+      "at": "2026-11-26T03:07:12.642Z",
+      "direction": "client-to-server",
+      "client": "player-two",
+      "type": "character.create",
+      "payload": {
+        "name": "星野"
+      }
+    },
+    {
+      "sequence": 14,
+      "at": "2026-11-26T03:07:12.644Z",
+      "direction": "server-to-client",
+      "client": "player-two",
+      "type": "character.created",
+      "payload": {
+        "character": {
+          "id": "d29ccbb5-c780-4736-ad35-1825b7516e0a",
+          "owner": "mage_owned",
+          "name": "星野",
+          "level": 1,
+          "hp": 100,
+          "position": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+          },
+          "inventory": [],
+          "quests": {
+            "first_steps": "available",
+            "grove_guardian": "locked"
+          },
+          "sceneVersion": 1
+        },
+        "scene": {
+          "id": "greenvale",
+          "name": "自有绿谷",
+          "version": 1,
+          "entities": [
+            {
+              "id": "iron_sword",
+              "name": "自有铁剑",
+              "kind": "weapon",
+              "scene": "greenvale"
+            },
+            {
+              "id": "health_herb",
+              "name": "自有草药",
+              "kind": "consumable",
+              "scene": "greenvale"
+            },
+            {
+              "id": "moon_stone",
+              "name": "月纹石",
+              "kind": "quest",
+              "scene": "greenvale"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "sequence": 15,
+      "at": "2026-11-26T03:07:12.645Z",
+      "direction": "client-to-server",
+      "client": "player-one",
+      "type": "scene.enter",
+      "payload": {
+        "characterId": "6f8964b2-735e-4df8-b900-67947d0c226d"
+      }
+    },
+    {
+      "sequence": 16,
+      "at": "2026-11-26T03:07:12.645Z",
+      "direction": "client-to-server",
+      "client": "player-two",
+      "type": "scene.enter",
+      "payload": {
+        "characterId": "d29ccbb5-c780-4736-ad35-1825b7516e0a"
+      }
+    },
+    {
+      "sequence": 17,
+      "at": "2026-11-26T03:07:12.646Z",
+      "direction": "server-to-client",
+      "client": "player-one",
+      "type": "scene.entered",
+      "payload": {
+        "character": {
+          "id": "6f8964b2-735e-4df8-b900-67947d0c226d",
+          "owner": "ranger_owned",
+          "name": "林溪",
+          "level": 1,
+          "hp": 100,
+          "position": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+          },
+          "inventory": [],
+          "quests": {
+            "first_steps": "available",
+            "grove_guardian": "locked"
+          },
+          "sceneVersion": 1
+        },
+        "scene": {
+          "id": "greenvale",
+          "name": "自有绿谷",
+          "version": 1,
+          "entities": [
+            {
+              "id": "iron_sword",
+              "name": "自有铁剑",
+              "kind": "weapon",
+              "scene": "greenvale"
+            },
+            {
+              "id": "health_herb",
+              "name": "自有草药",
+              "kind": "consumable",
+              "scene": "greenvale"
+            },
+            {
+              "id": "moon_stone",
+              "name": "月纹石",
+              "kind": "quest",
+              "scene": "greenvale"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "sequence": 18,
+      "at": "2026-11-26T03:07:12.647Z",
+      "direction": "server-to-client",
+      "client": "player-two",
+      "type": "scene.entered",
+      "payload": {
+        "character": {
+          "id": "d29ccbb5-c780-4736-ad35-1825b7516e0a",
+          "owner": "mage_owned",
+          "name": "星野",
+          "level": 1,
+          "hp": 100,
+          "position": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+          },
+          "inventory": [],
+          "quests": {
+            "first_steps": "available",
+            "grove_guardian": "locked"
+          },
+          "sceneVersion": 1
+        },
+        "scene": {
+          "id": "greenvale",
+          "name": "自有绿谷",
+          "version": 1,
+          "entities": [
+            {
+              "id": "iron_sword",
+              "name": "自有铁剑",
+              "kind": "weapon",
+              "scene": "greenvale"
+            },
+            {
+              "id": "health_herb",
+              "name": "自有草药",
+              "kind": "consumable",
+              "scene": "greenvale"
+            },
+            {
+              "id": "moon_stone",
+              "name": "月纹石",
+              "kind": "quest",
+              "scene": "greenvale"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "sequence": 19,
+      "at": "2026-11-26T03:07:12.648Z",
+      "direction": "client-to-server",
+      "client": "player-one",
+      "type": "scene.snapshot",
+      "payload": {}
+    },
+    {
+      "sequence": 20,
+      "at": "2026-11-26T03:07:12.649Z",
+      "direction": "server-to-client",
+      "client": "player-one",
+      "type": "scene.snapshot",
+      "payload": {
+        "scene": {
+          "id": "greenvale",
+          "name": "自有绿谷",
+          "version": 1,
+          "entities": [
+            {
+              "id": "iron_sword",
+              "name": "自有铁剑",
+              "kind": "weapon",
+              "scene": "greenvale"
+            },
+            {
+              "id": "health_herb",
+              "name": "自有草药",
+              "kind": "consumable",
+              "scene": "greenvale"
+            },
+            {
+              "id": "moon_stone",
+              "name": "月纹石",
+              "kind": "quest",
+              "scene": "greenvale"
+            }
+          ]
+        },
+        "character": {
+          "id": "6f8964b2-735e-4df8-b900-67947d0c226d",
+          "owner": "ranger_owned",
+          "name": "林溪",
+          "level": 1,
+          "hp": 100,
+          "position": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+          },
+          "inventory": [],
+          "quests": {
+            "first_steps": "available",
+            "grove_guardian": "locked"
+          },
+          "sceneVersion": 1
+        }
+      }
+    },
+    {
+      "sequence": 21,
+      "at": "2026-11-26T03:07:12.650Z",
+      "direction": "client-to-server",
+      "client": "player-two",
+      "type": "scene.snapshot",
+      "payload": {}
+    },
+    {
+      "sequence": 22,
+      "at": "2026-11-26T03:07:12.651Z",
+      "direction": "server-to-client",
+      "client": "player-two",
+      "type": "scene.snapshot",
+      "payload": {
+        "scene": {
+          "id": "greenvale",
+          "name": "自有绿谷",
+          "version": 1,
+          "entities": [
+            {
+              "id": "iron_sword",
+              "name": "自有铁剑",
+              "kind": "weapon",
+              "scene": "greenvale"
+            },
+            {
+              "id": "health_herb",
+              "name": "自有草药",
+              "kind": "consumable",
+              "scene": "greenvale"
+            },
+            {
+              "id": "moon_stone",
+              "name": "月纹石",
+              "kind": "quest",
+              "scene": "greenvale"
+            }
+          ]
+        },
+        "character": {
+          "id": "d29ccbb5-c780-4736-ad35-1825b7516e0a",
+          "owner": "mage_owned",
+          "name": "星野",
+          "level": 1,
+          "hp": 100,
+          "position": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+          },
+          "inventory": [],
+          "quests": {
+            "first_steps": "available",
+            "grove_guardian": "locked"
+          },
+          "sceneVersion": 1
+        }
+      }
+    },
+    {
+      "sequence": 23,
+      "at": "2026-11-26T03:07:12.651Z",
+      "direction": "client-to-server",
+      "client": "player-one",
+      "type": "player.move",
+      "payload": {
+        "position": {
+          "x": 7,
+          "y": 0,
+          "z": -3
+        }
+      }
+    },
+    {
+      "sequence": 24,
+      "at": "2026-11-26T03:07:12.652Z",
+      "direction": "server-to-client",
+      "client": "player-one",
+      "type": "scene.entity_updated",
+      "payload": {
+        "character": {
+          "id": "6f8964b2-735e-4df8-b900-67947d0c226d",
+          "owner": "ranger_owned",
+          "name": "林溪",
+          "level": 1,
+          "hp": 100,
+          "position": {
+            "x": 7,
+            "y": 0,
+            "z": -3
+          },
+          "inventory": [],
+          "quests": {
+            "first_steps": "available",
+            "grove_guardian": "locked"
+          },
+          "sceneVersion": 2
+        }
+      }
+    },
+    {
+      "sequence": 25,
+      "at": "2026-11-26T03:07:12.652Z",
+      "direction": "server-to-client",
+      "client": "player-two",
+      "type": "scene.entity_updated",
+      "payload": {
+        "character": {
+          "id": "6f8964b2-735e-4df8-b900-67947d0c226d",
+          "owner": "ranger_owned",
+          "name": "林溪",
+          "level": 1,
+          "hp": 100,
+          "position": {
+            "x": 7,
+            "y": 0,
+            "z": -3
+          },
+          "inventory": [],
+          "quests": {
+            "first_steps": "available",
+            "grove_guardian": "locked"
+          },
+          "sceneVersion": 2
+        }
+      }
+    },
+    {
+      "sequence": 26,
+      "at": "2026-11-26T03:07:12.653Z",
+      "direction": "server-to-client",
+      "client": "player-one",
+      "type": "player.moved",
+      "payload": {
+        "position": {
+          "x": 7,
+          "y": 0,
+          "z": -3
+        }
+      }
+    },
+    {
+      "sequence": 27,
+      "at": "2026-11-26T03:07:12.653Z",
+      "direction": "client-to-server",
+      "client": "player-one",
+      "type": "quest.accept",
+      "payload": {
+        "questId": "first_steps"
+      }
+    },
+    {
+      "sequence": 28,
+      "at": "2026-11-26T03:07:12.654Z",
+      "direction": "server-to-client",
+      "client": "player-one",
+      "type": "scene.entity_updated",
+      "payload": {
+        "character": {
+          "id": "6f8964b2-735e-4df8-b900-67947d0c226d",
+          "owner": "ranger_owned",
+          "name": "林溪",
+          "level": 1,
+          "hp": 100,
+          "position": {
+            "x": 7,
+            "y": 0,
+            "z": -3
+          },
+          "inventory": [],
+          "quests": {
+            "first_steps": "active",
+            "grove_guardian": "locked"
+          },
+          "sceneVersion": 3
+        }
+      }
+    },
+    {
+      "sequence": 29,
+      "at": "2026-11-26T03:07:12.654Z",
+      "direction": "server-to-client",
+      "client": "player-two",
+      "type": "scene.entity_updated",
+      "payload": {
+        "character": {
+          "id": "6f8964b2-735e-4df8-b900-67947d0c226d",
+          "owner": "ranger_owned",
+          "name": "林溪",
+          "level": 1,
+          "hp": 100,
+          "position": {
+            "x": 7,
+            "y": 0,
+            "z": -3
+          },
+          "inventory": [],
+          "quests": {
+            "first_steps": "active",
+            "grove_guardian": "locked"
+          },
+          "sceneVersion": 3
+        }
+      }
+    },
+    {
+      "sequence": 30,
+      "at": "2026-11-26T03:07:12.654Z",
+      "direction": "server-to-client",
+      "client": "player-one",
+      "type": "quest.accepted",
+      "payload": {
+        "questId": "first_steps",
+        "status": "active",
+        "level": 1
+      }
+    },
+    {
+      "sequence": 31,
+      "at": "2026-11-26T03:07:12.654Z",
+      "direction": "client-to-server",
+      "client": "player-one",
+      "type": "inventory.pickup",
+      "payload": {
+        "itemId": "health_herb"
+      }
+    },
+    {
+      "sequence": 32,
+      "at": "2026-11-26T03:07:12.655Z",
+      "direction": "server-to-client",
+      "client": "player-one",
+      "type": "scene.entity_updated",
+      "payload": {
+        "character": {
+          "id": "6f8964b2-735e-4df8-b900-67947d0c226d",
+          "owner": "ranger_owned",
+          "name": "林溪",
+          "level": 1,
+          "hp": 100,
+          "position": {
+            "x": 7,
+            "y": 0,
+            "z": -3
+          },
+          "inventory": [
+            {
+              "itemId": "health_herb",
+              "quantity": 1
+            }
+          ],
+          "quests": {
+            "first_steps": "active",
+            "grove_guardian": "locked"
+          },
+          "sceneVersion": 4
+        }
+      }
+    },
+    {
+      "sequence": 33,
+      "at": "2026-11-26T03:07:12.655Z",
+      "direction": "server-to-client",
+      "client": "player-two",
+      "type": "scene.entity_updated",
+      "payload": {
+        "character": {
+          "id": "6f8964b2-735e-4df8-b900-67947d0c226d",
+          "owner": "ranger_owned",
+          "name": "林溪",
+          "level": 1,
+          "hp": 100,
+          "position": {
+            "x": 7,
+            "y": 0,
+            "z": -3
+          },
+          "inventory": [
+            {
+              "itemId": "health_herb",
+              "quantity": 1
+            }
+          ],
+          "quests": {
+            "first_steps": "active",
+            "grove_guardian": "locked"
+          },
+          "sceneVersion": 4
+        }
+      }
+    },
+    {
+      "sequence": 34,
+      "at": "2026-11-26T03:07:12.656Z",
+      "direction": "server-to-client",
+      "client": "player-one",
+      "type": "inventory.updated",
+      "payload": {
+        "inventory": [
+          {
+            "itemId": "health_herb",
+            "quantity": 1
+          }
+        ],
+        "sceneVersion": 4
+      }
+    },
+    {
+      "sequence": 35,
+      "at": "2026-11-26T03:07:12.656Z",
+      "direction": "client-to-server",
+      "client": "player-one",
+      "type": "inventory.pickup",
+      "payload": {
+        "itemId": "moon_stone"
+      }
+    },
+    {
+      "sequence": 36,
+      "at": "2026-11-26T03:07:12.657Z",
+      "direction": "server-to-client",
+      "client": "player-one",
+      "type": "scene.entity_updated",
+      "payload": {
+        "character": {
+          "id": "6f8964b2-735e-4df8-b900-67947d0c226d",
+          "owner": "ranger_owned",
+          "name": "林溪",
+          "level": 1,
+          "hp": 100,
+          "position": {
+            "x": 7,
+            "y": 0,
+            "z": -3
+          },
+          "inventory": [
+            {
+              "itemId": "health_herb",
+              "quantity": 1
+            },
+            {
+              "itemId": "moon_stone",
+              "quantity": 1
+            }
+          ],
+          "quests": {
+            "first_steps": "active",
+            "grove_guardian": "locked"
+          },
+          "sceneVersion": 5
+        }
+      }
+    },
+    {
+      "sequence": 37,
+      "at": "2026-11-26T03:07:12.657Z",
+      "direction": "server-to-client",
+      "client": "player-one",
+      "type": "inventory.updated",
+      "payload": {
+        "inventory": [
+          {
+            "itemId": "health_herb",
+            "quantity": 1
+          },
+          {
+            "itemId": "moon_stone",
+            "quantity": 1
+          }
+        ],
+        "sceneVersion": 5
+      }
+    },
+    {
+      "sequence": 38,
+      "at": "2026-11-26T03:07:12.657Z",
+      "direction": "client-to-server",
+      "client": "player-two",
+      "type": "inventory.pickup",
+      "payload": {
+        "itemId": "iron_sword"
+      }
+    },
+    {
+      "sequence": 39,
+      "at": "2026-11-26T03:07:12.657Z",
+      "direction": "server-to-client",
+      "client": "player-two",
+      "type": "scene.entity_updated",
+      "payload": {
+        "character": {
+          "id": "6f8964b2-735e-4df8-b900-67947d0c226d",
+          "owner": "ranger_owned",
+          "name": "林溪",
+          "level": 1,
+          "hp": 100,
+          "position": {
+            "x": 7,
+            "y": 0,
+            "z": -3
+          },
+          "inventory": [
+            {
+              "itemId": "health_herb",
+              "quantity": 1
+            },
+            {
+              "itemId": "moon_stone",
+              "quantity": 1
+            }
+          ],
+          "quests": {
+            "first_steps": "active",
+            "grove_guardian": "locked"
+          },
+          "sceneVersion": 5
+        }
+      }
+    },
+    {
+      "sequence": 40,
+      "at": "2026-11-26T03:07:12.658Z",
+      "direction": "server-to-client",
+      "client": "player-one",
+      "type": "scene.entity_updated",
+      "payload": {
+        "character": {
+          "id": "d29ccbb5-c780-4736-ad35-1825b7516e0a",
+          "owner": "mage_owned",
+          "name": "星野",
+          "level": 1,
+          "hp": 100,
+          "position": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+          },
+          "inventory": [
+            {
+              "itemId": "iron_sword",
+              "quantity": 1
+            }
+          ],
+          "quests": {
+            "first_steps": "available",
+            "grove_guardian": "locked"
+          },
+          "sceneVersion": 2
+        }
+      }
+    },
+    {
+      "sequence": 41,
+      "at": "2026-11-26T03:07:12.658Z",
+      "direction": "server-to-client",
+      "client": "player-two",
+      "type": "scene.entity_updated",
+      "payload": {
+        "character": {
+          "id": "d29ccbb5-c780-4736-ad35-1825b7516e0a",
+          "owner": "mage_owned",
+          "name": "星野",
+          "level": 1,
+          "hp": 100,
+          "position": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+          },
+          "inventory": [
+            {
+              "itemId": "iron_sword",
+              "quantity": 1
+            }
+          ],
+          "quests": {
+            "first_steps": "available",
+            "grove_guardian": "locked"
+          },
+          "sceneVersion": 2
+        }
+      }
+    },
+    {
+      "sequence": 42,
+      "at": "2026-11-26T03:07:12.658Z",
+      "direction": "server-to-client",
+      "client": "player-two",
+      "type": "inventory.updated",
+      "payload": {
+        "inventory": [
+          {
+            "itemId": "iron_sword",
+            "quantity": 1
+          }
+        ],
+        "sceneVersion": 2
+      }
+    },
+    {
+      "sequence": 43,
+      "at": "2026-11-26T03:07:12.658Z",
+      "direction": "client-to-server",
+      "client": "player-two",
+      "type": "scene.snapshot",
+      "payload": {}
+    },
+    {
+      "sequence": 44,
+      "at": "2026-11-26T03:07:12.659Z",
+      "direction": "server-to-client",
+      "client": "player-two",
+      "type": "scene.snapshot",
+      "payload": {
+        "scene": {
+          "id": "greenvale",
+          "name": "自有绿谷",
+          "version": 2,
+          "entities": [
+            {
+              "id": "iron_sword",
+              "name": "自有铁剑",
+              "kind": "weapon",
+              "scene": "greenvale",
+              "owner": "mage_owned",
+              "characterId": "d29ccbb5-c780-4736-ad35-1825b7516e0a",
+              "pickedAt": 2
+            },
+            {
+              "id": "health_herb",
+              "name": "自有草药",
+              "kind": "consumable",
+              "scene": "greenvale",
+              "owner": "ranger_owned",
+              "characterId": "6f8964b2-735e-4df8-b900-67947d0c226d",
+              "pickedAt": 4
+            },
+            {
+              "id": "moon_stone",
+              "name": "月纹石",
+              "kind": "quest",
+              "scene": "greenvale",
+              "owner": "ranger_owned",
+              "characterId": "6f8964b2-735e-4df8-b900-67947d0c226d",
+              "pickedAt": 5
+            }
+          ]
+        },
+        "character": {
+          "id": "d29ccbb5-c780-4736-ad35-1825b7516e0a",
+          "owner": "mage_owned",
+          "name": "星野",
+          "level": 1,
+          "hp": 100,
+          "position": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+          },
+          "inventory": [
+            {
+              "itemId": "iron_sword",
+              "quantity": 1
+            }
+          ],
+          "quests": {
+            "first_steps": "available",
+            "grove_guardian": "locked"
+          },
+          "sceneVersion": 2
+        }
+      }
+    },
+    {
+      "sequence": 45,
+      "at": "2026-11-26T03:07:12.659Z",
+      "direction": "client-to-server",
+      "client": "player-one",
+      "type": "quest.complete",
+      "payload": {
+        "questId": "first_steps"
+      }
+    },
+    {
+      "sequence": 46,
+      "at": "2026-11-26T03:07:12.660Z",
+      "direction": "server-to-client",
+      "client": "player-one",
+      "type": "scene.entity_updated",
+      "payload": {
+        "character": {
+          "id": "6f8964b2-735e-4df8-b900-67947d0c226d",
+          "owner": "ranger_owned",
+          "name": "林溪",
+          "level": 2,
+          "hp": 100,
+          "position": {
+            "x": 7,
+            "y": 0,
+            "z": -3
+          },
+          "inventory": [
+            {
+              "itemId": "health_herb",
+              "quantity": 1
+            },
+            {
+              "itemId": "moon_stone",
+              "quantity": 1
+            }
+          ],
+          "quests": {
+            "first_steps": "completed",
+            "grove_guardian": "locked"
+          },
+          "sceneVersion": 6
+        }
+      }
+    },
+    {
+      "sequence": 47,
+      "at": "2026-11-26T03:07:12.660Z",
+      "direction": "server-to-client",
+      "client": "player-one",
+      "type": "quest.completed",
+      "payload": {
+        "questId": "first_steps",
+        "status": "completed",
+        "level": 2
+      }
+    },
+    {
+      "sequence": 48,
+      "at": "2026-11-26T03:07:12.661Z",
+      "direction": "server-to-client",
+      "client": "player-two",
+      "type": "scene.entity_updated",
+      "payload": {
+        "character": {
+          "id": "6f8964b2-735e-4df8-b900-67947d0c226d",
+          "owner": "ranger_owned",
+          "name": "林溪",
+          "level": 2,
+          "hp": 100,
+          "position": {
+            "x": 7,
+            "y": 0,
+            "z": -3
+          },
+          "inventory": [
+            {
+              "itemId": "health_herb",
+              "quantity": 1
+            },
+            {
+              "itemId": "moon_stone",
+              "quantity": 1
+            }
+          ],
+          "quests": {
+            "first_steps": "completed",
+            "grove_guardian": "locked"
+          },
+          "sceneVersion": 6
+        }
+      }
+    },
+    {
+      "sequence": 49,
+      "at": "2026-11-26T03:07:12.661Z",
+      "direction": "client-to-server",
+      "client": "player-one",
+      "type": "inventory.drop",
+      "payload": {
+        "itemId": "health_herb"
+      }
+    },
+    {
+      "sequence": 50,
+      "at": "2026-11-26T03:07:12.661Z",
+      "direction": "server-to-client",
+      "client": "player-one",
+      "type": "scene.entity_updated",
+      "payload": {
+        "character": {
+          "id": "6f8964b2-735e-4df8-b900-67947d0c226d",
+          "owner": "ranger_owned",
+          "name": "林溪",
+          "level": 2,
+          "hp": 100,
+          "position": {
+            "x": 7,
+            "y": 0,
+            "z": -3
+          },
+          "inventory": [
+            {
+              "itemId": "moon_stone",
+              "quantity": 1
+            }
+          ],
+          "quests": {
+            "first_steps": "completed",
+            "grove_guardian": "locked"
+          },
+          "sceneVersion": 7
+        }
+      }
+    },
+    {
+      "sequence": 51,
+      "at": "2026-11-26T03:07:12.662Z",
+      "direction": "server-to-client",
+      "client": "player-two",
+      "type": "scene.entity_updated",
+      "payload": {
+        "character": {
+          "id": "6f8964b2-735e-4df8-b900-67947d0c226d",
+          "owner": "ranger_owned",
+          "name": "林溪",
+          "level": 2,
+          "hp": 100,
+          "position": {
+            "x": 7,
+            "y": 0,
+            "z": -3
+          },
+          "inventory": [
+            {
+              "itemId": "moon_stone",
+              "quantity": 1
+            }
+          ],
+          "quests": {
+            "first_steps": "completed",
+            "grove_guardian": "locked"
+          },
+          "sceneVersion": 7
+        }
+      }
+    },
+    {
+      "sequence": 52,
+      "at": "2026-11-26T03:07:12.662Z",
+      "direction": "server-to-client",
+      "client": "player-one",
+      "type": "inventory.updated",
+      "payload": {
+        "inventory": [
+          {
+            "itemId": "moon_stone",
+            "quantity": 1
+          }
+        ],
+        "sceneVersion": 7
+      }
+    },
+    {
+      "sequence": 53,
+      "at": "2026-11-26T03:07:12.662Z",
+      "direction": "client-to-server",
+      "client": "player-one",
+      "type": "inventory.pickup",
+      "payload": {
+        "itemId": "health_herb"
+      }
+    },
+    {
+      "sequence": 54,
+      "at": "2026-11-26T03:07:12.662Z",
+      "direction": "server-to-client",
+      "client": "player-one",
+      "type": "scene.entity_updated",
+      "payload": {
+        "character": {
+          "id": "6f8964b2-735e-4df8-b900-67947d0c226d",
+          "owner": "ranger_owned",
+          "name": "林溪",
+          "level": 2,
+          "hp": 100,
+          "position": {
+            "x": 7,
+            "y": 0,
+            "z": -3
+          },
+          "inventory": [
+            {
+              "itemId": "moon_stone",
+              "quantity": 1
+            },
+            {
+              "itemId": "health_herb",
+              "quantity": 1
+            }
+          ],
+          "quests": {
+            "first_steps": "completed",
+            "grove_guardian": "locked"
+          },
+          "sceneVersion": 8
+        }
+      }
+    },
+    {
+      "sequence": 55,
+      "at": "2026-11-26T03:07:12.663Z",
+      "direction": "server-to-client",
+      "client": "player-one",
+      "type": "inventory.updated",
+      "payload": {
+        "inventory": [
+          {
+            "itemId": "moon_stone",
+            "quantity": 1
+          },
+          {
+            "itemId": "health_herb",
+            "quantity": 1
+          }
+        ],
+        "sceneVersion": 8
+      }
+    },
+    {
+      "sequence": 56,
+      "at": "2026-11-26T03:07:12.663Z",
+      "direction": "client-to-server",
+      "client": "player-one",
+      "type": "inventory.use",
+      "payload": {
+        "itemId": "health_herb"
+      }
+    },
+    {
+      "sequence": 57,
+      "at": "2026-11-26T03:07:12.663Z",
+      "direction": "server-to-client",
+      "client": "player-two",
+      "type": "scene.entity_updated",
+      "payload": {
+        "character": {
+          "id": "6f8964b2-735e-4df8-b900-67947d0c226d",
+          "owner": "ranger_owned",
+          "name": "林溪",
+          "level": 2,
+          "hp": 100,
+          "position": {
+            "x": 7,
+            "y": 0,
+            "z": -3
+          },
+          "inventory": [
+            {
+              "itemId": "moon_stone",
+              "quantity": 1
+            },
+            {
+              "itemId": "health_herb",
+              "quantity": 1
+            }
+          ],
+          "quests": {
+            "first_steps": "completed",
+            "grove_guardian": "locked"
+          },
+          "sceneVersion": 8
+        }
+      }
+    },
+    {
+      "sequence": 58,
+      "at": "2026-11-26T03:07:12.663Z",
+      "direction": "server-to-client",
+      "client": "player-one",
+      "type": "scene.entity_updated",
+      "payload": {
+        "character": {
+          "id": "6f8964b2-735e-4df8-b900-67947d0c226d",
+          "owner": "ranger_owned",
+          "name": "林溪",
+          "level": 2,
+          "hp": 100,
+          "position": {
+            "x": 7,
+            "y": 0,
+            "z": -3
+          },
+          "inventory": [
+            {
+              "itemId": "moon_stone",
+              "quantity": 1
+            }
+          ],
+          "quests": {
+            "first_steps": "completed",
+            "grove_guardian": "locked"
+          },
+          "sceneVersion": 9
+        }
+      }
+    },
+    {
+      "sequence": 59,
+      "at": "2026-11-26T03:07:12.663Z",
+      "direction": "server-to-client",
+      "client": "player-two",
+      "type": "scene.entity_updated",
+      "payload": {
+        "character": {
+          "id": "6f8964b2-735e-4df8-b900-67947d0c226d",
+          "owner": "ranger_owned",
+          "name": "林溪",
+          "level": 2,
+          "hp": 100,
+          "position": {
+            "x": 7,
+            "y": 0,
+            "z": -3
+          },
+          "inventory": [
+            {
+              "itemId": "moon_stone",
+              "quantity": 1
+            }
+          ],
+          "quests": {
+            "first_steps": "completed",
+            "grove_guardian": "locked"
+          },
+          "sceneVersion": 9
+        }
+      }
+    },
+    {
+      "sequence": 60,
+      "at": "2026-11-26T03:07:12.664Z",
+      "direction": "server-to-client",
+      "client": "player-one",
+      "type": "inventory.used",
+      "payload": {
+        "itemId": "health_herb",
+        "hp": 100,
+        "inventory": [
+          {
+            "itemId": "moon_stone",
+            "quantity": 1
+          }
+        ]
+      }
+    },
+    {
+      "sequence": 61,
+      "at": "2026-11-26T03:07:12.664Z",
+      "direction": "client-to-server",
+      "client": "player-one",
+      "type": "player.move",
+      "payload": {
+        "position": {
+          "x": 8,
+          "y": 0,
+          "z": -3
+        }
+      }
+    },
+    {
+      "sequence": 62,
+      "at": "2026-11-26T03:07:12.664Z",
+      "direction": "server-to-client",
+      "client": "player-one",
+      "type": "scene.entity_updated",
+      "payload": {
+        "character": {
+          "id": "6f8964b2-735e-4df8-b900-67947d0c226d",
+          "owner": "ranger_owned",
+          "name": "林溪",
+          "level": 2,
+          "hp": 100,
+          "position": {
+            "x": 8,
+            "y": 0,
+            "z": -3
+          },
+          "inventory": [
+            {
+              "itemId": "moon_stone",
+              "quantity": 1
+            }
+          ],
+          "quests": {
+            "first_steps": "completed",
+            "grove_guardian": "locked"
+          },
+          "sceneVersion": 10
+        }
+      }
+    },
+    {
+      "sequence": 63,
+      "at": "2026-11-26T03:07:12.665Z",
+      "direction": "server-to-client",
+      "client": "player-two",
+      "type": "scene.entity_updated",
+      "payload": {
+        "character": {
+          "id": "6f8964b2-735e-4df8-b900-67947d0c226d",
+          "owner": "ranger_owned",
+          "name": "林溪",
+          "level": 2,
+          "hp": 100,
+          "position": {
+            "x": 8,
+            "y": 0,
+            "z": -3
+          },
+          "inventory": [
+            {
+              "itemId": "moon_stone",
+              "quantity": 1
+            }
+          ],
+          "quests": {
+            "first_steps": "completed",
+            "grove_guardian": "locked"
+          },
+          "sceneVersion": 10
+        }
+      }
+    },
+    {
+      "sequence": 64,
+      "at": "2026-11-26T03:07:12.665Z",
+      "direction": "server-to-client",
+      "client": "player-one",
+      "type": "player.moved",
+      "payload": {
+        "position": {
+          "x": 8,
+          "y": 0,
+          "z": -3
+        }
+      }
+    },
+    {
+      "sequence": 65,
+      "at": "2026-11-26T03:07:12.665Z",
+      "direction": "client-to-server",
+      "client": "player-two",
+      "type": "player.move",
+      "payload": {
+        "position": {
+          "x": -5,
+          "y": 0,
+          "z": 4
+        }
+      }
+    },
+    {
+      "sequence": 66,
+      "at": "2026-11-26T03:07:12.665Z",
+      "direction": "server-to-client",
+      "client": "player-one",
+      "type": "scene.entity_updated",
+      "payload": {
+        "character": {
+          "id": "d29ccbb5-c780-4736-ad35-1825b7516e0a",
+          "owner": "mage_owned",
+          "name": "星野",
+          "level": 1,
+          "hp": 100,
+          "position": {
+            "x": -5,
+            "y": 0,
+            "z": 4
+          },
+          "inventory": [
+            {
+              "itemId": "iron_sword",
+              "quantity": 1
+            }
+          ],
+          "quests": {
+            "first_steps": "available",
+            "grove_guardian": "locked"
+          },
+          "sceneVersion": 3
+        }
+      }
+    },
+    {
+      "sequence": 67,
+      "at": "2026-11-26T03:07:12.666Z",
+      "direction": "server-to-client",
+      "client": "player-two",
+      "type": "scene.entity_updated",
+      "payload": {
+        "character": {
+          "id": "d29ccbb5-c780-4736-ad35-1825b7516e0a",
+          "owner": "mage_owned",
+          "name": "星野",
+          "level": 1,
+          "hp": 100,
+          "position": {
+            "x": -5,
+            "y": 0,
+            "z": 4
+          },
+          "inventory": [
+            {
+              "itemId": "iron_sword",
+              "quantity": 1
+            }
+          ],
+          "quests": {
+            "first_steps": "available",
+            "grove_guardian": "locked"
+          },
+          "sceneVersion": 3
+        }
+      }
+    },
+    {
+      "sequence": 68,
+      "at": "2026-11-26T03:07:12.666Z",
+      "direction": "server-to-client",
+      "client": "player-two",
+      "type": "player.moved",
+      "payload": {
+        "position": {
+          "x": -5,
+          "y": 0,
+          "z": 4
+        }
+      }
+    },
+    {
+      "sequence": 69,
+      "at": "2026-11-26T03:07:12.666Z",
+      "direction": "client-to-server",
+      "client": "player-one",
+      "type": "save.request",
+      "payload": {}
+    },
+    {
+      "sequence": 70,
+      "at": "2026-11-26T03:07:12.877Z",
+      "direction": "server-to-client",
+      "client": "player-one",
+      "type": "save.completed",
+      "payload": {
+        "characterId": "6f8964b2-735e-4df8-b900-67947d0c226d",
+        "savedAt": "2026-11-26T03:07:12.869Z",
+        "sceneVersion": 10
+      }
+    },
+    {
+      "sequence": 71,
+      "at": "2026-11-26T03:07:12.877Z",
+      "direction": "client-to-server",
+      "client": "player-one",
+      "type": "character.list",
+      "payload": {}
+    },
+    {
+      "sequence": 72,
+      "at": "2026-11-26T03:07:12.878Z",
+      "direction": "server-to-client",
+      "client": "player-one",
+      "type": "character.list",
+      "payload": {
+        "characters": [
+          {
+            "id": "6f8964b2-735e-4df8-b900-67947d0c226d",
+            "owner": "ranger_owned",
+            "name": "林溪",
+            "level": 2,
+            "hp": 100,
+            "position": {
+              "x": 8,
+              "y": 0,
+              "z": -3
+            },
+            "inventory": [
+              {
+                "itemId": "moon_stone",
+                "quantity": 1
+              }
+            ],
+            "quests": {
+              "first_steps": "completed",
+              "grove_guardian": "locked"
+            },
+            "sceneVersion": 10
+          }
+        ]
+      }
+    },
+    {
+      "sequence": 73,
+      "at": "2026-11-26T03:07:12.887Z",
+      "direction": "server-to-client",
+      "client": "player-one-resumed",
+      "type": "welcome",
+      "payload": {
+        "game": "owned-rpg",
+        "version": "1.0.0",
+        "scene": "greenvale",
+        "heartbeatMs": 30000
+      }
+    },
+    {
+      "sequence": 74,
+      "at": "2026-11-26T03:07:12.887Z",
+      "direction": "client-to-server",
+      "client": "player-one-resumed",
+      "type": "auth.resume",
+      "payload": {
+        "token": "3dafbef8-c370-44ad-a620-4331594691d6",
+        "username": "ranger_owned"
+      }
+    },
+    {
+      "sequence": 75,
+      "at": "2026-11-26T03:07:12.888Z",
+      "direction": "server-to-client",
+      "client": "player-one-resumed",
+      "type": "auth.resumed",
+      "payload": {
+        "account": {
+          "username": "ranger_owned",
+          "characterIds": [
+            "6f8964b2-735e-4df8-b900-67947d0c226d"
+          ]
+        }
+      }
+    },
+    {
+      "sequence": 76,
+      "at": "2026-11-26T03:07:12.888Z",
+      "direction": "client-to-server",
+      "client": "player-one-resumed",
+      "type": "scene.enter",
+      "payload": {
+        "characterId": "6f8964b2-735e-4df8-b900-67947d0c226d"
+      }
+    },
+    {
+      "sequence": 77,
+      "at": "2026-11-26T03:07:12.889Z",
+      "direction": "server-to-client",
+      "client": "player-one-resumed",
+      "type": "scene.entered",
+      "payload": {
+        "character": {
+          "id": "6f8964b2-735e-4df8-b900-67947d0c226d",
+          "owner": "ranger_owned",
+          "name": "林溪",
+          "level": 2,
+          "hp": 100,
+          "position": {
+            "x": 8,
+            "y": 0,
+            "z": -3
+          },
+          "inventory": [
+            {
+              "itemId": "moon_stone",
+              "quantity": 1
+            }
+          ],
+          "quests": {
+            "first_steps": "completed",
+            "grove_guardian": "locked"
+          },
+          "sceneVersion": 10
+        },
+        "scene": {
+          "id": "greenvale",
+          "name": "自有绿谷",
+          "version": 10,
+          "entities": [
+            {
+              "id": "iron_sword",
+              "name": "自有铁剑",
+              "kind": "weapon",
+              "scene": "greenvale",
+              "owner": "mage_owned",
+              "characterId": "d29ccbb5-c780-4736-ad35-1825b7516e0a",
+              "pickedAt": 2
+            },
+            {
+              "id": "health_herb",
+              "name": "自有草药",
+              "kind": "consumable",
+              "scene": "greenvale",
+              "owner": "ranger_owned",
+              "characterId": "6f8964b2-735e-4df8-b900-67947d0c226d",
+              "pickedAt": 8
+            },
+            {
+              "id": "moon_stone",
+              "name": "月纹石",
+              "kind": "quest",
+              "scene": "greenvale",
+              "owner": "ranger_owned",
+              "characterId": "6f8964b2-735e-4df8-b900-67947d0c226d",
+              "pickedAt": 5
+            }
+          ]
+        }
+      }
+    },
+    {
+      "sequence": 78,
+      "at": "2026-11-26T03:07:13.315Z",
+      "direction": "server-to-client",
+      "client": "restart-check",
+      "type": "welcome",
+      "payload": {
+        "game": "owned-rpg",
+        "version": "1.0.0",
+        "scene": "greenvale",
+        "heartbeatMs": 30000
+      }
+    },
+    {
+      "sequence": 79,
+      "at": "2026-11-26T03:07:13.315Z",
+      "direction": "client-to-server",
+      "client": "restart-check",
+      "type": "auth.login",
+      "payload": {
+        "username": "ranger_owned",
+        "password": "owned-rpg-password"
+      }
+    },
+    {
+      "sequence": 80,
+      "at": "2026-11-26T03:07:13.319Z",
+      "direction": "server-to-client",
+      "client": "restart-check",
+      "type": "auth.ok",
+      "payload": {
+        "token": "9a63d6f3-80a5-4871-9a68-c8e1d11afce2",
+        "account": {
+          "username": "ranger_owned",
+          "characterIds": [
+            "6f8964b2-735e-4df8-b900-67947d0c226d"
+          ]
+        }
+      }
+    },
+    {
+      "sequence": 81,
+      "at": "2026-11-26T03:07:13.319Z",
+      "direction": "client-to-server",
+      "client": "restart-check",
+      "type": "character.list",
+      "payload": {}
+    },
+    {
+      "sequence": 82,
+      "at": "2026-11-26T03:07:13.321Z",
+      "direction": "server-to-client",
+      "client": "restart-check",
+      "type": "character.list",
+      "payload": {
+        "characters": [
+          {
+            "id": "6f8964b2-735e-4df8-b900-67947d0c226d",
+            "owner": "ranger_owned",
+            "name": "林溪",
+            "level": 2,
+            "hp": 100,
+            "position": {
+              "x": 8,
+              "y": 0,
+              "z": -3
+            },
+            "inventory": [
+              {
+                "itemId": "moon_stone",
+                "quantity": 1
+              }
+            ],
+            "quests": {
+              "first_steps": "completed",
+              "grove_guardian": "locked"
+            },
+            "sceneVersion": 10
+          }
+        ]
+      }
+    }
+  ],
+  "verification": {
+    "players": 2,
+    "sharedScene": "greenvale",
+    "characters": [
+      "林溪",
+      "星野"
+    ],
+    "playerOneInventory": [
+      {
+        "itemId": "moon_stone",
+        "quantity": 1
+      }
+    ],
+    "playerTwoInventory": [
+      {
+        "itemId": "iron_sword",
+        "quantity": 1
+      }
+    ],
+    "quest": {
+      "id": "first_steps",
+      "status": "completed"
+    },
+    "level": 2,
+    "isolated": true,
+    "reconnected": true,
+    "savedAt": "2026-11-26T03:07:12.869Z",
+    "positions": [
+      {
+        "x": 8,
+        "y": 0,
+        "z": -3
+      },
+      {
+        "x": -5,
+        "y": 0,
+        "z": 4
+      }
+    ],
+    "eventsObserved": 51,
+    "restartRecovered": {
+      "characterId": "6f8964b2-735e-4df8-b900-67947d0c226d",
+      "quest": "completed",
+      "inventory": [
+        {
+          "itemId": "moon_stone",
+          "quantity": 1
+        }
+      ]
+    }
+  }
+}

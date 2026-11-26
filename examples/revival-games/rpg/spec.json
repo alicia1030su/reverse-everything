@@ -1,0 +1,34 @@
+{
+  "id": "owned-rpg",
+  "name": "自有绿谷纪行",
+  "kind": "rpg",
+  "version": "1.0.0",
+  "modules": ["auth", "characters", "shared-scene", "inventory", "items", "quests", "save", "restart-recovery"],
+  "maps": [
+    {
+      "id": "greenvale",
+      "name": "自有绿谷",
+      "version": 1,
+      "items": [
+        { "id": "iron_sword", "name": "自有铁剑", "kind": "weapon" },
+        { "id": "health_herb", "name": "自有草药", "kind": "consumable" },
+        { "id": "moon_stone", "name": "月纹石", "kind": "quest" }
+      ]
+    }
+  ],
+  "rules": {
+    "transport": "websocket-json",
+    "messageEnvelope": { "type": "string", "payload": "object", "requestId": "optional string" },
+    "charactersPerAccount": 3,
+    "inventoryCapacity": 12,
+    "startingHp": 100,
+    "sharedScene": "greenvale",
+    "inventoryIsPerCharacter": true,
+    "quests": [
+      { "id": "first_steps", "initial": "available", "requiredItem": "moon_stone", "rewardLevels": 1 },
+      { "id": "grove_guardian", "initial": "locked" }
+    ]
+  },
+  "ports": { "default": 3902, "capture": 0 },
+  "evidence": ["captured-trace.json"]
+}

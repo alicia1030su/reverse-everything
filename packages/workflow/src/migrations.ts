@@ -142,6 +142,31 @@ const SCHEMA_4 = `
   CREATE INDEX IF NOT EXISTS idx_deletion_status ON project_deletion_intents(status,created_at);
 `;
 
+const SCHEMA_5 = `
+  CREATE TABLE IF NOT EXISTS game_profiles (
+    id TEXT PRIMARY KEY, project_id TEXT NOT NULL UNIQUE REFERENCES projects(id) ON DELETE CASCADE,
+    name TEXT NOT NULL, genre TEXT NOT NULL, publisher TEXT NOT NULL, region TEXT NOT NULL,
+    client_version TEXT NOT NULL, shutdown_date TEXT NOT NULL, engine TEXT NOT NULL,
+    source_text TEXT NOT NULL, authorization_scope TEXT NOT NULL, known_protocols_json TEXT NOT NULL,
+    retained_materials_json TEXT NOT NULL, existing_implementations_json TEXT NOT NULL,
+    level TEXT NOT NULL, unrecovered_features_json TEXT NOT NULL, root_path TEXT,
+    created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+  CREATE TABLE IF NOT EXISTS game_files (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    path TEXT NOT NULL, size INTEGER NOT NULL, mtime_ms REAL NOT NULL, ctime_ms REAL,
+    dev TEXT, ino TEXT, sha256 TEXT NOT NULL,
+    kind TEXT NOT NULL, scanned_at TEXT NOT NULL, UNIQUE(project_id,path));
+  CREATE TABLE IF NOT EXISTS game_specs (
+    id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    spec_json TEXT NOT NULL, evidence_status TEXT NOT NULL, created_at TEXT NOT NULL);
+  CREATE TABLE IF NOT EXISTS game_rebuilds (
+    id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    spec_id TEXT NOT NULL REFERENCES game_specs(id), status TEXT NOT NULL, level TEXT NOT NULL,
+    output_path TEXT, error TEXT, validation_json TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+  CREATE INDEX IF NOT EXISTS idx_game_files_project ON game_files(project_id);
+  CREATE INDEX IF NOT EXISTS idx_game_rebuilds_project ON game_rebuilds(project_id,created_at);
+`;
+
 const REQUIRED_SCHEMA_4: Record<string, readonly string[]> = {
   ...REQUIRED_SCHEMA_3,
   console_profiles: ['id','project_id','manufacturer','series','model','hardware_version','system_version','user_info_json','official_interfaces_json','authorized_environments_json','firmware_samples_json','known_capabilities_json','actual_access_json','evidence_json','level','limitations_json','profile_json','created_at','updated_at'],
@@ -150,6 +175,14 @@ const REQUIRED_SCHEMA_4: Record<string, readonly string[]> = {
   tool_installations: ['id','tool_name','version','source_url','expected_sha256','actual_sha256','install_dir','status','progress_json','created_at','updated_at'],
   demo_runs: ['id','demo_name','status','steps_json','result_json','started_at','ended_at'],
   project_deletion_intents: ['id','project_id','task_ids_json','paths_json','status','created_at','updated_at']
+};
+
+const REQUIRED_SCHEMA_5: Record<string, readonly string[]> = {
+  ...REQUIRED_SCHEMA_4,
+  game_profiles: ['id','project_id','name','genre','publisher','region','client_version','shutdown_date','engine','source_text','authorization_scope','known_protocols_json','retained_materials_json','existing_implementations_json','level','unrecovered_features_json','root_path','created_at','updated_at'],
+  game_files: ['id','project_id','path','size','mtime_ms','ctime_ms','dev','ino','sha256','kind','scanned_at'],
+  game_specs: ['id','project_id','spec_json','evidence_status','created_at'],
+  game_rebuilds: ['id','project_id','spec_id','status','level','output_path','error','validation_json','created_at','updated_at']
 };
 
 function addColumnIfMissing(raw: DatabaseSync, table: string, column: string, definition: string): void {
@@ -189,6 +222,22 @@ export function assertSchema4(raw: DatabaseSync): void {
   }
 }
 
+export function assertSchema5(raw: DatabaseSync): void {
+  for (const [table, requiredColumns] of Object.entries(REQUIRED_SCHEMA_5)) {
+    const present = raw.prepare("SELECT type FROM sqlite_master WHERE name=?").get(table) as {type:string}|undefined;
+    if (!present || present.type !== 'table') throw new Error(`Database schema 5 integrity check failed: missing table ${table}`);
+    const columns = new Set((raw.prepare(`PRAGMA table_info("${table}")`).all() as {name:string}[]).map(column => column.name));
+    const missing = requiredColumns.filter(column => !columns.has(column));
+    if (missing.length) throw new Error(`Database schema 5 integrity check failed: missing column(s) ${table}.${missing.join(',')}`);
+  }
+  for (const [index, requiredColumns] of Object.entries(REQUIRED_INDEXES_3)) {
+    const present = raw.prepare("SELECT type FROM sqlite_master WHERE name=?").get(index) as {type:string}|undefined;
+    if (!present || present.type !== 'index') throw new Error(`Database schema 5 integrity check failed: missing index ${index}`);
+    const columns = (raw.prepare(`PRAGMA index_info("${index}")`).all() as {name:string|null}[]).map(column => column.name ?? '');
+    if (columns.join(',') !== requiredColumns.join(',')) throw new Error(`Database schema 5 integrity check failed: invalid index ${index}`);
+  }
+}
+
 export interface MigrationResult { previousVersion: number; version: number; backupPath?: string; applied: number[] }
 function migrationFailure(backupPath: string | undefined, error: unknown): Error {
   const code = typeof error === 'object' && error !== null && 'errcode' in error ? String(error.errcode) : '';
@@ -205,9 +254,10 @@ export function migrateDatabase(raw: DatabaseSync, file: string): MigrationResul
   const previousVersion = Number((raw.prepare('PRAGMA user_version').get() as {user_version:number}).user_version);
   if (previousVersion > SCHEMA_VERSION) throw new Error(`Database schema ${previousVersion} is newer than supported schema ${SCHEMA_VERSION}`);
   if (previousVersion === SCHEMA_VERSION) {
-    addColumnIfMissing(raw, 'analysis_plans', 'upload_id', 'TEXT');
-    addColumnIfMissing(raw, 'analysis_plans', 'upload_sha256', 'TEXT');
-    assertSchema4(raw);
+    addColumnIfMissing(raw, 'game_files', 'ctime_ms', 'REAL');
+    addColumnIfMissing(raw, 'game_files', 'dev', 'TEXT');
+    addColumnIfMissing(raw, 'game_files', 'ino', 'TEXT');
+    assertSchema5(raw);
     return {previousVersion,version:SCHEMA_VERSION,applied:[]};
   }
   let backupPath: string | undefined;
@@ -221,8 +271,8 @@ export function migrateDatabase(raw: DatabaseSync, file: string): MigrationResul
   try {
     raw.exec('BEGIN IMMEDIATE');
     const actualVersion=Number((raw.prepare('PRAGMA user_version').get() as {user_version:number}).user_version);
-    if(actualVersion>=SCHEMA_VERSION){
-      assertSchema4(raw);
+    if (actualVersion >= SCHEMA_VERSION) {
+      assertSchema5(raw);
       raw.exec('COMMIT');return {previousVersion,version:SCHEMA_VERSION,...(backupPath?{backupPath}:{}),applied:[]};
     }
     raw.exec(BASE_SCHEMA);
@@ -267,7 +317,17 @@ export function migrateDatabase(raw: DatabaseSync, file: string): MigrationResul
       raw.prepare('INSERT OR REPLACE INTO schema_migrations (version,applied_at,backup_path) VALUES (?,?,?)').run(4,new Date().toISOString(),backupPath??null);
       applied.push(4);
     }
-    assertSchema4(raw);
+    if (actualVersion < 5) {
+      addColumnIfMissing(raw, 'analysis_plans', 'upload_id', 'TEXT');
+      addColumnIfMissing(raw, 'analysis_plans', 'upload_sha256', 'TEXT');
+      raw.exec(SCHEMA_5);
+      addColumnIfMissing(raw, 'game_files', 'ctime_ms', 'REAL');
+      addColumnIfMissing(raw, 'game_files', 'dev', 'TEXT');
+      addColumnIfMissing(raw, 'game_files', 'ino', 'TEXT');
+      raw.prepare('INSERT OR REPLACE INTO schema_migrations (version,applied_at,backup_path) VALUES (?,?,?)').run(5,new Date().toISOString(),backupPath??null);
+      applied.push(5);
+    }
+    assertSchema5(raw);
     raw.exec(`PRAGMA user_version=${SCHEMA_VERSION}`);
     raw.exec('COMMIT');
   } catch (error) {

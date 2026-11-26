@@ -1,0 +1,130 @@
+import { mkdtemp, mkdir, writeFile, rm, access } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
+import os from 'node:os';
+import path from 'node:path';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import * as gameRevival from '@reverse/game-revival';
+import * as gameArchive from '../../apps/api/src/game-archive.js';
+import { buildServer } from '../../apps/api/src/server.js';
+import { Database } from '@reverse/workflow';
+
+const cleanups:Array<()=>Promise<void>>=[];
+afterEach(async()=>{vi.restoreAllMocks();vi.useRealTimers();for(const cleanup of cleanups.splice(0))await cleanup();});
+async function fixture(){const dir=await mkdtemp(path.join(os.tmpdir(),'re-v006-api-'));const dataDir=path.join(dir,'data'),gameDir=path.join(dir,'game');await mkdir(gameDir,{recursive:true});await writeFile(path.join(gameDir,'client.exe'),'owned-fixture');const db=new Database(path.join(dataDir,'reverse-everything.sqlite'));const built=await buildServer({db,dataDir,resourceDir:process.cwd(),token:'test-token'});const app=built.app;cleanups.push(async()=>{await app.close();if(db.raw.isOpen)db.close();await rm(dir,{recursive:true,force:true});});const project=db.project({name:'Owned FPS',kind:'game',target:gameDir,authorizationConfirmed:true});return{app,db,project,gameDir,dataDir,headers:{authorization:'Bearer test-token'}};}
+const profile={name:'Owned FPS',genre:'fps',publisher:'Own',region:'Test',clientVersion:'1.0',shutdownDate:'',engine:'Node',source:'self-authored fixture',authorizationScope:'local research',knownProtocols:['websocket-json'],retainedMaterials:['client.exe'],existingImplementations:[],unrecoveredFeatures:[]};
+async function withGameRoots<T>(roots:string,operation:()=>Promise<T>):Promise<T>{const previous=process.env.RE_GAME_ROOTS;process.env.RE_GAME_ROOTS=roots;try{return await operation();}finally{if(previous===undefined)delete process.env.RE_GAME_ROOTS;else process.env.RE_GAME_ROOTS=previous;}}
+describe('game revival API',()=>{
+  it('persists a profile, scans only the authorized local root and creates an evidence-bounded spec',async()=>{const{app,project,gameDir,headers}=await fixture();expect((await app.inject({method:'PUT',url:`/api/projects/${project.id}/game-profile`,headers:{...headers,'content-type':'application/json'},body:JSON.stringify({...profile,rootPath:gameDir})})).statusCode).toBe(200);await withGameRoots(gameDir,async()=>{const scan=await app.inject({method:'POST',url:`/api/projects/${project.id}/game-scan`,headers:{...headers,'content-type':'application/json'},body:JSON.stringify({rootPath:gameDir})});expect(scan.statusCode,scan.body).toBe(200);expect(scan.json().filesScanned).toBe(1);const again=await app.inject({method:'POST',url:`/api/projects/${project.id}/game-scan`,headers:{...headers,'content-type':'application/json'},body:JSON.stringify({rootPath:gameDir})});expect(again.statusCode,again.body).toBe(200);expect(again.json().bytesScanned).toBe(0);expect(again.json().files[0].size).toBe(Buffer.byteLength('owned-fixture'));expect(again.json().files[0].evidenceStatus).toBe('INFERRED');expect(again.json().files[0].evidenceRefs[0].detail).toContain('未重读');});const spec=await app.inject({method:'POST',url:`/api/projects/${project.id}/game-spec`,headers:{...headers,'content-type':'application/json'},body:'{}'});expect(spec.statusCode,spec.body).toBe(200);expect(spec.json().spec.level).not.toMatch(/L[3-7]/);expect(spec.json().spec.compatibility.value.originalClient).toBe('UNKNOWN');});
+  it('rejects malformed profiles and relative or filesystem-root scan paths',async()=>{const{app,project,headers}=await fixture();expect((await app.inject({method:'PUT',url:`/api/projects/${project.id}/game-profile`,headers:{...headers,'content-type':'application/json'},body:'null'})).statusCode).toBe(400);expect((await app.inject({method:'PUT',url:`/api/projects/${project.id}/game-profile`,headers:{...headers,'content-type':'application/json'},body:JSON.stringify(profile)})).statusCode).toBe(200);for(const rootPath of ['relative/path',path.parse(process.cwd()).root]){const response=await app.inject({method:'POST',url:`/api/projects/${project.id}/game-scan`,headers:{...headers,'content-type':'application/json'},body:JSON.stringify({rootPath})});expect(response.statusCode,rootPath).toBe(400);}});
+  it('fails closed without RE_GAME_ROOTS and rejects directories outside the explicit allowlist',async()=>{const{app,project,gameDir,headers}=await fixture();expect((await app.inject({method:'PUT',url:`/api/projects/${project.id}/game-profile`,headers:{...headers,'content-type':'application/json'},body:JSON.stringify({...profile,rootPath:gameDir})})).statusCode).toBe(200);const outside=await mkdtemp(path.join(os.tmpdir(),'re-v006-outside-'));try{await withGameRoots('',async()=>{const missing=await app.inject({method:'POST',url:`/api/projects/${project.id}/game-scan`,headers:{...headers,'content-type':'application/json'},body:JSON.stringify({rootPath:gameDir})});expect(missing.statusCode).toBe(403);expect(missing.json().error.code).toBe('FORBIDDEN');});await withGameRoots(gameDir,async()=>{const denied=await app.inject({method:'POST',url:`/api/projects/${project.id}/game-scan`,headers:{...headers,'content-type':'application/json'},body:JSON.stringify({rootPath:outside})});expect(denied.statusCode).toBe(403);expect(denied.json().error.code).toBe('FORBIDDEN');});}finally{await rm(outside,{recursive:true,force:true});}});
+  it('完整校验 observation 并把客户端证据最高限制为 INFERRED',async()=>{
+    const{app,project,headers}=await fixture();
+    expect((await app.inject({method:'PUT',url:`/api/projects/${project.id}/game-profile`,headers:{...headers,'content-type':'application/json'},body:JSON.stringify(profile)})).statusCode).toBe(200);
+    const url=`/api/projects/${project.id}/game-spec`;
+    const invalid=[null,[],{kind:'map'},{kind:'map',ref:'map.json',detail:'x',value:{nested:{}}},{kind:'map',ref:'map.json',detail:'x',extra:true},{kind:'other',ref:'map.json',detail:'x'}];
+    for(const observation of invalid){const response=await app.inject({method:'POST',url,headers:{...headers,'content-type':'application/json'},body:JSON.stringify({observations:[observation]})});expect(response.statusCode,JSON.stringify(observation)).toBe(400);}
+    const response=await app.inject({method:'POST',url,headers:{...headers,'content-type':'application/json'},body:JSON.stringify({observations:[{kind:'map',ref:'map.json',detail:'client supplied',status:'VERIFIED',value:{name:'claimed',width:64}}]})});
+    expect(response.statusCode,response.body).toBe(200);
+    expect(response.json().spec.map.evidenceStatus).toBe('INFERRED');
+    expect(response.json().spec.map.value.width).toBe(64);
+    expect(response.json().spec.evidenceStatus).toBe('INFERRED');
+  });
+  it('没有扫描文件时 game-spec 保持 L0 且默认地图规则为 UNKNOWN',async()=>{
+    const{app,project,headers}=await fixture();
+    expect((await app.inject({method:'PUT',url:`/api/projects/${project.id}/game-profile`,headers:{...headers,'content-type':'application/json'},body:JSON.stringify(profile)})).statusCode).toBe(200);
+    const response=await app.inject({method:'POST',url:`/api/projects/${project.id}/game-spec`,headers:{...headers,'content-type':'application/json'},body:'{}'});
+    expect(response.statusCode,response.body).toBe(200);
+    expect(response.json().spec.level).toBe('L0');
+    expect(response.json().spec.map.evidenceStatus).toBe('UNKNOWN');
+    expect(response.json().spec.rules.evidenceStatus).toBe('UNKNOWN');
+    expect(response.json().spec.modules.every((module:{evidenceStatus:string})=>module.evidenceStatus==='UNKNOWN')).toBe(true);
+  });
+  it('扫描并发上限为 2，超出返回 429',async()=>{
+    const{app,project,gameDir,headers}=await fixture();
+    expect((await app.inject({method:'PUT',url:`/api/projects/${project.id}/game-profile`,headers:{...headers,'content-type':'application/json'},body:JSON.stringify({...profile,rootPath:gameDir})})).statusCode).toBe(200);
+    let release!:()=>void;const gate=new Promise<void>(resolve=>{release=resolve;});
+    const scan=vi.spyOn(gameRevival,'scanGameDirectory').mockImplementation(async()=>{await gate;return{files:[],filesScanned:0,bytesScanned:0,truncated:false,skipped:[]};});
+    await withGameRoots(gameDir,async()=>{
+      const request=()=>app.inject({method:'POST',url:`/api/projects/${project.id}/game-scan`,headers:{...headers,'content-type':'application/json'},body:'{}'});
+      const first=request(),second=request();await vi.waitFor(()=>expect(scan).toHaveBeenCalledTimes(2));
+      const limited=await request();expect(limited.statusCode).toBe(429);expect(limited.json().error.code).toBe('RATE_LIMITED');
+      release();const statuses=[(await first).statusCode,(await second).statusCode];expect(statuses.filter(status=>status===200)).toHaveLength(1);expect(statuses.filter(status=>status===409)).toHaveLength(1);
+    });
+  });
+  it('重建失败从初始 L2 恢复并清理输出目录',async()=>{
+    const{app,db,project,headers,dataDir}=await fixture();
+    expect((await app.inject({method:'PUT',url:`/api/projects/${project.id}/game-profile`,headers:{...headers,'content-type':'application/json'},body:JSON.stringify(profile)})).statusCode).toBe(200);
+    const spec=await app.inject({method:'POST',url:`/api/projects/${project.id}/game-spec`,headers:{...headers,'content-type':'application/json'},body:'{}'});expect(spec.statusCode).toBe(200);
+    db.raw.prepare("UPDATE game_profiles SET level='L3' WHERE project_id=?").run(project.id);
+    vi.spyOn(gameRevival,'generateGameServer').mockRejectedValue(new Error('intentional generation failure'));
+    const created=await app.inject({method:'POST',url:'/api/game/rebuilds',headers:{...headers,'content-type':'application/json'},body:JSON.stringify({specId:spec.json().spec.id})});
+    expect(created.statusCode,created.body).toBe(202);expect(created.json().level).toBe('L2');expect((db.raw.prepare('SELECT level FROM game_profiles WHERE project_id=?').get(project.id) as {level:string}).level).toBe('L2');
+    const id=created.json().id;await vi.waitFor(async()=>{const current=await app.inject({method:'GET',url:`/api/game/rebuilds/${id}`,headers});expect(current.json().status).toBe('FAILED');});
+    const failed=await app.inject({method:'GET',url:`/api/game/rebuilds/${id}`,headers});expect(failed.json().level).toBe('L2');expect(failed.json().error).toContain('intentional generation failure');
+    expect((db.raw.prepare('SELECT level FROM game_profiles WHERE project_id=?').get(project.id) as {level:string}).level).toBe('L2');
+    await expect(access(path.join(dataDir,'revived-games',id))).rejects.toThrow();
+  });
+  it('重建总超时可取消且全局只允许一个重建',async()=>{
+    const{app,project,headers}=await fixture();
+    expect((await app.inject({method:'PUT',url:`/api/projects/${project.id}/game-profile`,headers:{...headers,'content-type':'application/json'},body:JSON.stringify(profile)})).statusCode).toBe(200);
+    const spec=await app.inject({method:'POST',url:`/api/projects/${project.id}/game-spec`,headers:{...headers,'content-type':'application/json'},body:'{}'});
+    vi.spyOn(gameRevival,'generateGameServer').mockResolvedValue({files:[],sha256:'test'});
+    vi.spyOn(gameRevival,'validateGeneratedServer').mockImplementation(async(_root,options)=>new Promise((_resolve,reject)=>{const abort=():void=>reject(options?.signal?.reason instanceof Error?options.signal.reason:new Error('aborted'));if(options?.signal?.aborted){abort();return;}options?.signal?.addEventListener('abort',abort,{once:true});}));
+    const previous=process.env.RE_GAME_REBUILD_TIMEOUT_MS;process.env.RE_GAME_REBUILD_TIMEOUT_MS='1000';
+    try{
+      const request=()=>app.inject({method:'POST',url:'/api/game/rebuilds',headers:{...headers,'content-type':'application/json'},body:JSON.stringify({specId:spec.json().spec.id})});
+      const first=await request();expect(first.statusCode).toBe(202);expect(first.json().level).toBe('L2');
+      const second=await request();expect(second.statusCode).toBe(503);expect(second.json().error.code).toBe('QUEUE_FULL');
+      await vi.waitFor(async()=>{const current=await app.inject({method:'GET',url:`/api/game/rebuilds/${first.json().id}`,headers});expect(current.json().status).toBe('FAILED');expect(current.json().error).toContain('exceeded 1000ms');},{timeout:4000});
+    }finally{if(previous===undefined)delete process.env.RE_GAME_REBUILD_TIMEOUT_MS;else process.env.RE_GAME_REBUILD_TIMEOUT_MS=previous;}
+  });
+  it('rootPath 变化清理旧文件与规格并重置为 L0，旧证据不得复用',async()=>{
+    const{app,db,project,gameDir,headers}=await fixture();const nextRoot=path.join(path.dirname(gameDir),'next-game');await mkdir(nextRoot);await writeFile(path.join(nextRoot,'new-client.exe'),'new-fixture');
+    const save=(rootPath:string)=>app.inject({method:'PUT',url:`/api/projects/${project.id}/game-profile`,headers:{...headers,'content-type':'application/json'},body:JSON.stringify({...profile,rootPath})});
+    expect((await save(gameDir)).statusCode).toBe(200);
+    await withGameRoots(path.dirname(gameDir),async()=>{
+      const scan=await app.inject({method:'POST',url:`/api/projects/${project.id}/game-scan`,headers:{...headers,'content-type':'application/json'},body:JSON.stringify({rootPath:gameDir})});expect(scan.statusCode,scan.body).toBe(200);
+    });
+    const oldSpec=await app.inject({method:'POST',url:`/api/projects/${project.id}/game-spec`,headers:{...headers,'content-type':'application/json'},body:'{}'});expect(oldSpec.statusCode).toBe(200);db.raw.prepare("UPDATE game_profiles SET level='L3' WHERE project_id=?").run(project.id);
+    expect((await save(gameDir)).json().profile.level).toBe('L3');expect((db.raw.prepare('SELECT COUNT(*) AS count FROM game_files WHERE project_id=?').get(project.id) as {count:number}).count).toBe(1);
+    const changed=await save(nextRoot);expect(changed.statusCode,changed.body).toBe(200);expect(changed.json().profile.level).toBe('L0');
+    expect((db.raw.prepare('SELECT COUNT(*) AS count FROM game_files WHERE project_id=?').get(project.id) as {count:number}).count).toBe(0);expect((db.raw.prepare('SELECT COUNT(*) AS count FROM game_specs WHERE project_id=?').get(project.id) as {count:number}).count).toBe(0);
+    const emptySpec=await app.inject({method:'POST',url:`/api/projects/${project.id}/game-spec`,headers:{...headers,'content-type':'application/json'},body:'{}'});expect(emptySpec.json().spec.level).toBe('L0');
+    await withGameRoots(path.dirname(gameDir),async()=>{const scan=await app.inject({method:'POST',url:`/api/projects/${project.id}/game-scan`,headers:{...headers,'content-type':'application/json'},body:JSON.stringify({rootPath:nextRoot})});expect(scan.statusCode,scan.body).toBe(200);expect(scan.json().filesScanned).toBe(1);expect(scan.json().files[0].relativePath).toBe('new-client.exe');expect(scan.json().bytesScanned).toBe(Buffer.byteLength('new-fixture'));});
+    const newSpec=await app.inject({method:'POST',url:`/api/projects/${project.id}/game-spec`,headers:{...headers,'content-type':'application/json'},body:'{}'});expect(newSpec.json().spec.level).toBe('L2');expect(newSpec.json().spec.files.map((file:{relativePath:string})=>file.relativePath)).toEqual(['new-client.exe']);
+  });
+  it('负向 observation 状态保持 UNKNOWN，不提升地图、规则或整体证据',async()=>{
+    const{app,project,headers}=await fixture();expect((await app.inject({method:'PUT',url:`/api/projects/${project.id}/game-profile`,headers:{...headers,'content-type':'application/json'},body:JSON.stringify(profile)})).statusCode).toBe(200);
+    const response=await app.inject({method:'POST',url:`/api/projects/${project.id}/game-spec`,headers:{...headers,'content-type':'application/json'},body:JSON.stringify({observations:[{kind:'map',ref:'missing-map',detail:'not implemented',status:'NOT_IMPLEMENTED',value:{width:999}},{kind:'rule',ref:'locked-rule',detail:'inaccessible',status:'INACCESSIBLE',value:{roundSeconds:1}}]})});
+    expect(response.statusCode,response.body).toBe(200);expect(response.json().spec.map.evidenceStatus).toBe('UNKNOWN');expect(response.json().spec.map.value.width).toBe(128);expect(response.json().spec.rules.evidenceStatus).toBe('UNKNOWN');expect(response.json().spec.rules.value.roundSeconds).toBe(300);expect(response.json().spec.evidenceStatus).toBe('UNKNOWN');expect(response.json().spec.level).toBe('L0');
+  });
+  it.each(['completion','failure'] as const)('重建期间档案被修改时，旧重建 %s 不覆盖新等级',async mode=>{
+    const{app,db,project,headers}=await fixture();expect((await app.inject({method:'PUT',url:`/api/projects/${project.id}/game-profile`,headers:{...headers,'content-type':'application/json'},body:JSON.stringify(profile)})).statusCode).toBe(200);const spec=await app.inject({method:'POST',url:`/api/projects/${project.id}/game-spec`,headers:{...headers,'content-type':'application/json'},body:'{}'});expect(spec.statusCode).toBe(200);
+    let release!:()=>void;const gate=new Promise<void>(resolve=>{release=resolve;});
+    const report:gameRevival.GameValidationReport={schemaVersion:1,valid:true,genre:'fps',gameMode:'test',transport:'websocket',clients:[],capabilities:{build:true,independentStart:true,twoPlayerSameMatch:true,roomIsolation:true,serverAuthoritativeState:true,persistence:true,reconnect:true,settlement:true,adminAuth:true,multiRoomConcurrency:true,dockerDeployment:true},checks:[],projectDir:'',files:[],sha256:'test',errors:[],startedAt:new Date().toISOString(),finishedAt:new Date().toISOString()};
+    if(mode==='completion'){vi.spyOn(gameRevival,'generateGameServer').mockResolvedValue({files:[],sha256:'test'});vi.spyOn(gameRevival,'validateGeneratedServer').mockImplementation(async()=>{await gate;return report;});}
+    else{vi.spyOn(gameRevival,'generateGameServer').mockImplementation(async()=>{await gate;throw new Error('stale rebuild failure');});}
+    const created=await app.inject({method:'POST',url:'/api/game/rebuilds',headers:{...headers,'content-type':'application/json'},body:JSON.stringify({specId:spec.json().spec.id})});expect(created.statusCode,created.body).toBe(202);
+    await vi.waitFor(()=>expect(mode==='completion'?gameRevival.validateGeneratedServer:gameRevival.generateGameServer).toHaveBeenCalledTimes(1));
+    const saved=await app.inject({method:'PUT',url:`/api/projects/${project.id}/game-profile`,headers:{...headers,'content-type':'application/json'},body:JSON.stringify(profile)});expect(saved.statusCode,saved.body).toBe(200);db.raw.prepare("UPDATE game_profiles SET level='L6' WHERE project_id=?").run(project.id);release();
+    await vi.waitFor(async()=>{const current=await app.inject({method:'GET',url:`/api/game/rebuilds/${created.json().id}`,headers});expect(current.json().status).toBe(mode==='completion'?'COMPLETED':'FAILED');});
+    expect((db.raw.prepare('SELECT level FROM game_profiles WHERE project_id=?').get(project.id) as {level:string}).level).toBe('L6');
+  });
+  it('API 关闭取消并等待扫描，且数据库保持可用直至关闭',async()=>{
+    const{app,db,project,gameDir,headers}=await fixture();expect((await app.inject({method:'PUT',url:`/api/projects/${project.id}/game-profile`,headers:{...headers,'content-type':'application/json'},body:JSON.stringify({...profile,rootPath:gameDir})})).statusCode).toBe(200);
+    let signal:AbortSignal|undefined;vi.spyOn(gameRevival,'scanGameDirectory').mockImplementation(async(_root,options)=>new Promise((_resolve,reject)=>{signal=options?.signal;const abort=():void=>reject(signal?.reason instanceof Error?signal.reason:new Error('aborted'));if(signal?.aborted){abort();return;}signal?.addEventListener('abort',abort,{once:true});}));
+    const pending=withGameRoots(gameDir,()=>app.inject({method:'POST',url:`/api/projects/${project.id}/game-scan`,headers:{...headers,'content-type':'application/json'},body:'{}'})).then(response=>({response}),error=>({error}));
+    await vi.waitFor(()=>expect(signal).toBeDefined());await app.close();expect(signal?.aborted).toBe(true);await pending;expect(db.raw.isOpen).toBe(true);db.close();await Promise.resolve();
+  });
+  it('API 关闭取消并等待重建，清理输出并避免关闭后 SQL',async()=>{
+    const{app,db,project,headers,dataDir}=await fixture();expect((await app.inject({method:'PUT',url:`/api/projects/${project.id}/game-profile`,headers:{...headers,'content-type':'application/json'},body:JSON.stringify(profile)})).statusCode).toBe(200);const spec=await app.inject({method:'POST',url:`/api/projects/${project.id}/game-spec`,headers:{...headers,'content-type':'application/json'},body:'{}'});
+    vi.spyOn(gameRevival,'generateGameServer').mockImplementation(async(_spec,output)=>{await mkdir(output,{recursive:true});await writeFile(path.join(output,'server.mjs'),'test');return{files:['server.mjs'],sha256:'test'};});
+    let signal:AbortSignal|undefined;vi.spyOn(gameRevival,'validateGeneratedServer').mockImplementation(async(_root,options)=>new Promise((_resolve,reject)=>{signal=options?.signal;const abort=():void=>reject(signal?.reason instanceof Error?signal.reason:new Error('aborted'));if(signal?.aborted){abort();return;}signal?.addEventListener('abort',abort,{once:true});}));
+    const created=await app.inject({method:'POST',url:'/api/game/rebuilds',headers:{...headers,'content-type':'application/json'},body:JSON.stringify({specId:spec.json().spec.id})});expect(created.statusCode).toBe(202);await vi.waitFor(()=>expect(signal).toBeDefined());await app.close();expect(signal?.aborted).toBe(true);
+    expect((db.raw.prepare('SELECT status FROM game_rebuilds WHERE id=?').get(created.json().id) as {status:string}).status).toBe('FAILED');await expect(access(path.join(dataDir,'revived-games',created.json().id))).rejects.toThrow();db.close();await Promise.resolve();
+  });
+  it('归档下载最多并发 2 个 zipDirectory，超限返回 429',async()=>{
+    const{app,db,project,headers,dataDir}=await fixture();expect((await app.inject({method:'PUT',url:`/api/projects/${project.id}/game-profile`,headers:{...headers,'content-type':'application/json'},body:JSON.stringify(profile)})).statusCode).toBe(200);const spec=await app.inject({method:'POST',url:`/api/projects/${project.id}/game-spec`,headers:{...headers,'content-type':'application/json'},body:'{}'});const id=randomUUID(),output=path.join(dataDir,'revived-games',id);await mkdir(output,{recursive:true});const now=new Date().toISOString();db.raw.prepare("INSERT INTO game_rebuilds (id,project_id,spec_id,status,level,output_path,error,validation_json,created_at,updated_at) VALUES (?,?,?,'COMPLETED','L7',?,NULL,NULL,?,?)").run(id,project.id,spec.json().spec.id,output,now,now);
+    let release!:()=>void;const gate=new Promise<Buffer>(resolve=>{release=()=>resolve(Buffer.from('zip'));});const zip=vi.spyOn(gameArchive,'zipDirectory').mockImplementation(async()=>gate);const request=()=>app.inject({method:'GET',url:`/api/game/rebuilds/${id}/archive`,headers});const first=request(),second=request();await vi.waitFor(()=>expect(zip).toHaveBeenCalledTimes(2));const limited=await request();expect(limited.statusCode).toBe(429);expect(limited.json().error.code).toBe('RATE_LIMITED');release();expect((await first).statusCode).toBe(200);expect((await second).statusCode).toBe(200);
+  });
+});
