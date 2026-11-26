@@ -469,7 +469,8 @@ jobs:
           $env:ELECTRON_RUN_AS_NODE = '1'
           try {
             & $exe.FullName $script $resources $work $output
-            if ($LASTEXITCODE -ne 0) { throw "Installed Legacy smoke exited $LASTEXITCODE" }
+            $legacyExitCode = $LASTEXITCODE
+            if (($null -ne $legacyExitCode -and $legacyExitCode -ne 0) -or -not (Test-Path -LiteralPath $output)) { throw "Installed Legacy smoke failed (exit=$legacyExitCode)" }
           } finally {
             if ($null -eq $previousElectronNode) { Remove-Item Env:ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue } else { $env:ELECTRON_RUN_AS_NODE = $previousElectronNode }
           }
