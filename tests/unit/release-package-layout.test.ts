@@ -18,6 +18,8 @@ describe('Ghidra release package layout', () => {
     expect(source).toContain("path.join(stage,'scripts/ghidra-analyze-headless.mjs')");
     expect(source).toContain("'packages/hardware'");
     expect(source).toContain("'packages/firmware'");
+    expect(source).toContain("'packages/console'");
+    expect(source).toContain("'packages/planner'");
   });
 
   it('places the launcher at the path resolved by the desktop runtime adapter', async () => {
