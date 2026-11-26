@@ -8,6 +8,7 @@ import { CONSOLE_DEVICES, CONSOLE_SUPPORT_MATRIX, OFFICIAL_DEVELOPMENT_ENVIRONME
 import { createAnalysisPlan, detectTarget, PlannerError, validatePlan, type AnalysisPlan, type AnalyzerCapability, type AnalyzerId, type AuthorizationScope, type PlanBudget, type PlanStep, type TargetDetection, type TargetKind } from '@reverse/planner';
 import { hashFile } from '@reverse/evidence';
 import type { Database, WorkflowEngine } from '@reverse/workflow';
+import { normalizeInputTarget } from '@reverse/workflow';
 
 interface ResearchOptions { db: Database; engine: WorkflowEngine; dataDir: string; resourceDir: string }
 interface PlanRow { id: string; projectId: string; taskId: string | null; mode: string; target: TargetDetection; detection: TargetDetection; authorizationId: string | null; uploadId: string | null; inputHash: string | null; steps: PlanStep[]; budget: PlanBudget; status: string; createdAt: string; updatedAt: string }
@@ -49,14 +50,7 @@ function scopeFromRow(row: Record<string, unknown>): AuthorizationScope {
   return { granted: row.revoked_at === null || row.revoked_at === undefined, operations: JSON.parse(String(row.allowed_operations_json)), allowedAdapters: JSON.parse(String(row.allowed_interfaces_json)), allowedTargetKinds: JSON.parse(String(row.data_access_json)), ...(row.expires_at ? { expiresAt: String(row.expires_at) } : {}) };
 }
 
-function normalizeTargetReference(value: string): string {
-  const target = value.trim();
-  let url: URL;
-  try { url = new URL(target); } catch { return target; }
-  if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) throw new AppError('BAD_REQUEST', 'Target URL must use HTTP(S) without embedded credentials', 400);
-  url.hash = '';
-  return url.toString();
-}
+function normalizeTargetReference(value: string): string { return normalizeInputTarget(value); }
 function plainBody(value: unknown): Record<string, unknown> { if (!value || typeof value !== 'object' || Array.isArray(value)) throw new AppError('BAD_REQUEST', 'A JSON object body is required', 400); return value as Record<string, unknown>; }
 function stringField(body: Record<string, unknown>, key: string, max = 2048): string { const value = body[key]; if (typeof value !== 'string' || !value.trim() || value.length > max) throw new AppError('BAD_REQUEST', `${key} must be a non-empty string of at most ${max} characters`, 400); return value; }
 function stringArray(body: Record<string, unknown>, key: string, allowed?: readonly string[]): string[] { const value = body[key]; if (!Array.isArray(value) || value.length > 64 || value.some(item => typeof item !== 'string' || !item.trim() || item.length > 128 || (allowed && !allowed.includes(item)))) throw new AppError('BAD_REQUEST', `${key} must be a string array with at most 64 bounded values`, 400); return value as string[]; }

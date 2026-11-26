@@ -86,6 +86,8 @@ export const api={
   createGameSpec:(id:string)=>request<{spec:{id:string;name:string;genre:string;level:string;modules:unknown[];limitations:string[]}}>(`/projects/${encodeURIComponent(id)}/game-spec`,{method:'POST',body:'{}'}),
   gameRebuilds:()=>request<{items:GameRebuildRecord[]}>('/game/rebuilds'),
   createGameRebuild:(specId:string)=>request<GameRebuildRecord>('/game/rebuilds',{method:'POST',body:JSON.stringify({specId})}),
-  gameRebuild:(id:string)=>request<GameRebuildRecord>(`/game/rebuilds/${encodeURIComponent(id)}`)
+  gameRebuild:(id:string)=>request<GameRebuildRecord>(`/game/rebuilds/${encodeURIComponent(id)}`),
+  legacyAlternatives:(category?:string,q='')=>request<{items:Array<{id:string;name:string;category:string;officialUrl:string;license:string;platforms:string[];free:true;maintained:string;functionalDifferences:string[];dataImport:string;sourceCheckedAt:string;notes:string[]}>;sourcePolicy:string}>(`/legacy/alternatives?${new URLSearchParams({...(category?{category}:{}),q})}`),
+  legacyPrivacy:()=>request<{localOnlyAnalysis:boolean;remoteAiEnabled:boolean;remoteAiAllowed:boolean;remoteAiEndpointConfigured:boolean;remoteAiPolicy:string;dataDir:string;networkSteps:string[];localArtifacts:string[];controls:string[];limitations:string[]}>('/legacy/privacy')
 };
 export type {TaskDetail,Task,Evidence,Finding,Artifact,BackupInfo,BackupPreview,ConsoleDevice,ConsoleProfile,ConsoleSupportEntry,ConsoleUsbDiagnosis,UsbEnumerationSummary,ConsoleEvidence,ConsoleLevel,ActualAccess,ConsoleEvidenceKind,AnalyzerCapability,TargetKind,AnalyzerId,PlanBudget,AuthorizationScope};

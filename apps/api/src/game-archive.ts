@@ -76,7 +76,7 @@ export async function zipDirectory(root: string, limits: ArchiveLimits = {}): Pr
       if (records.length >= maxEntries) throw new Error(`归档条目数超过上限 ${maxEntries}`);
       const nameBytes = Buffer.from(name);
       const handle = await open(file, 'r');
-      const bytes = Buffer.alloc(maxEntryBytes + 1);
+      const bytes = Buffer.alloc(info.size + 1);
       let length = 0;
       try {
         while (length < bytes.length) {
@@ -86,7 +86,7 @@ export async function zipDirectory(root: string, limits: ArchiveLimits = {}): Pr
         }
       } finally { await handle.close(); }
       const content = bytes.subarray(0, length);
-      if (length > maxEntryBytes) throw new Error(`归档文件超过 ${maxEntryBytes} 字节: ${name}`);
+      if (length > maxEntryBytes || length > info.size) throw new Error(`归档文件超过 ${maxEntryBytes} 字节或读取期间增长: ${name}`);
       if (length !== info.size) throw new Error(`归档文件读取后大小不一致: ${name}`);
       reserve(30 + nameBytes.length + length + 46 + nameBytes.length + 22);
       const checksum = crc32(content);

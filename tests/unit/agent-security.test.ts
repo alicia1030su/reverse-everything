@@ -44,8 +44,9 @@ async function listen(server:http.Server):Promise<number>{
 
 function setup(){
   const db=new Database(':memory:');databases.push(db);
-  const project=db.project({name:'agent-security',kind:'software',authorizationConfirmed:true});
+  const project=db.project({name:'agent-security',kind:'software',target:'target',authorizationConfirmed:true});
   const task=db.createTask(project.id,'file',{adapter:'file'},'agent-security-test');
+  db.raw.prepare("INSERT INTO authorization_scopes (id,project_id,target,scope_json,allowed_interfaces_json,allowed_operations_json,data_access_json,remote_ai_allowed,expires_at,created_at,revoked_at) VALUES ('remote-auth',?,'target','[]','[\"file\"]','[\"network-access\"]','[]',1,NULL,?,NULL)").run(project.id,new Date().toISOString());
   return {db,taskId:task.id};
 }
 
@@ -166,6 +167,54 @@ describe('callAgent security',()=>{
 
     expect(connections).toBe(0);
     expect(db.raw.prepare('SELECT COUNT(*) AS count FROM agent_runs WHERE task_id=?').get(taskId)).toEqual({count:0});
+  });
+
+  it('rejects remote AI for direct tasks without project authorization',async()=>{
+    const {db,taskId}=setup();db.raw.prepare("DELETE FROM authorization_scopes WHERE project_id=(SELECT project_id FROM tasks WHERE id=?)").run(taskId);
+    const fetchSpy=vi.spyOn(globalThis,'fetch');const requestSpy=vi.spyOn(https,'request');
+    await expect(callAgent(input(db,taskId,'https://example.invalid/v1',{allowRemoteData:true}))).rejects.toThrow(/does not allow remote AI/);
+    expect(fetchSpy).not.toHaveBeenCalled();expect(requestSpy).not.toHaveBeenCalled();
+  });
+  it.each(['target','adapter','operation','expiry'] as const)('rejects remote AI when authorization %s does not match the task',async mismatch=>{
+    const {db,taskId}=setup();const projectId=String((db.raw.prepare('SELECT project_id FROM tasks WHERE id=?').get(taskId) as {project_id:string}).project_id);
+    if(mismatch==='target')db.raw.prepare("UPDATE authorization_scopes SET target='other-target' WHERE id='remote-auth'").run();
+    if(mismatch==='adapter')db.raw.prepare("UPDATE authorization_scopes SET allowed_interfaces_json='[\"website\"]' WHERE id='remote-auth'").run();
+    if(mismatch==='operation')db.raw.prepare("UPDATE authorization_scopes SET allowed_operations_json='[\"read-target\"]' WHERE id='remote-auth'").run();
+    if(mismatch==='expiry')db.raw.prepare("UPDATE authorization_scopes SET expires_at=? WHERE id='remote-auth'").run(new Date(Date.now()-60_000).toISOString());
+    const fetchSpy=vi.spyOn(globalThis,'fetch');const requestSpy=vi.spyOn(https,'request');
+    await expect(callAgent(input(db,taskId,'https://example.invalid/v1',{allowRemoteData:true}))).rejects.toThrow(/does not allow remote AI/);
+    expect(fetchSpy).not.toHaveBeenCalled();expect(requestSpy).not.toHaveBeenCalled();expect(projectId).toBeTruthy();
+  });
+
+  it('rejects a direct local-path task when only another target is authorized',async()=>{
+    const {db}=setup();const projectId=String((db.raw.prepare("SELECT project_id FROM authorization_scopes WHERE id='remote-auth'").get() as {project_id:string}).project_id);
+    const task=db.createTask(projectId,'legacy',{adapter:'legacy',options:{path:'C:\\unauthorized\\target'}},'a'.repeat(64));
+    const fetchSpy=vi.spyOn(globalThis,'fetch');const requestSpy=vi.spyOn(https,'request');
+    await expect(callAgent(input(db,task.id,'https://example.invalid/v1',{allowRemoteData:true}))).rejects.toThrow(/does not allow remote AI/);
+    expect(fetchSpy).not.toHaveBeenCalled();expect(requestSpy).not.toHaveBeenCalled();
+  });
+  it('normalizes Windows path targets consistently for authorization',async()=>{
+    const {db}=setup();const projectId=String((db.raw.prepare("SELECT project_id FROM authorization_scopes WHERE id='remote-auth'").get() as {project_id:string}).project_id);const task=db.createTask(projectId,'legacy',{adapter:'legacy',options:{path:'C:\\Software\\Target'}},'b'.repeat(64));db.raw.prepare("UPDATE authorization_scopes SET target=? WHERE id='remote-auth'").run('c:\\software\\target');
+    const fetchSpy=vi.spyOn(globalThis,'fetch');const requestSpy=vi.spyOn(https,'request');
+    await expect(callAgent(input(db,task.id,'https://example.invalid/v1',{allowRemoteData:true}))).rejects.toThrow(/does not allow remote AI/);
+    expect(fetchSpy).not.toHaveBeenCalled();expect(requestSpy).not.toHaveBeenCalled();
+  });
+  it('binds direct uploaded tasks to the selected upload instead of any project upload',async()=>{
+    const {db}=setup();const projectId=String((db.raw.prepare("SELECT project_id FROM authorization_scopes WHERE id='remote-auth'").get() as {project_id:string}).project_id);
+    for(const id of ['upload-a','upload-b'])db.addUpload({id,projectId,name:`${id}.bin`,storedName:`${id}.stored`,mime:'application/octet-stream',size:1,sha256:id,createdAt:new Date().toISOString()});
+    db.raw.prepare("UPDATE authorization_scopes SET target='upload-a' WHERE id='remote-auth'").run();
+    const task=db.createTask(projectId,'file',{adapter:'file',options:{uploadId:'upload-b'}},'upload-task');
+    const fetchSpy=vi.spyOn(globalThis,'fetch');const requestSpy=vi.spyOn(https,'request');
+    await expect(callAgent(input(db,task.id,'https://example.invalid/v1',{allowRemoteData:true}))).rejects.toThrow(/does not allow remote AI/);
+    expect(fetchSpy).not.toHaveBeenCalled();expect(requestSpy).not.toHaveBeenCalled();
+  });
+  it('fails closed when a direct upload task has an ambiguous input',async()=>{
+    const {db}=setup();const projectId=String((db.raw.prepare("SELECT project_id FROM authorization_scopes WHERE id='remote-auth'").get() as {project_id:string}).project_id);
+    for(const id of ['upload-a','upload-b'])db.addUpload({id,projectId,name:`${id}.bin`,storedName:`${id}.stored`,mime:'application/octet-stream',size:1,sha256:id,createdAt:new Date().toISOString()});
+    const task=db.createTask(projectId,'file',{adapter:'file',options:{}},'ambiguous-task');
+    const fetchSpy=vi.spyOn(globalThis,'fetch');const requestSpy=vi.spyOn(https,'request');
+    await expect(callAgent(input(db,task.id,'https://example.invalid/v1',{allowRemoteData:true}))).rejects.toThrow(/ambiguous|does not allow remote AI/);
+    expect(fetchSpy).not.toHaveBeenCalled();expect(requestSpy).not.toHaveBeenCalled();
   });
 
   it('does not issue a request when remote data consent is revoked',async()=>{

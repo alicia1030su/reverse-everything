@@ -33,7 +33,8 @@ function validReport() {
     transport: 'websocket',
     valid: true,
     errors: [],
-    clients: [{ kind: 'real-game-client', count: 4 }],
+    clients: [{ kind: 'internal-protocol-client', count: 4 }],
+    targetEvidence: { behavior: 'VERIFIED', originalClient: 'UNKNOWN', protocol: 'UNKNOWN' },
     capabilities: {
       build: true,
       independentStart: true,

@@ -3,11 +3,13 @@ import type { GameServerSpec } from './types.js';
 const generatedTypes = `export type Genre = 'fps' | 'rpg';
 export interface Vec { x: number; y: number; z?: number }
 export interface Account { username: string; salt: string; hash: string; createdAt: string }
-export interface Player { id: string; username: string; roomId: string; position: Vec; health: number; score: number; inventory: Record<string, number>; quest: number; connected: boolean; resumeToken?: string | undefined; resumeUntil?: number | undefined; lastAction: number }
+export interface Player { id: string; username: string; roomId: string; position: Vec; health: number; score: number; inventory: Record<string, number>; quest: number; connected: boolean; dead?: boolean; resumeToken?: string | undefined; resumeUntil?: number | undefined; lastAction: number; lastActions?: Record<string, number> | undefined }
 export interface Room { id: string; name: string; owner?: string | undefined; players: Map<string, Player>; status: 'lobby' | 'running' | 'ended'; round: number; endsAt?: number; result?: Record<string, unknown> | undefined; lastTick: number; emptySince?: number | undefined }
 export interface Database { version: 1; accounts: Account[]; players: Player[]; rooms: Array<{ id: string; name: string; owner?: string | undefined; status: Room['status']; round: number }> }
 export interface Envelope { type: string; payload?: Record<string, unknown>; requestId?: string }
-export interface RuntimeConfig { gamePort: number; adminPort: number; adminHost: string; genre: Genre; map: { name: string; width: number; height: number }; rules: Record<string, number | boolean | string> }
+export interface BehaviorAction { id: string; kind: 'attack' | 'gather' | 'heal'; cooldownMs: number; damage?: number; range?: number; item?: string; amount?: number; health?: number }
+export interface BehaviorConfig { format: 'revival-behavior/v1'; id: string; title: string; mode: string; rules: { minPlayers: number; maxPlayers: number; roundSeconds: number; movementSpeed: number; maxHealth: number; respawn: boolean }; actions: BehaviorAction[]; winCondition: { type: 'firstToScore' | 'survive' | 'collect'; target: number }; map: { width: number; height: number; obstacles: Array<{ x: number; y: number }> } }
+export interface RuntimeConfig { gamePort: number; adminPort: number; adminHost: string; genre: Genre; map: { name: string; width: number; height: number; obstacles?: Array<{ x: number; y: number }> }; rules: Record<string, number | boolean | string>; behavior?: BehaviorConfig }
 `;
 
 const generatedAuth = `import { randomBytes, scrypt as scryptCallback, timingSafeEqual } from 'node:crypto';
@@ -80,13 +82,14 @@ export class AuthRateLimiter {
     entry.count += 1;
     return entry.count <= this.maxAttempts;
   }
+  reset(): void { this.entries.clear(); }
   dispose(): void { clearInterval(this.sweeper); this.entries.clear(); }
   private sweep(): void { const now = Date.now(); for (const [key, entry] of this.entries) if (entry.resetAt <= now) this.entries.delete(key); }
 }
 
 const scryptLimiter = new ScryptSemaphore();
 const tokenStore = new TokenStore();
-const authRateLimiter = new AuthRateLimiter();
+const authRateLimiter = new AuthRateLimiter(Number(process.env.AUTH_MAX_ATTEMPTS ?? 10), Number(process.env.AUTH_WINDOW_MS ?? 60_000));
 const registering = new Set<string>();
 export async function registerAccount(accounts: Account[], username: string, password: string): Promise<Account> {
   if (registering.has(username)) throw new Error('用户名正在注册');
@@ -114,6 +117,7 @@ export function revokeUserTokens(username: string): void { tokenStore.revokeUser
 export function rotateToken(username: string, previous?: string): string { return tokenStore.rotate(username, previous); }
 export function tokenCount(): number { return tokenStore.size; }
 export function disposeAuthResources(): void { tokenStore.dispose(); authRateLimiter.dispose(); }
+export function resetAuthRateLimiter(): void { authRateLimiter.reset(); }
 export { authRateLimiter };
 `;
 
@@ -197,6 +201,17 @@ export class GameEngine {
     } finally { if (timer) clearTimeout(timer); }
   }
   private limit(value: unknown, fallback: number): number { const parsed = Number(value); return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : fallback; }
+  private spawnPositions(count: number): Vec[] {
+    const obstacles = this.config.behavior?.map.obstacles ?? this.config.map.obstacles ?? [];
+    const positions: Vec[] = [];
+    for (let y = 0; y <= this.config.map.height && positions.length < count; y += 1) {
+      for (let x = 0; x <= this.config.map.width && positions.length < count; x += 1) {
+        if (!obstacles.some(obstacle => obstacle.x === x && obstacle.y === y)) positions.push({ x, y });
+      }
+    }
+    if (positions.length < count) throw new Error('地图可用出生点不足');
+    return positions;
+  }
   private sync(): void {
     this.database.players = [...this.rooms.values()].flatMap(room => [...room.players.values()].map(player => ({ ...player, resumeToken: undefined })));
     this.database.rooms = [...this.rooms.values()].map(room => ({ id: room.id, name: room.name, owner: room.owner, status: room.status, round: room.round }));
@@ -205,7 +220,7 @@ export class GameEngine {
   private roomList(): unknown[] { return [...this.rooms.values()].map(room => ({ id: room.id, name: room.name, status: room.status, players: room.players.size, round: room.round })); }
   private snapshot(session: Session): void {
     const room = this.rooms.get(session.roomId);
-    session.send({ type: 'state', payload: { player: room?.players.get(session.id), room: room ? { id: room.id, name: room.name, status: room.status, round: room.round, endsAt: room.endsAt, result: room.result } : null, players: room ? [...room.players.values()].map(player => ({ id: player.id, username: player.username, position: player.position, health: player.health, score: player.score, inventory: player.inventory, quest: player.quest })) : [], rooms: this.roomList() } });
+    session.send({ type: 'state', payload: { player: room?.players.get(session.id), room: room ? { id: room.id, name: room.name, status: room.status, round: room.round, endsAt: room.endsAt, result: room.result } : null, players: room ? [...room.players.values()].map(player => ({ id: player.id, username: player.username, position: player.position, health: player.health, score: player.score, inventory: player.inventory, quest: player.quest, dead: player.dead === true })) : [], rooms: this.roomList() } });
   }
   attach(session: Session): void {
     this.sessions.set(session.id, session);
@@ -273,7 +288,8 @@ export class GameEngine {
         case 'join': {
           const room = this.rooms.get(String(payload.roomId));
           if (!room) return this.error(session, '房间不存在');
-          if (room.players.size >= this.limit(this.config.rules.maxPlayers, 8)) return this.error(session, '房间已满');
+          const maxPlayers = this.config.behavior?.rules.maxPlayers ?? this.limit(this.config.rules.maxPlayers, 8);
+          if (room.players.size >= maxPlayers) return this.error(session, '房间已满');
           const old = this.rooms.get(session.roomId);
           old?.players.delete(session.id);
           if (old) { if (old.players.size === 0) old.emptySince = Date.now(); this.broadcast(old, { type: 'stateChanged' }); }
@@ -281,37 +297,97 @@ export class GameEngine {
           const previousId = session.id;
           const existing = [...room.players.values()].find(player => player.username === session.username && !player.connected);
           if (existing) { this.sessions.delete(previousId); session.id = existing.id; existing.connected = true; }
-          else room.players.set(session.id, { id: session.id, username: session.username, roomId: room.id, position: { x: 1, y: 1 }, health: 100, score: 0, inventory: {}, quest: 0, connected: true, lastAction: Date.now() });
+          else room.players.set(session.id, { id: session.id, username: session.username, roomId: room.id, position: { x: 1, y: 1 }, health: 100, score: 0, inventory: {}, quest: 0, connected: true, dead: false, lastAction: Date.now() });
           delete room.emptySince;
           this.sessions.set(session.id, session);
           this.sync(); this.attach(session); return respond({ roomId: room.id });
         }
         case 'start': {
           const room = this.rooms.get(session.roomId);
-          if (!room || room.players.size < 2) return this.error(session, '至少需要两名玩家');
-          room.status = 'running'; room.round += 1; room.result = undefined; room.endsAt = Date.now() + Number(this.config.rules.roundSeconds ?? 300) * 1000;
-          for (const player of room.players.values()) { player.health = 100; player.position = { x: 1 + room.players.size, y: 1 }; }
+          const minPlayers = this.config.behavior?.rules.minPlayers ?? 2;
+          if (!room || room.players.size < minPlayers) return this.error(session, \`至少需要 \${minPlayers} 名玩家\`);
+          room.status = 'running'; room.round += 1; room.result = undefined; room.endsAt = Date.now() + (this.config.behavior?.rules.roundSeconds ?? Number(this.config.rules.roundSeconds ?? 300)) * 1000;
+          const spawns = this.spawnPositions(room.players.size);
+          for (const [index,player] of [...room.players.values()].entries()) { player.health = this.config.behavior?.rules.maxHealth ?? 100; player.dead = false; player.score = 0; player.quest = 0; player.inventory = {}; player.lastActions = {}; player.position = spawns[index]!; }
           this.sync(); this.broadcast(room, { type: 'started', payload: { round: room.round, endsAt: room.endsAt } }); return respond({ started: true });
         }
         case 'move': {
           const room = this.rooms.get(session.roomId);
           const player = room?.players.get(session.id);
           if (!room || !player || room.status !== 'running') return this.error(session, '当前不能移动');
+          if (player.dead) return this.error(session, '玩家已死亡');
           const candidate = payload.position as { x?: unknown; y?: unknown } | undefined;
           if (!candidate || typeof candidate.x !== 'number' || typeof candidate.y !== 'number') return this.error(session, '坐标无效');
           const position: Vec = { x: candidate.x, y: candidate.y };
-          const speed = Number(this.config.rules.movementSpeed ?? 6);
+          const speed = this.config.behavior?.rules.movementSpeed ?? Number(this.config.rules.movementSpeed ?? 6);
           const distance = Math.hypot(position.x - player.position.x, position.y - player.position.y);
-          if (!Number.isFinite(distance) || distance > speed * 2 || Math.abs(position.x) > this.config.map.width || Math.abs(position.y) > this.config.map.height) return this.error(session, '位置越界或速度异常');
+          if (!Number.isFinite(distance) || distance > speed * 2 || position.x < 0 || position.y < 0 || position.x > this.config.map.width || position.y > this.config.map.height) return this.error(session, '位置越界或速度异常');
+          const obstacles = this.config.behavior?.map.obstacles ?? this.config.map.obstacles ?? [];
+          const steps = Math.max(1, Math.ceil(distance));
+          for (let step = 1; step <= steps; step += 1) {
+            const x = player.position.x + (position.x - player.position.x) * step / steps;
+            const y = player.position.y + (position.y - player.position.y) * step / steps;
+            if (obstacles.some(obstacle => Math.abs(obstacle.x - x) < 1 && Math.abs(obstacle.y - y) < 1)) return this.error(session, '位置与障碍物冲突');
+          }
           player.position = { x: position.x, y: position.y }; this.broadcast(room, { type: 'moved', payload: { playerId: player.id, position: player.position } }); this.sync(); return respond({ position: player.position });
         }
         case 'action': {
           const room = this.rooms.get(session.roomId);
           const player = room?.players.get(session.id);
           if (!room || !player || room.status !== 'running') return this.error(session, '当前不能执行动作');
+          if (player.dead) return this.error(session, '玩家已死亡');
           const now = Date.now();
-          if (now - player.lastAction < 150) return this.error(session, '动作过于频繁');
+          if (!this.config.behavior && now - player.lastAction < 150) return this.error(session, '动作过于频繁');
           player.lastAction = now;
+          if (this.config.behavior) {
+            const behavior = this.config.behavior;
+            const actionId = String(payload.actionId ?? payload.action ?? '');
+            const definition = behavior.actions.find(action => action.id === actionId);
+            if (!definition) return this.error(session, '未知动作');
+            const previous = player.lastActions?.[actionId] ?? 0;
+            if (now - previous < definition.cooldownMs) return this.error(session, '动作过于频繁');
+            player.lastActions = { ...player.lastActions, [actionId]: now };
+            if (definition.kind === 'attack') {
+              if (typeof payload.targetId !== 'string') return this.error(session, '缺少目标');
+              const target = room.players.get(payload.targetId);
+              if (!target || target.id === player.id || target.dead) return this.error(session, '目标无效');
+              const distance = Math.hypot(target.position.x - player.position.x, target.position.y - player.position.y);
+              if (distance > Number(definition.range ?? 40)) return this.error(session, '目标超出攻击距离');
+              target.health = Math.max(0, target.health - Number(definition.damage ?? 1));
+              if (target.health === 0) {
+                player.score += 1;
+                if (behavior.rules.respawn) target.health = behavior.rules.maxHealth;
+                else target.dead = true;
+                if (behavior.winCondition.type === 'firstToScore' && player.score >= behavior.winCondition.target) {
+                  room.status = 'ended'; room.result = { round: room.round, winner: player.username, reason: 'firstToScore', scores: [...room.players.values()].map(item => ({ username: item.username, score: item.score })) };
+                  this.broadcast(room, { type: 'ended', payload: room.result });
+                } else if (behavior.winCondition.type === 'survive') {
+                  const alive = [...room.players.values()].filter(item => !item.dead);
+                  if (alive.length === 1) {
+                    room.status = 'ended'; room.result = { round: room.round, winner: alive[0]!.username, reason: 'survive', scores: [...room.players.values()].map(item => ({ username: item.username, score: item.score, dead: item.dead === true })) };
+                    this.broadcast(room, { type: 'ended', payload: room.result });
+                  }
+                }
+              }
+            } else if (definition.kind === 'gather') {
+              const item = definition.item ?? 'item';
+              player.inventory[item] = (player.inventory[item] ?? 0) + Number(definition.amount ?? 1);
+              player.quest += Number(definition.amount ?? 1);
+              if (behavior.winCondition.type === 'collect' && player.quest >= behavior.winCondition.target) {
+                player.score += 1;
+                room.status = 'ended'; room.result = { round: room.round, winner: player.username, reason: 'collect', scores: [...room.players.values()].map(item => ({ username: item.username, score: item.score, quest: item.quest })) };
+                this.broadcast(room, { type: 'ended', payload: room.result });
+              }
+            } else {
+              const item = definition.item ?? 'item';
+              const cost = Number(definition.amount ?? 1);
+              if ((player.inventory[item] ?? 0) < cost) return this.error(session, '没有足够物品');
+              player.inventory[item] = (player.inventory[item] ?? 0) - cost;
+              player.health = Math.min(behavior.rules.maxHealth, player.health + Number(definition.health ?? 1));
+            }
+            this.broadcast(room, { type: 'actionApplied', payload: { playerId: player.id, actionId } });
+            this.snapshot(session); this.sync(); return respond({ accepted: true, actionId });
+          }
           if (this.config.genre === 'fps') {
             if (typeof payload.targetId !== 'string') return this.error(session, '缺少目标');
             const target = room.players.get(payload.targetId);
@@ -374,19 +450,33 @@ export class GameEngine {
 `;
 
 const generatedAdmin = `import { createServer } from 'node:http';
-import { appendFile } from 'node:fs/promises';
+import { appendFile, open, rename, stat } from 'node:fs/promises';
 import type { GameEngine } from './engine.js';
 export async function startAdmin(engine: GameEngine, token: string, port: number, host: string, auditFile: string): Promise<{ close: () => Promise<void> }> {
   if (!token || token.length < 16) throw new Error('ADMIN_TOKEN 必须至少 16 个字符');
-  const audit = async (event: string): Promise<void> => { await appendFile(auditFile, JSON.stringify({ at: new Date().toISOString(), event }) + '\\n').catch(() => undefined); };
+  let auditBytes = await stat(auditFile).then(info => info.size).catch(() => 0);
+  const audit = async (event: string): Promise<void> => {
+    const line = JSON.stringify({ at: new Date().toISOString(), event: event.slice(0, 240) }) + '\\n';
+    if (auditBytes + Buffer.byteLength(line) > 1024 * 1024) { await rename(auditFile, auditFile + '.1').catch(() => undefined); auditBytes = 0; }
+    await appendFile(auditFile, line, { mode: 0o600 }); auditBytes += Buffer.byteLength(line);
+  };
+  const reads = new Map<string, { count: number; resetAt: number }>();
   const server = createServer(async (request, response) => {
     response.setHeader('Content-Type', 'application/json');
+    const ip = request.socket.remoteAddress ?? 'unknown'; const now = Date.now(); const bucket = reads.get(ip);
+    if (reads.size > 10_000) reads.clear();
+    if (!bucket || bucket.resetAt <= now) reads.set(ip, { count: 1, resetAt: now + 60_000 });
+    else if (++bucket.count > 120) { response.writeHead(429); response.end(JSON.stringify({ error: 'rate limited' })); return; }
     const authorized = request.headers.authorization === 'Bearer ' + token;
     await audit((authorized ? 'authorized ' : 'denied ') + (request.url ?? '/'));
     if (!authorized) { response.writeHead(401); response.end(JSON.stringify({ error: 'unauthorized' })); return; }
     if (request.url === '/health') { const ok = engine.persistenceError === undefined; if (!ok) response.writeHead(503); response.end(JSON.stringify({ ok, persistence: { ok, error: engine.persistenceError ?? null } })); return; }
     if (request.url === '/stats') { response.end(JSON.stringify(engine.stats())); return; }
-    if (request.url === '/audit') { response.end(JSON.stringify(await import('node:fs/promises').then(fs => fs.readFile(auditFile, 'utf8').catch(() => '')))); return; }
+    if (request.url === '/audit') {
+      const handle = await open(auditFile, 'r').catch(() => undefined); if (!handle) { response.end('[]'); return; }
+      try { const info = await handle.stat(); const length = Math.min(info.size, 64 * 1024); const buffer = Buffer.alloc(length); await handle.read(buffer, 0, length, info.size - length); response.end(buffer.toString('utf8')); } finally { await handle.close(); }
+      return;
+    }
     response.writeHead(404); response.end(JSON.stringify({ error: 'not found' }));
   });
   await new Promise<void>((resolve, reject) => { server.once('error', reject); server.listen(port, host, resolve); });
@@ -513,6 +603,180 @@ process.once('SIGINT', () => void shutdown());
 console.log(JSON.stringify({ game: 'ws://' + gameHost + ':' + gamePort, admin: 'http://' + adminHost + ':' + adminPort }));
 `;
 
+function behaviorTest(spec: GameServerSpec): string {
+  const behavior = spec.behaviorEvidence?.behavior;
+  return `import test from 'node:test';
+import assert from 'node:assert/strict';
+import config from '../config/default.json' with { type: 'json' };
+test('目标行为规格与生成配置一致', () => {
+  assert.deepEqual(config.behavior, ${JSON.stringify(behavior ?? undefined)});
+  ${behavior ? `assert.equal(config.behavior.id, ${JSON.stringify(behavior.id)});
+  assert.deepEqual(config.behavior.actions.map(action => action.id), ${JSON.stringify(behavior.actions.map(action => action.id))});
+  assert.deepEqual(config.behavior.winCondition, ${JSON.stringify(behavior.winCondition)});` : `assert.equal(config.behavior, undefined);`}
+});
+`;
+}
+
+function behaviorRuntimeTest(): string {
+  return `import test from 'node:test';
+import assert from 'node:assert/strict';
+import { GameEngine } from '../dist/engine.js';
+import { emptyDatabase } from '../dist/storage.js';
+import config from '../config/default.json' with { type: 'json' };
+
+const behavior = config.behavior;
+function makePlayer(id, username, position = { x: 1, y: 1 }) {
+  return { id, username, roomId: 'r', position, health: behavior.rules.maxHealth, score: 0, inventory: {}, quest: 0, connected: true, dead: false, lastAction: 0, lastActions: {} };
+}
+function makeRoom(count = 2, status = 'lobby') {
+  const players = new Map();
+  for (let index = 0; index < count; index += 1) { const player = makePlayer('p' + index, 'u' + index); players.set(player.id, player); }
+  return { id: 'r', name: 'runtime', players, status, round: 1, lastTick: Date.now(), ...(status === 'running' ? { endsAt: Date.now() + behavior.rules.roundSeconds * 1000 } : {}) };
+}
+function makeSession(id, username) {
+  const messages = [];
+  return { id, username, roomId: 'r', token: '', lastMessage: Date.now(), send: message => messages.push(message), messages };
+}
+function makeEngine(room) { const engine = new GameEngine(emptyDatabase(), ':memory:', config); engine.rooms.set(room.id, room); return engine; }
+function call(engine, session, type, payload = {}) { session.messages.length = 0; engine.handle(session, { type, payload }); return session.messages; }
+function errorText(session) { const message = [...session.messages].reverse().find(item => item.type === 'error'); return String(message?.payload?.message ?? ''); }
+
+test('目标行为运行时条款', { skip: !behavior }, () => {
+  assert.ok(behavior, 'behavior config required');
+  const rules = behavior.rules;
+
+  const minRoom = makeRoom(Math.max(1, rules.minPlayers - 1));
+  const minEngine = makeEngine(minRoom);
+  const owner = makeSession('p0', 'u0');
+  call(minEngine, owner, 'start');
+  assert.match(errorText(owner), /至少需要/);
+  while (minRoom.players.size < rules.minPlayers) { const player = makePlayer('p' + minRoom.players.size, 'u' + minRoom.players.size); minRoom.players.set(player.id, player); }
+  const before = Date.now();
+  call(minEngine, owner, 'start');
+  assert.equal(minRoom.status, 'running');
+  assert.ok(Math.abs(minRoom.endsAt - before - rules.roundSeconds * 1000) < 1000, 'roundSeconds must drive endsAt');
+  const spawns = [...minRoom.players.values()].map(player => player.position);
+  assert.equal(new Set(spawns.map(position => position.x + ',' + position.y)).size, rules.minPlayers, '出生点必须唯一');
+  for (const position of spawns) {
+    assert.ok(position.x >= 0 && position.y >= 0 && position.x <= behavior.map.width && position.y <= behavior.map.height, '出生点越界');
+    assert.ok(!behavior.map.obstacles.some(obstacle => obstacle.x === position.x && obstacle.y === position.y), '出生点不得位于障碍物');
+  }
+
+  const fullRoom = makeRoom(rules.maxPlayers, 'running');
+  const fullEngine = makeEngine(fullRoom);
+  const extra = makeSession('extra', 'extra');
+  call(fullEngine, extra, 'join', { roomId: 'r' });
+  assert.match(errorText(extra), /房间已满/);
+
+  const resetRoom = makeRoom(rules.minPlayers, 'lobby');
+  const resetEngine = makeEngine(resetRoom);
+  const resetOwner = makeSession('p0', 'u0');
+  const resetPlayer = resetRoom.players.get('p0');
+  resetPlayer.score = 9; resetPlayer.quest = 9; resetPlayer.inventory = { item: 9 };
+  call(resetEngine, resetOwner, 'start');
+  assert.equal(resetPlayer.score, 0); assert.equal(resetPlayer.quest, 0); assert.deepEqual(resetPlayer.inventory, {});
+
+  const moveRoom = makeRoom(2, 'running');
+  const moveEngine = makeEngine(moveRoom);
+  const mover = makeSession('p0', 'u0');
+  const moving = moveRoom.players.get('p0');
+  moving.position = { x: 1, y: 1 };
+  call(moveEngine, mover, 'move', { position: { x: 1 + rules.movementSpeed * 2 + 1, y: 1 } });
+  assert.match(errorText(mover), /速度异常/);
+  call(moveEngine, mover, 'move', { position: { x: -1, y: 1 } });
+  assert.match(errorText(mover), /越界/);
+  call(moveEngine, mover, 'move', { position: { x: behavior.map.width + 1, y: 1 } });
+  assert.match(errorText(mover), /越界/);
+  const obstacle = behavior.map.obstacles[0];
+  if (obstacle) {
+    moving.position = { x: obstacle.x >= 2 ? obstacle.x - 2 : obstacle.x + 2, y: obstacle.y };
+    call(moveEngine, mover, 'move', { position: { x: obstacle.x, y: obstacle.y } });
+    assert.match(errorText(mover), /障碍物/);
+  }
+
+  for (const attack of behavior.actions.filter(action => action.kind === 'attack')) {
+    const room = makeRoom(2, 'running');
+    const engine = makeEngine(room);
+    const attacker = makeSession('p0', 'u0');
+    const source = room.players.get('p0');
+    const target = room.players.get('p1');
+    source.position = { x: 1, y: 1 }; target.position = { x: 2, y: 1 };
+    call(engine, attacker, 'action', { actionId: attack.id, targetId: target.id });
+    const remaining = rules.maxHealth - attack.damage;
+    assert.equal(target.health, remaining <= 0 ? (rules.respawn ? rules.maxHealth : 0) : remaining);
+    room.status = 'running'; room.result = undefined; source.score = 0; target.dead = false; target.health = rules.maxHealth;
+    if (attack.cooldownMs > 0) {
+      call(engine, attacker, 'action', { actionId: attack.id, targetId: target.id });
+      assert.match(errorText(attacker), /动作过于频繁/);
+    } else {
+      call(engine, attacker, 'action', { actionId: attack.id, targetId: target.id });
+      assert.doesNotMatch(errorText(attacker), /动作过于频繁/);
+    }
+    source.lastActions = {}; target.dead = false; target.health = rules.maxHealth; target.position = { x: behavior.map.width, y: behavior.map.height };
+    const farDistance = Math.hypot(target.position.x - source.position.x, target.position.y - source.position.y);
+    call(engine, attacker, 'action', { actionId: attack.id, targetId: target.id });
+    if (farDistance > attack.range) assert.match(errorText(attacker), /目标超出攻击距离/);
+    else assert.doesNotMatch(errorText(attacker), /目标超出攻击距离/);
+    source.lastActions = {}; target.position = { x: 2, y: 1 }; target.health = attack.damage; target.dead = false;
+    call(engine, attacker, 'action', { actionId: attack.id, targetId: target.id });
+    if (rules.respawn) { assert.equal(target.health, rules.maxHealth); assert.equal(target.dead, false); }
+    else assert.equal(target.dead, true);
+  }
+
+  for (const gather of behavior.actions.filter(action => action.kind === 'gather')) {
+    const room = makeRoom(1, 'running');
+    const engine = makeEngine(room);
+    const actor = makeSession('p0', 'u0');
+    const player = room.players.get('p0');
+    call(engine, actor, 'action', { actionId: gather.id });
+    assert.equal(player.inventory[gather.item], gather.amount);
+    assert.equal(player.quest, gather.amount);
+    room.status = 'running'; room.result = undefined; player.quest = 0;
+    if (gather.cooldownMs > 0) { call(engine, actor, 'action', { actionId: gather.id }); assert.match(errorText(actor), /动作过于频繁/); }
+  }
+
+  for (const heal of behavior.actions.filter(action => action.kind === 'heal')) {
+    const room = makeRoom(1, 'running');
+    const engine = makeEngine(room);
+    const actor = makeSession('p0', 'u0');
+    const player = room.players.get('p0');
+    player.inventory[heal.item] = heal.amount;
+    player.health = Math.max(1, rules.maxHealth - 1);
+    const beforeHeal = player.health;
+    call(engine, actor, 'action', { actionId: heal.id });
+    assert.equal(player.inventory[heal.item], 0);
+    assert.equal(player.health, Math.min(rules.maxHealth, beforeHeal + heal.health));
+    if (heal.cooldownMs > 0) { player.inventory[heal.item] = heal.amount; call(engine, actor, 'action', { actionId: heal.id }); assert.match(errorText(actor), /动作过于频繁/); }
+  }
+
+  const attack = behavior.actions.find(action => action.kind === 'attack');
+  const gather = behavior.actions.find(action => action.kind === 'gather');
+  if (behavior.winCondition.type === 'firstToScore') {
+    const players = Math.max(rules.minPlayers, rules.respawn ? 2 : behavior.winCondition.target + 1);
+    const room = makeRoom(players, 'running'); const engine = makeEngine(room); const actor = makeSession('p0', 'u0');
+    const source = room.players.get('p0'); const target = room.players.get('p1');
+    source.position = { x: 1, y: 1 }; target.position = { x: 2, y: 1 }; source.score = behavior.winCondition.target - 1; target.health = attack.damage;
+    call(engine, actor, 'action', { actionId: attack.id, targetId: target.id });
+    assert.equal(room.status, 'ended'); assert.equal(room.result.reason, 'firstToScore'); assert.equal(room.result.winner, 'u0');
+  } else if (behavior.winCondition.type === 'survive') {
+    const room = makeRoom(Math.max(3, rules.minPlayers), 'running'); const engine = makeEngine(room); const actor = makeSession('p0', 'u0');
+    const source = room.players.get('p0');
+    for (const target of [...room.players.values()].filter(player => player.id !== source.id)) {
+      source.position = { x: 1, y: 1 }; target.position = { x: 2, y: 1 }; target.health = attack.damage; target.dead = false; source.lastActions = {};
+      call(engine, actor, 'action', { actionId: attack.id, targetId: target.id });
+    }
+    assert.equal(room.status, 'ended'); assert.equal(room.result.reason, 'survive'); assert.equal(room.result.winner, 'u0');
+    assert.ok([...room.players.values()].filter(player => player.id !== source.id).every(player => player.dead));
+  } else if (behavior.winCondition.type === 'collect') {
+    const room = makeRoom(1, 'running'); const engine = makeEngine(room); const actor = makeSession('p0', 'u0');
+    const player = room.players.get('p0'); player.quest = behavior.winCondition.target - gather.amount;
+    call(engine, actor, 'action', { actionId: gather.id });
+    assert.equal(room.status, 'ended'); assert.equal(room.result.reason, 'collect'); assert.equal(room.result.winner, 'u0');
+  }
+});
+`;
+}
+
 function lockfile(spec: GameServerSpec): string {
   return JSON.stringify({
     name: spec.name, version: '1.0.0', lockfileVersion: 3, requires: true,
@@ -528,7 +792,7 @@ function lockfile(spec: GameServerSpec): string {
 }
 
 export function projectFiles(spec: GameServerSpec): Map<string, string> {
-  const config = { gamePort: spec.ports.value.game, adminPort: spec.ports.value.admin, adminHost: spec.ports.value.adminHost, genre: spec.genre, map: spec.map.value, rules: { maxRooms: 100, maxRoomsPerUser: 5, emptyRoomTtlSeconds: 300, ...spec.rules.value } };
+  const config = { gamePort: spec.ports.value.game, adminPort: spec.ports.value.admin, adminHost: spec.ports.value.adminHost, genre: spec.genre, map: spec.map.value, rules: { maxRooms: 100, maxRoomsPerUser: 5, emptyRoomTtlSeconds: 300, ...spec.rules.value }, ...(spec.behaviorEvidence ? { behavior: spec.behaviorEvidence.behavior } : {}) };
   return new Map<string, string>([
     ['server/src/types.ts', generatedTypes],
     ['server/src/auth.ts', generatedAuth],
@@ -544,9 +808,9 @@ export function projectFiles(spec: GameServerSpec): Map<string, string> {
     ['.dockerignore', 'node_modules\ndist\ndata\n.env*\n.git\n.gitignore\ncoverage\ntest-results\nplaywright-report\n'],
     ['Dockerfile', `FROM node:22-alpine\nWORKDIR /app\nCOPY package*.json ./\nRUN npm ci --ignore-scripts --no-audit --no-fund\nCOPY tsconfig.json ./\nCOPY server ./server\nCOPY config ./config\nCOPY scripts ./scripts\nRUN npm run build && npm prune --omit=dev && npm cache clean --force\nRUN mkdir -p /app/data && chown -R node:node /app\nUSER node\nENV NODE_ENV=production\nENV GAME_HOST=0.0.0.0\nEXPOSE ${spec.ports.value.game} ${spec.ports.value.admin}\nCMD ["node", "dist/main.js"]\n`],
     ['docker-compose.yml', `services:\n  game:\n    build: .\n    ports:\n      - "127.0.0.1:\${GAME_PUBLISH_PORT:-${spec.ports.value.game}}:\${GAME_PORT:-${spec.ports.value.game}}"\n      - "127.0.0.1:\${ADMIN_PUBLISH_PORT:-${spec.ports.value.admin}}:\${ADMIN_PORT:-${spec.ports.value.admin}}"\n    environment:\n      ADMIN_TOKEN: \${ADMIN_TOKEN:?ADMIN_TOKEN is required}\n      GAME_PORT: "\${GAME_PORT:-${spec.ports.value.game}}"\n      ADMIN_PORT: "\${ADMIN_PORT:-${spec.ports.value.admin}}"\n      GAME_HOST: 0.0.0.0\n      ADMIN_HOST: 0.0.0.0\n      ALLOWED_HOSTS: "\${ALLOWED_HOSTS:-127.0.0.1}"\n      ALLOWED_ORIGINS: "\${ALLOWED_ORIGINS:-}"\n      MAX_CONNECTIONS: "\${MAX_CONNECTIONS:-256}"\n    healthcheck:\n      test: ["CMD", "node", "scripts/healthcheck.mjs"]\n      interval: 2s\n      timeout: 3s\n      retries: 20\n      start_period: 5s\n    volumes:\n      - game-data:/app/data\nvolumes:\n  game-data:\n`],
-    ['BUILD-INFO.json', JSON.stringify({ name: spec.name, genre: spec.genre, revivalLevel: spec.level, generatedBy: '@reverse/game-revival', modules: spec.modules.map(module => module.name), originalClient: 'UNKNOWN' }, null, 2) + '\n'],
+    ['BUILD-INFO.json', JSON.stringify({ name: spec.name, genre: spec.genre, revivalLevel: spec.level, generatedBy: '@reverse/game-revival', modules: spec.modules.map(module => module.name), originalClient: 'UNKNOWN', provenance: spec.provenance }, null, 2) + '\n'],
     ['GAME-COMPATIBILITY.json', JSON.stringify({ originalClientCompatible: false, status: 'UNKNOWN', protocol: 'revival-websocket-v1', notes: spec.compatibility.value.notes }, null, 2) + '\n'],
-    ['README.md', `# ${spec.name}\n\n由 Game Revival 生成的独立 ${spec.genre.toUpperCase()} 多人游戏服务器。不是原版客户端或协议兼容实现。\n\n## 启动\n\n\`\`\`sh\nnpm ci\nnpm run build\nADMIN_TOKEN="$(openssl rand -hex 24)" GAME_PORT=${spec.ports.value.game} ADMIN_PORT=${spec.ports.value.admin} npm start\n\`\`\`\n\n- 游戏 WebSocket：端口 ${spec.ports.value.game}\n- 管理 HTTP：http://${spec.ports.value.adminHost}:${spec.ports.value.admin}（Bearer ADMIN_TOKEN）\n- 地图：${spec.map.value.name} (${spec.map.value.width}×${spec.map.value.height})\n- 模块：${spec.modules.map(module => module.name).join(', ')}\n\n安全默认值：仅监听 127.0.0.1；WS 连接必须匹配 ALLOWED_HOSTS（默认 127.0.0.1），浏览器来源必须显式加入 ALLOWED_ORIGINS。远程监听时必须设置 GAME_HOST 与 ALLOWED_HOSTS。可用 MAX_CONNECTIONS 限制总连接数；认证还有每 IP 速率、scrypt 并发和 token 数量上限。\n\n协议：连接后发送 \`authenticate\`（mode=register/login, username, password）；注册至少 8 位密码。随后 \`join\`、\`start\`、\`move\`、\`action\`、\`end\`。断线 120 秒内使用 welcome 后自动生成的 resume token 恢复；resume token 单次有效并会轮换，旧 socket 与旧登录 token 立即失效。RPG 使用 gather/useHerb 动作；FPS action 使用 targetId。\n\n## 运维\n\n\`npm run healthcheck\`、\`npm run backup\`、\`npm run restore -- data/backup.json\`。管理 API：\`/health\`、\`/stats\`、\`/audit\`，必须 Bearer 认证，审计追加至 \`data/admin-audit.jsonl\`。\n\n## 证据边界\n\n原始客户端兼容性：UNKNOWN。生成服务为新的服务端权威设计；规格与兼容性文件记录观察、推断和未知。\n`],
+    ['README.md', `# ${spec.name}\n\n由 Game Revival 生成的独立 ${spec.genre.toUpperCase()} 多人游戏服务器。不是原版客户端或协议兼容实现。\n\n## 启动\n\n\`\`\`sh\nnpm ci\nnpm run build\nADMIN_TOKEN="$(openssl rand -hex 24)" GAME_PORT=${spec.ports.value.game} ADMIN_PORT=${spec.ports.value.admin} npm start\n\`\`\`\n\n- 游戏 WebSocket：端口 ${spec.ports.value.game}\n- 管理 HTTP：http://${spec.ports.value.adminHost}:${spec.ports.value.admin}（Bearer ADMIN_TOKEN）\n- 地图：${spec.map.value.name} (${spec.map.value.width}×${spec.map.value.height})\n- 模块：${spec.modules.map(module => module.name).join(', ')}\n\n安全默认值：仅监听 127.0.0.1；WS 连接必须匹配 ALLOWED_HOSTS（默认 127.0.0.1），浏览器来源必须显式加入 ALLOWED_ORIGINS。远程监听时必须设置 GAME_HOST 与 ALLOWED_HOSTS。可用 MAX_CONNECTIONS 限制总连接数；认证还有每 IP 速率、scrypt 并发和 token 数量上限。\n\n协议：连接后发送 \`authenticate\`（mode=register/login, username, password）；注册至少 8 位密码。随后 \`join\`、\`start\`、\`move\`、\`action\`、\`end\`。断线 120 秒内使用 welcome 后自动生成的 resume token 恢复；resume token 单次有效并会轮换，旧 socket 与旧登录 token 立即失效。${spec.behaviorEvidence ? `目标行为 \`${spec.behaviorEvidence.behavior.id}\` 的动作：${spec.behaviorEvidence.behavior.actions.map(action => action.id).join(', ')}；胜负条件 \`${spec.behaviorEvidence.behavior.winCondition.type}=${spec.behaviorEvidence.behavior.winCondition.target}\`。` : '没有目标行为规格，使用共享 FPS/RPG 模板动作。'}\n\n## 运维\n\n\`npm run healthcheck\`、\`npm run backup\`、\`npm run restore -- data/backup.json\`。管理 API：\`/health\`、\`/stats\`、\`/audit\`，必须 Bearer 认证，审计追加至 \`data/admin-audit.jsonl\`。\n\n## 证据边界\n\n原始客户端兼容性：UNKNOWN。生成服务为新的服务端权威设计；规格与兼容性文件记录观察、推断和未知。\n`],
     ['admin-web/index.html', `<!doctype html><html lang="zh"><meta charset="utf-8"><title>${spec.name} 管理后台</title><h1>${spec.name} 管理后台</h1><p>管理 API 需要 Authorization: Bearer ADMIN_TOKEN，默认仅监听 127.0.0.1。</p><button id="stats">读取统计</button><pre id="out"></pre><script>document.querySelector('#stats').onclick=async()=>{const token=prompt('ADMIN_TOKEN');const r=await fetch('/stats',{headers:{Authorization:'Bearer '+token}});document.querySelector('#out').textContent=JSON.stringify(await r.json(),null,2)}</script></html>\n`],
     ['scripts/start.mjs', "import { spawn } from 'node:child_process';\nif (!process.env.ADMIN_TOKEN || process.env.ADMIN_TOKEN.length < 16) throw new Error('ADMIN_TOKEN 必须至少 16 个字符');\nconst child = spawn(process.execPath, ['dist/main.js'], { stdio: 'inherit' });\nprocess.on('SIGTERM', () => child.kill('SIGTERM'));\n"],
     ['scripts/stop.mjs', "import { readFileSync } from 'node:fs';\nconst file = process.env.PID_FILE ?? 'data/game.pid';\ntry { const pid = Number(readFileSync(file, 'utf8')); process.kill(pid, 'SIGTERM'); } catch (error) { console.error(error.message); process.exitCode = 1; }\n"],
@@ -558,7 +822,9 @@ export function projectFiles(spec: GameServerSpec): Map<string, string> {
     ['scripts/healthcheck.sh', '#!/bin/sh\nexec node scripts/healthcheck.mjs\n'],
     ['scripts/backup.sh', '#!/bin/sh\nexec node scripts/backup.mjs "$@"\n'],
     ['scripts/restore.sh', '#!/bin/sh\nexec node scripts/restore.mjs "$@"\n'],
-    ['tests/server.test.mjs', "import test from 'node:test';\nimport assert from 'node:assert/strict';\nimport { GameEngine } from '../dist/engine.js';\nimport { emptyDatabase } from '../dist/storage.js';\nimport config from '../config/default.json' with { type: 'json' };\ntest('房间隔离与角色状态', () => {\n  const engine = new GameEngine(emptyDatabase(), ':memory:', config);\n  const room = { id: 'r', name: 'test', players: new Map(), status: 'lobby', round: 0, lastTick: Date.now() };\n  room.players.set('a', { id: 'a', username: 'alice', roomId: 'r', position: { x: 0, y: 0 }, health: 100, score: 0, inventory: { herb: 2 }, quest: 1, connected: true, lastAction: 0 });\n  engine.rooms.set('r', room);\n  assert.equal(engine.rooms.get('r').players.get('a').inventory.herb, 2);\n  assert.equal(engine.rooms.has('other'), false);\n});\n"],
+    ['tests/behavior.test.mjs', behaviorTest(spec)],
+    ['tests/behavior-runtime.test.mjs', behaviorRuntimeTest()],
+    ['tests/server.test.mjs', "import test from 'node:test';\nimport assert from 'node:assert/strict';\nimport { GameEngine } from '../dist/engine.js';\nimport { resetAuthRateLimiter } from '../dist/auth.js';\nimport { emptyDatabase } from '../dist/storage.js';\nimport config from '../config/default.json' with { type: 'json' };\ntest('房间隔离与角色状态', () => {\n  resetAuthRateLimiter();\n  const engine = new GameEngine(emptyDatabase(), ':memory:', config);\n  const room = { id: 'r', name: 'test', players: new Map(), status: 'lobby', round: 0, lastTick: Date.now() };\n  room.players.set('a', { id: 'a', username: 'alice', roomId: 'r', position: { x: 0, y: 0 }, health: 100, score: 0, inventory: { herb: 2 }, quest: 1, connected: true, lastAction: 0 });\n  engine.rooms.set('r', room);\n  assert.equal(engine.rooms.get('r').players.get('a').inventory.herb, 2);\n  assert.equal(engine.rooms.has('other'), false);\n});\n"],
     ['package-lock.json', lockfile(spec)],
   ]);
 }

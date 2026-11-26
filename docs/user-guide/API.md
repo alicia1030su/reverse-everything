@@ -1,9 +1,9 @@
-# REST API（v0.0.6）
+# REST API（v0.0.7）
 
 - 基础地址：`http://127.0.0.1:4173/api/v1`
 - 兼容地址：`/api`，两者路由相同
 - 认证：`Authorization: Bearer <local-token>`；Web 使用 HttpOnly、SameSite=Strict cookie
-- OpenAPI：`GET /api/openapi.json`，规范版本 **0.0.6**；可运行 `npm run openapi` 生成 `docs/api/openapi-v0.0.6.json`
+- OpenAPI：`GET /api/openapi.json`，规范版本 **0.0.7**；可运行 `npm run openapi` 生成 `docs/api/openapi-v0.0.7.json`
 - 错误：`{error:{code,message,requestId,details?}}`
 - 列表：支持 `limit` / `offset`；项目/任务保留数组响应并提供 `x-total-count`
 
@@ -42,7 +42,7 @@
 | GET | `/api/tasks/:id/report` | 下载 Markdown 报告 |
 | GET | `/api/tasks/:id/report/plain` | 普通用户报告；`format=markdown|json|html` |
 
-项目 kind：`website`、`software`、`game`、`security`、`protocol`、`hardware`、`firmware`、`console`。任务 adapter：`website`、`file`、`security`、`game`、`network`、`apk`、`ghidra`、`hardware`、`firmware`、`console`。
+项目 kind：`website`、`software`、`game`、`security`、`protocol`、`hardware`、`firmware`、`console`。任务 adapter：`website`、`file`、`legacy`、`security`、`game`、`network`、`apk`、`ghidra`、`hardware`、`firmware`、`console`。
 
 Android 使用 `software` + `apk`；开发板复用 `hardware`，固件镜像使用 `firmware`，不存在 `board` adapter。
 
@@ -56,6 +56,28 @@ Android 使用 `software` + `apk`；开发板复用 `hardware`，固件镜像使
 | POST | `/api/console/diagnose-usb` | 只读 USB 枚举摘要诊断；不打开设备 |
 | GET/PUT | `/api/projects/:id/console-profile` | 读取/保存 C0-C5 证据等级档案 |
 
+## Legacy Studio
+
+Legacy 使用普通项目/任务接口，项目 kind 为 `software`，adapter 为 `legacy`：
+
+```http
+POST /api/v1/projects/<projectId>/tasks
+Authorization: Bearer <local-token>
+Content-Type: application/json
+
+{"adapter":"legacy","options":{"path":"/absolute/authorized/legacy-tool"}}
+```
+
+可选 `options`：
+
+| 字段 | 说明 |
+|---|---|
+| `path` | 未上传时的本机绝对路径；必须位于 API 服务端 `RE_LEGACY_ROOTS` 白名单 |
+| `recover` | `true` 时只读恢复来源数据并写入独立导出目录 |
+| `reconstruction` | `kind`、`name`、`requirements`；生成独立 INI/CSV/文本工具 |
+
+上传文件不需要 `RE_LEGACY_ROOTS`。Legacy 不执行原程序，不自动安装外部运行时，不调用远程 AI。详见 [老软件指南](../LEGACY-SOFTWARE.md) 与 [数据恢复](../DATA-RECOVERY.md)。
+
 ## Game Revival
 
 | 方法 | 路径 | 说明 |
@@ -68,7 +90,7 @@ Android 使用 `software` + `apk`；开发板复用 `hardware`，固件镜像使
 | GET | `/api/game/rebuilds/:id` | 构建、联机与部署验证报告 |
 | GET | `/api/game/rebuilds/:id/archive` | 下载已验证服务端 ZIP |
 
-`game-scan` 的 `rootPath` 必须是绝对路径，且位于 API 服务端 `RE_GAME_ROOTS` 显式允许的目录内。未配置或越界返回 403 `FORBIDDEN`；CLI、stdio/HTTP MCP 均不能绕过。生成物为独立兼容实现，不是原始服务端，不保证商业原客户端兼容。当前本地最高实测 L6，Docker/L7 待 CI。
+`game-scan` 的 `rootPath` 必须是绝对路径，且位于 API 服务端 `RE_GAME_ROOTS` 显式允许的目录内。未配置或越界返回 403 `FORBIDDEN`；CLI、stdio/HTTP MCP 均不能绕过。扫描可读取唯一 V5 行为 IR；重建报告的 L0-L7 表示实现等级，`targetEvidence` 分开记录行为、原客户端和协议，后两者默认 `UNKNOWN`。v0.0.6 正式候选 CI 的 Docker/L7 已通过，但不能外推为商业原客户端兼容。
 
 ## 授权、计划与工具
 

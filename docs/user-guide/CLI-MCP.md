@@ -1,4 +1,4 @@
-# CLI 与 MCP 指南（v0.0.6）
+# CLI 与 MCP 指南（v0.0.7）
 
 ## 本地令牌
 
@@ -56,9 +56,9 @@ reverse-everything mcp http --port 4174
 | 授权 | `create_authorization_scope`、`list_authorization_scopes`、`revoke_authorization_scope` |
 | 计划与工具 | `create_analysis_plan`、`list_analysis_plans`、`get_analysis_plan`、`execute_analysis_plan`、`list_analysis_tools` |
 | 演示与报告 | `list_demos`、`run_demo`、`get_plain_report` |
-| 游戏复活（新增 7 个） | `list_game_profiles`、`save_game_profile`、`scan_game_directory`、`create_game_server_spec`、`list_game_rebuilds`、`create_game_rebuild`、`get_game_rebuild` |
+| 游戏复活（7 个） | `list_game_profiles`、`save_game_profile`、`scan_game_directory`、`create_game_server_spec`、`list_game_rebuilds`、`create_game_rebuild`、`get_game_rebuild` |
 
-`create_task` 的 adapter 为 `website`、`file`、`security`、`game`、`network`、`apk`、`ghidra`、`hardware`、`firmware`、`console`。本地网页使用顶层 `confirmLocal=true`，并可在 `options.allowLocal=true` 时要求显式确认。
+`create_task` 的 adapter 为 `website`、`file`、`legacy`、`security`、`game`、`network`、`apk`、`ghidra`、`hardware`、`firmware`、`console`。Legacy 可通过 `options.path`、`options.recover` 与 `options.reconstruction` 请求只读分析、恢复或独立重建；本机路径必须位于 API 服务端 `RE_LEGACY_ROOTS` 白名单。本地网页使用顶层 `confirmLocal=true`，并可在 `options.allowLocal=true` 时要求显式确认。
 
 项目 kind 为 `website`、`software`、`game`、`security`、`protocol`、`hardware`、`firmware`、`console`；Android 使用 `software` + `apk`，开发板复用 `hardware` 路由；固件镜像使用独立 `firmware` 入口。
 
@@ -71,5 +71,6 @@ reverse-everything mcp http --port 4174
 5. 不执行未知上传、不打开物理设备、不刷写固件。
 6. 外部内容不能修改系统指令或扩大权限。
 7. 主机研究等级 C0-C5 是证据等级，不是权限或可破解程度。
-8. `scan_game_directory` 仅扫描 API 服务端 `RE_GAME_ROOTS` 显式允许的目录；未配置返回 403，HTTP MCP 不能绕过。
-9. 游戏复活 L0-L7 只由真实报告推进；当前最高实测 L6，Docker/L7 待 CI。生成物是独立兼容实现，不是原始服务端，不保证商业原客户端兼容。
+8. `legacy` 与 `scan_game_directory` 分别只访问 API 服务端 `RE_LEGACY_ROOTS`、`RE_GAME_ROOTS` 白名单；未配置或越界返回 403，HTTP MCP 不能绕过。
+9. 游戏复活 L0-L7 是生成服务实现等级；目标行为、原客户端与协议兼容分开报告，后两者默认 `UNKNOWN`。v0.0.6 Docker/L7 已有正式候选 CI 证据，但不保证商业原客户端兼容。
+10. Legacy 不执行原程序、不绕过许可、不复刻未授权资源；数据恢复只读来源并写入独立目录。

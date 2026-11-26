@@ -300,8 +300,55 @@ async function runGameRevivalSmoke(): Promise<{ valid: boolean; genre: string; s
   }
 }
 
+async function runLegacyRevivalSmoke(): Promise<{ valid: boolean; format: string; files: number; testsPassed: boolean; httpStatus: number; errors: string[] }> {
+  const temporary = await mkdtemp(path.join(dataDir, 'legacy-revival-smoke-'));
+  const previousElectronRunAsNode = process.env.ELECTRON_RUN_AS_NODE;
+  let server: ChildProcess | undefined;
+  try {
+    const { analyzeLegacySoftware, createReconstructionSpec, generateReconstructionProject, writeReconstructionProject } = await import(pathToFileURL(path.join(resourceDir, 'node_modules', '@reverse', 'legacy-revival', 'dist', 'index.js')).href);
+    const source = path.join(temporary, 'sample.ini');
+    await writeFile(source, '[general]\nname=legacy-smoke\nenabled=true\n');
+    const analysis = await analyzeLegacySoftware(source);
+    const spec = createReconstructionSpec({ kind: 'ini-editor', name: 'legacy-smoke-editor', requirements: ['read INI', 'export independent copy'], profile: analysis.profile });
+    const project = generateReconstructionProject(spec);
+    const output = path.join(temporary, 'generated');
+    const files = await writeReconstructionProject(project, output);
+    process.env.ELECTRON_RUN_AS_NODE = '1';
+    await captureCommand(process.execPath, ['--test'], 60_000, output);
+    const port = await new Promise<number>((resolve, reject) => {
+      const probe = createServer();
+      probe.once('error', reject);
+      probe.listen(0, '127.0.0.1', () => {
+        const address = probe.address();
+        if (!address || typeof address === 'string') { probe.close(); reject(new Error('No free port for Legacy smoke')); return; }
+        probe.close(error => error ? reject(error) : resolve(address.port));
+      });
+    });
+    server = spawn(process.execPath, ['server.mjs'], { cwd: output, env: { ...process.env, PORT: String(port) }, stdio: 'ignore', windowsHide: true });
+    let httpStatus = 0;
+    for (let attempt = 0; attempt < 40; attempt += 1) {
+      try {
+        const response = await fetch(`http://127.0.0.1:${port}/`, { signal: AbortSignal.timeout(500) });
+        httpStatus = response.status;
+        if (response.ok) break;
+      } catch { /* 尚未监听 */ }
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+    const valid = analysis.profile.formats.includes('INI') && files.length > 0 && httpStatus === 200;
+    if (!valid) throw new Error(`Legacy Revival smoke failed: format=${analysis.profile.formats.join(',')} files=${files.length} http=${httpStatus}`);
+    return { valid, format: analysis.profile.formats.join(','), files: files.length, testsPassed: true, httpStatus, errors: [] };
+  } catch (error) {
+    return { valid: false, format: 'UNKNOWN', files: 0, testsPassed: false, httpStatus: 0, errors: [error instanceof Error ? error.message : String(error)] };
+  } finally {
+    if (server && server.exitCode === null) { server.kill(); await waitForExit(server, 3000); }
+    if (previousElectronRunAsNode === undefined) delete process.env.ELECTRON_RUN_AS_NODE; else process.env.ELECTRON_RUN_AS_NODE = previousElectronRunAsNode;
+    await rm(temporary, { recursive: true, force: true });
+  }
+}
+
 async function runSmoke(): Promise<void> {
   const gameRevival = await runGameRevivalSmoke();
+  const legacyRevival = await runLegacyRevivalSmoke();
   const result = await window!.webContents.executeJavaScript(`(async()=>{const health=await fetch('/api/health');const capabilities=await fetch('/api/capabilities');const resources=await fetch('/api/resources');return {healthStatus:health.status,health:await health.json(),capabilitiesStatus:capabilities.status,capabilities:await capabilities.json(),resourcesStatus:resources.status,resources:await resources.json()};})()`) as {
     healthStatus?: number;
     health?: { product?: string; version?: string };
@@ -315,7 +362,8 @@ async function runSmoke(): Promise<void> {
   const ok = result.health?.product === product && result.health?.version === version
     && result.capabilities?.product?.version === version
     && metricsStatus === 'reported'
-    && gameRevival.valid;
+    && gameRevival.valid
+    && legacyRevival.valid;
   const output = process.env.RE_SMOKE_OUTPUT;
   if (output) {
     await writeFile(output, JSON.stringify({
@@ -324,6 +372,7 @@ async function runSmoke(): Promise<void> {
       dataDir,
       resourceDir,
       gameRevival,
+      legacyRevival,
       diagnostics: result,
       desktopMetrics: {
         status: metricsStatus,
@@ -336,9 +385,9 @@ async function runSmoke(): Promise<void> {
   await stop(ok ? 0 : 1);
 }
 
-function captureCommand(command: string, args: string[], timeoutMs = 5000): Promise<string> {
+function captureCommand(command: string, args: string[], timeoutMs = 5000, cwd?: string): Promise<string> {
   return new Promise((resolve, reject) => {
-    const child = spawn(command, args, { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = spawn(command, args, { cwd, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
     let output = '';
     let settled = false;
     const finish = (error?: Error, value = '') => {

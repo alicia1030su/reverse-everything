@@ -1,6 +1,6 @@
 export type GameRevivalLevel = 'L0' | 'L1' | 'L2' | 'L3' | 'L4' | 'L5' | 'L6' | 'L7';
 export type EvidenceStatus = 'OBSERVED' | 'INFERRED' | 'VERIFIED' | 'UNKNOWN' | 'INACCESSIBLE' | 'NOT_IMPLEMENTED';
-export type GameModuleName = 'authentication' | 'rooms' | 'fps' | 'rpg' | 'movement' | 'combat' | 'inventory' | 'quests' | 'persistence' | 'reconnection' | 'settlement' | 'admin';
+export type GameModuleName = 'authentication' | 'rooms' | 'fps' | 'rpg' | 'movement' | 'combat' | 'inventory' | 'quests' | 'behavior' | 'persistence' | 'reconnection' | 'settlement' | 'admin';
 
 export interface EvidenceRef {
   path: string;
@@ -47,6 +47,8 @@ export interface GameServerSpec {
   rules: Evidence<Record<string, number | boolean | string>>;
   ports: Evidence<{ game: number; admin: number; adminHost: string }>;
   compatibility: Evidence<{ originalClient: 'UNKNOWN'; notes: string[] }>;
+  behaviorEvidence?: GameBehaviorEvidence;
+  provenance: GameServerProvenance;
   files: GameFileRecord[];
   limitations: string[];
 }
@@ -58,6 +60,7 @@ export interface GameScanSkipped {
 
 export interface GameScanResult {
   files: GameFileRecord[];
+  behaviorEvidence?: GameBehaviorEvidence;
   filesScanned: number;
   bytesScanned: number;
   truncated: boolean;
@@ -77,6 +80,45 @@ export interface GameObservation {
   ref: string;
   detail: string;
   status?: EvidenceStatus;
+}
+
+export type GameBehaviorActionKind = 'attack' | 'gather' | 'heal';
+export interface GameBehaviorAction {
+  id: string;
+  kind: GameBehaviorActionKind;
+  cooldownMs: number;
+  damage?: number;
+  range?: number;
+  item?: string;
+  amount?: number;
+  health?: number;
+}
+export interface GameBehavior {
+  format: 'revival-behavior/v1';
+  id: string;
+  title: string;
+  mode: string;
+  rules: { minPlayers: number; maxPlayers: number; roundSeconds: number; movementSpeed: number; maxHealth: number; respawn: boolean };
+  actions: GameBehaviorAction[];
+  winCondition: { type: 'firstToScore' | 'survive' | 'collect'; target: number };
+  map: { width: number; height: number; obstacles: Array<{ x: number; y: number }> };
+}
+export interface GameBehaviorEvidence {
+  behavior: GameBehavior;
+  sourcePath: string;
+  sha256: string;
+  evidenceStatus: 'OBSERVED' | 'INFERRED';
+  detail: string;
+}
+export interface GameServerProvenance {
+  targetSpecific: string[];
+  sharedTemplateComponents: string[];
+  originalClient: 'UNKNOWN' | 'TESTED';
+}
+export interface GameTargetEvidence {
+  behavior: 'UNKNOWN' | 'OBSERVED' | 'VERIFIED';
+  originalClient: 'UNKNOWN' | 'VERIFIED';
+  protocol: 'UNKNOWN' | 'VERIFIED';
 }
 
 export interface GameValidationCheck {
@@ -107,8 +149,10 @@ export interface GameValidationReport {
   genre: 'fps' | 'rpg';
   gameMode: string;
   transport: 'websocket';
-  clients: Array<{ kind: 'real-game-client' | 'simulated-load'; count: number }>;
+  clients: Array<{ kind: 'internal-protocol-client' | 'simulated-load' | 'original-game-client'; count: number }>;
   capabilities: GameValidationCapabilities;
+  provenance?: GameServerProvenance;
+  targetEvidence?: GameTargetEvidence;
   deployment?: { docker: { tested: boolean; command?: string; evidence?: string } };
   metrics?: { durationMs: number; rooms: number; players: number; rounds: number; loadClients: number };
   checks: GameValidationCheck[];

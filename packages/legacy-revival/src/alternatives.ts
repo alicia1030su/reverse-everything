@@ -1,0 +1,11 @@
+export interface FreeAlternative { id:string; name:string; category:'image-viewer'|'audio-player'|'archiver'|'text-editor'; officialUrl:string; license:string; platforms:string[]; free:true; maintained:'ACTIVE'|'UNKNOWN'; functionalDifferences:string[]; dataImport:string; sourceCheckedAt:string; notes:string[] }
+const checked='2026-11-26';
+export const FREE_ALTERNATIVES:FreeAlternative[]=[
+  {id:'imageglass-classic',name:'ImageGlass Classic',category:'image-viewer',officialUrl:'https://imageglass.org/classic',license:'GPL-3.0',platforms:['Windows','macOS','Linux'],free:true,maintained:'ACTIVE',functionalDifferences:['现代图片查看、裁剪、缩放、帧浏览','不含 IrfanView 的全部批量转换插件生态'],dataImport:'JPEG/PNG/WebP/HEIC/RAW/SVG 等图片格式',sourceCheckedAt:checked,notes:['Classic 与付费 Pro 分开；只推荐 Classic','商标权不随 GPL 自动授予']},
+  {id:'audacious',name:'Audacious',category:'audio-player',officialUrl:'https://audacious-media-player.org/',license:'BSD-2-Clause (core); plugins vary',platforms:['Windows','macOS','Linux','BSD'],free:true,maintained:'ACTIVE',functionalDifferences:['低占用音频播放、播放列表、Winamp Classic 皮肤','不是完整音乐库/流媒体平台'],dataImport:'MP3/FLAC/Ogg 等音频与常见播放列表',sourceCheckedAt:checked,notes:['官方 4.6.2 于 2026-10-19 发布','插件和编解码器许可证需单独核对']},
+  {id:'7-zip',name:'7-Zip',category:'archiver',officialUrl:'https://www.7-zip.org/',license:'LGPL-2.1-or-later / BSD / unRAR restriction',platforms:['Windows','Linux command line'],free:true,maintained:'ACTIVE',functionalDifferences:['7z/ZIP 等压缩与解压、AES-256、文件管理','不创建 RAR 格式'],dataImport:'7z/ZIP/RAR/TAR/ISO 等归档',sourceCheckedAt:checked,notes:['官方 26.06 于 2026-11-06 发布','再分发需遵守完整许可与 unRAR 限制']},
+  {id:'peazip',name:'PeaZip',category:'archiver',officialUrl:'https://peazip.github.io/',license:'LGPL-3.0',platforms:['Windows','macOS','Linux','BSD'],free:true,maintained:'ACTIVE',functionalDifferences:['跨平台图形化归档管理、格式转换、校验和','部分高级压缩器依赖外部组件'],dataImport:'200+ 归档格式，包括 7z/ZIP/RAR/TAR',sourceCheckedAt:checked,notes:['官方提供便携版','依赖组件的许可证需单独核对']},
+];
+export function findFreeAlternatives(category?:string,query=''):FreeAlternative[]{
+  const normalized=query.trim().toLowerCase();return FREE_ALTERNATIVES.filter(item=>(!category||item.category===category)&&(!normalized||`${item.name} ${item.category} ${item.functionalDifferences.join(' ')}`.toLowerCase().includes(normalized)));
+}

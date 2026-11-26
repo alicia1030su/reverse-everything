@@ -1,10 +1,10 @@
-import { mkdtemp, mkdir, rename, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { scanGameDirectory } from '../../packages/game-revival/src/scanner.js';
 
-const controls = vi.hoisted(() => ({ replaceOnOpen: false, mutateOnRead: false, replaceDirectoryOnOpen: false, forceSymbolicLinks: false }));
+const controls = vi.hoisted(() => ({ replaceOnOpen: false, mutateOnRead: false, replaceDirectoryOnOpen: false, mutateNestedAfterWalk: false, forceSymbolicLinks: false }));
 vi.mock('node:fs/promises', async importOriginal => {
   const fs = await importOriginal<typeof import('node:fs/promises')>();
   return {
@@ -43,13 +43,31 @@ vi.mock('node:fs/promises', async importOriginal => {
         await mkdir(String(args[0]));
         await writeFile(path.join(String(args[0]), 'intruder.txt'), 'outside traversal');
       }
-      return fs.opendir(...args);
+      const directory = await fs.opendir(...args);
+      if (controls.mutateNestedAfterWalk && String(args[0]).endsWith('nested')) {
+        controls.mutateNestedAfterWalk = false;
+        const iterator = directory[Symbol.asyncIterator]();
+        return {
+          [Symbol.asyncIterator]() {
+            return {
+              next: async () => {
+                const result = await iterator.next();
+                if (result.done) await writeFile(path.join(String(args[0]), 'late.txt'), 'late');
+                return result;
+              },
+              return: () => iterator.return(),
+            };
+          },
+          close: () => directory.close(),
+        } as unknown as Awaited<ReturnType<typeof fs.opendir>>;
+      }
+      return directory;
     },
   };
 });
 
 const temporary: string[] = [];
-beforeEach(() => { controls.replaceOnOpen = false; controls.mutateOnRead = false; controls.replaceDirectoryOnOpen = false; controls.forceSymbolicLinks = false; });
+beforeEach(() => { controls.replaceOnOpen = false; controls.mutateOnRead = false; controls.replaceDirectoryOnOpen = false; controls.mutateNestedAfterWalk = false; controls.forceSymbolicLinks = false; });
 afterEach(async () => { await Promise.all(temporary.splice(0).map(directory => rm(directory, { recursive: true, force: true }))); });
 async function workspace(): Promise<string> { const directory = await mkdtemp(path.join(os.tmpdir(), 'game-evidence-safety-')); temporary.push(directory); return directory; }
 
@@ -83,5 +101,22 @@ describe('扫描竞态与读取安全', () => {
     await writeFile(path.join(root, 'nested', 'safe.txt'), 'safe');
     controls.replaceDirectoryOnOpen = true;
     await expect(scanGameDirectory(root)).rejects.toThrow('目录被替换');
+  });
+  it('拒绝嵌套目录在遍历完成后被修改', async () => {
+    const root = await workspace();
+    await mkdir(path.join(root, 'nested'));
+    await writeFile(path.join(root, 'nested', 'safe.txt'), 'safe');
+    controls.mutateNestedAfterWalk = true;
+    await expect(scanGameDirectory(root)).rejects.toThrow('目录被替换');
+  });
+  it('扫描截断时不得保留可能不唯一的行为规格证据', async () => {
+    const root = await workspace();
+    await writeFile(path.join(root, 'behavior.json'), await readFile(path.join(process.cwd(), 'examples/revival-games/anti-template/duel/behavior.json'), 'utf8'));
+    await writeFile(path.join(root, 'z.bin'), 'x');
+    const result = await scanGameDirectory(root, { maxFiles: 1 });
+    expect(result.truncated).toBe(true);
+    expect(result.behaviorEvidence).toBeUndefined();
+    const exact = await scanGameDirectory(root, { maxBytes: Buffer.byteLength(await readFile(path.join(root, 'behavior.json'), 'utf8')) + 1 });
+    expect(exact.truncated).toBe(false);
   });
 });

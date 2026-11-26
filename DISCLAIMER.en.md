@@ -1,6 +1,6 @@
 # Disclaimer
 
-Reverse Everything is an open-source AI-assisted reverse engineering, software analysis, hardware research, compatibility validation, and security research tool. Game revival produces an **independent compatibility implementation**, not the original server, original source code, or an official replacement.
+Reverse Everything is an open-source AI-assisted reverse engineering, software analysis, hardware research, compatibility validation, and security research tool. Legacy Software Revival Studio performs read-only identification, compatibility/license diagnostics, data recovery, and independent functional reconstruction for lawfully retained software. Game revival produces an **independent compatibility implementation**, not the original server, original source code, or an official replacement.
 
 The project is intended to support technical learning, software interoperability, digital preservation, lawful security research, and knowledge exchange.
 
@@ -8,7 +8,9 @@ Users must ensure that they have lawful permission to analyze their targets and 
 
 This project does not grant permission to access unauthorized systems, accounts, devices, software, or data, and it does not grant rights beyond the scope of an existing license.
 
-Game revival does not guarantee compatibility with commercial original clients and does not authorize the operation of a shut-down game. Do not use this project to bypass DRM, anti-cheat, login, or other authentication mechanisms, or to distribute, upload, or redistribute unauthorized game clients, assets, source code, accounts, or captured data. Generated artifacts may be used only within the scope of lawfully retained materials and explicit authorization; users are responsible for compliance.
+Game revival does not guarantee compatibility with any real commercial original client and does not authorize the operation of a shut-down game. Do not use this project for cracking, license or authorization bypass, or piracy activation, or to bypass DRM, anti-cheat, login, or other authentication mechanisms. Do not distribute, upload, redistribute, or recreate unauthorized game or software clients, assets, source code, accounts, captured data, or branding. Generated artifacts may be used only within the scope of lawfully retained materials and explicit authorization; users are responsible for compliance.
+
+Legacy analysis does not execute unknown original programs, automatically install external runtimes, or restore commercial licenses. Compatibility advice, data recovery, and independent reconstruction grant no additional rights. Corrupted, encrypted, or insufficient information remains `UNKNOWN`.
 
 Users should understand the risks of reverse engineering, device connections, firmware analysis, and related technical activities, including data loss, device malfunction, software failure, service interruption, and compatibility problems.
 

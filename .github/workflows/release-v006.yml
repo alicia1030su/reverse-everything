@@ -37,7 +37,7 @@ jobs:
       version: ${{ steps.meta.outputs.version }}
       tag: ${{ steps.meta.outputs.tag }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ inputs.ref }}
           fetch-depth: 0
@@ -69,7 +69,7 @@ jobs:
     outputs:
       commit: ${{ steps.meta.outputs.commit }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ needs.freeze.outputs.commit }}
           fetch-depth: 0
@@ -85,7 +85,7 @@ jobs:
           test "$(node scripts/release-atomic.mjs version --root .)" = "$EXPECTED_VERSION"
           test -z "$(git status --porcelain)"
           echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
@@ -204,7 +204,7 @@ jobs:
               --evidence "dist/game-docker/$genre/docker-deployment-evidence.json" \
               --sums "dist/game-docker/$genre/SHA256SUMS.txt"
           done
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: docker-validation
           if-no-files-found: error
@@ -213,7 +213,7 @@ jobs:
             dist/game-docker/*/docker-validation.json
             dist/game-docker/*/docker-deployment-evidence.json
             dist/game-docker/*/SHA256SUMS.txt
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: candidate-linux
           if-no-files-found: error
@@ -230,7 +230,7 @@ jobs:
     outputs:
       commit: ${{ steps.meta.outputs.commit }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ needs.freeze.outputs.commit }}
           persist-credentials: false
@@ -245,7 +245,7 @@ jobs:
           test "$(node scripts/release-atomic.mjs version --root .)" = "$EXPECTED_VERSION"
           test -z "$(git status --porcelain)"
           echo "commit=$EXPECTED_COMMIT" >> "$GITHUB_OUTPUT"
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: docker-validation
           path: dist/game-docker
@@ -280,7 +280,7 @@ jobs:
     outputs:
       commit: ${{ steps.meta.outputs.commit }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ needs.freeze.outputs.commit }}
           fetch-depth: 0
@@ -296,7 +296,7 @@ jobs:
           test "$(node scripts/release-atomic.mjs version --root .)" = "$EXPECTED_VERSION"
           test -z "$(git status --porcelain)"
           echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
@@ -387,12 +387,12 @@ jobs:
             if (-not ($result.gameRevival.checks | Where-Object { $_.id -eq $check -and $_.passed })) { throw "Portable Game Revival smoke missing passing check: $check" }
           }
           Copy-Item $env:RE_SMOKE_OUTPUT 'dist/desktop/windows-portable-smoke.json'
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: windows-smoke-evidence
           if-no-files-found: error
           path: dist/desktop/windows-*-smoke.json
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: candidate-windows
           if-no-files-found: error
@@ -407,7 +407,7 @@ jobs:
     outputs:
       commit: ${{ steps.meta.outputs.commit }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ needs.freeze.outputs.commit }}
           persist-credentials: false
@@ -428,16 +428,16 @@ jobs:
           test "$(node scripts/release-atomic.mjs version --root .)" = "$EXPECTED_VERSION"
           test -z "$(git status --porcelain)"
           echo "commit=$EXPECTED_COMMIT" >> "$GITHUB_OUTPUT"
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           pattern: candidate-*
           path: dist/release
           merge-multiple: true
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: docker-validation
           path: dist/game-docker
@@ -503,7 +503,7 @@ jobs:
           const files = (await readdir('dist/release', { withFileTypes: true })).filter(entry => entry.isFile());
           if (manifest.assets.length !== 10 || files.length !== 12) throw new Error(`Expected 8 candidate assets plus ACCEPTANCE/BUILD-INFO and 12 Release files, got ${manifest.assets.length} and ${files.length}`);
           NODE
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: candidate-${{ needs.freeze.outputs.version }}
           if-no-files-found: error
@@ -537,12 +537,12 @@ jobs:
       commit: ${{ needs.candidate-acceptance.outputs.commit }}
       release_id: ${{ steps.draft.outputs.release_id }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ needs.candidate-acceptance.outputs.commit }}
           fetch-depth: 0
           persist-credentials: true
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: candidate-${{ needs.freeze.outputs.version }}
           path: dist/release
@@ -599,11 +599,11 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ needs.tag-draft.outputs.commit }}
           persist-credentials: false
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: candidate-${{ needs.tag-draft.outputs.version }}
           path: dist/release
@@ -638,11 +638,11 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ needs.tag-draft.outputs.commit }}
           persist-credentials: false
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: candidate-${{ needs.tag-draft.outputs.version }}
           path: dist/release

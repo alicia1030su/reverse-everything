@@ -93,9 +93,18 @@ export function verifyGameDockerEvidence(report, evidence, { genre } = {}) {
   if (!isTimestamp(report.startedAt)) errors.push('Docker report startedAt must be a valid timestamp');
   if (!isTimestamp(report.finishedAt)) errors.push('Docker report finishedAt must be a valid timestamp');
   if (!Array.isArray(report.clients) || report.clients.length === 0 || report.clients.some(client => !isRecord(client)
-    || !['real-game-client', 'simulated-load'].includes(client.kind)
+    || !['internal-protocol-client', 'simulated-load', 'original-game-client'].includes(client.kind)
     || !Number.isSafeInteger(client.count) || client.count < 0)) {
     errors.push('Docker report clients must be a non-empty client array');
+  }
+  if (!isRecord(report.targetEvidence)
+    || !['UNKNOWN', 'OBSERVED', 'VERIFIED'].includes(report.targetEvidence.behavior)
+    || !['UNKNOWN', 'VERIFIED'].includes(report.targetEvidence.originalClient)
+    || !['UNKNOWN', 'VERIFIED'].includes(report.targetEvidence.protocol)) {
+    errors.push('Docker report targetEvidence must separately grade behavior, original client and protocol');
+  }
+  if (report.targetEvidence?.originalClient === 'VERIFIED' && !report.clients?.some(client => client.kind === 'original-game-client' && client.count > 0)) {
+    errors.push('Original client VERIFIED requires an original-game-client evidence entry');
   }
   if (!Array.isArray(report.checks)) {
     errors.push('Docker report checks must be an array');

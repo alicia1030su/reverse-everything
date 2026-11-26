@@ -2,7 +2,8 @@ import { createHash } from 'node:crypto';
 import { constants, lstat, open, opendir, realpath } from 'node:fs/promises';
 import type { Stats } from 'node:fs';
 import path from 'node:path';
-import type { GameFileRecord, GameScanOptions, GameScanResult, GameScanSkipped } from './types.js';
+import type { GameBehaviorEvidence, GameFileRecord, GameScanOptions, GameScanResult, GameScanSkipped } from './types.js';
+import { MAX_BEHAVIOR_BYTES, parseGameBehavior } from './behavior.js';
 
 const DEFAULT_MAX_FILES = 20_000;
 const DEFAULT_MAX_BYTES = 512 * 1024 * 1024;
@@ -33,7 +34,7 @@ async function verifiedRealpath(candidate: string, root: string, expected: Stats
   return resolved;
 }
 
-async function hashFile(file: string, expected: Stats, root: string, signal?: AbortSignal, reusableHash?: string, remainingBytes = Number.MAX_SAFE_INTEGER): Promise<{ sha256?: string; bytesRead: number; exhausted: boolean }> {
+async function hashFile(file: string, expected: Stats, root: string, signal?: AbortSignal, reusableHash?: string, remainingBytes = Number.MAX_SAFE_INTEGER, captureLimit?: number): Promise<{ sha256?: string; bytesRead: number; exhausted: boolean; content?: Buffer }> {
   const before = await verifiedRealpath(file, root, expected);
   const handle = await open(before, constants.O_RDONLY | NO_FOLLOW);
   try {
@@ -48,17 +49,20 @@ async function hashFile(file: string, expected: Stats, root: string, signal?: Ab
     }
     const hash = createHash('sha256');
     const buffer = Buffer.allocUnsafe(64 * 1024);
+    const capture = captureLimit === undefined ? undefined : Buffer.alloc(Math.min(opened.size, captureLimit + 1));
+    let captured = 0;
     for (;;) {
       signal?.throwIfAborted();
       const { bytesRead: count } = await handle.read(buffer, 0, Math.min(buffer.length, remainingBytes - bytesRead + 1), bytesRead);
       if (!count) break;
       if (bytesRead + count > remainingBytes) return { bytesRead, exhausted: true };
       hash.update(buffer.subarray(0, count));
+      if (capture && captured < capture.length) { const copied = Math.min(count, capture.length - captured); buffer.copy(capture, captured, 0, copied); captured += copied; }
       bytesRead += count;
     }
     const after = await handle.stat();
     if (!sameFingerprint(after, expected) || after.size !== bytesRead) throw new Error(`扫描期间文件被修改：${file}`);
-    return { sha256: hash.digest('hex'), bytesRead, exhausted: false };
+    return { sha256: hash.digest('hex'), bytesRead, exhausted: false, ...(capture ? { content: capture.subarray(0, captured) } : {}) };
   } finally { await handle.close(); }
 }
 
@@ -85,16 +89,20 @@ export async function scanGameDirectory(rootInput: string, options: GameScanOpti
   if (!Number.isSafeInteger(maxFiles) || maxFiles < 1 || !Number.isSafeInteger(maxBytes) || maxBytes < 1) throw new Error('扫描上限必须是正整数');
   const old = previousMap(options.previous, canonicalRoot);
   const files: ScannedFile[] = [];
+  const directories: Array<{ path: string; expected: Stats }> = [];
   const skipped: GameScanSkipped[] = [];
   const skip = (file: string, reason: string): void => { if (skipped.length < MAX_SKIPPED) skipped.push({ path: file, reason }); };
   let bytesScanned = 0;
+  let budgetBytes = 0;
   let truncated = false;
+  let behaviorEvidence: GameBehaviorEvidence | undefined;
 
   async function walk(directory: string, expected: Stats): Promise<void> {
     options.signal?.throwIfAborted();
     const resolved = await verifiedRealpath(directory, canonicalRoot, expected);
     const entries = await opendir(resolved, { bufferSize: 64 });
-    if (!sameIdentity(await lstat(resolved), expected) || await realpath(resolved) !== resolved) { await entries.close(); throw new Error(`扫描期间目录被替换：${directory}`); }
+    if (!sameFingerprint(await lstat(resolved), expected) || await realpath(resolved) !== resolved) { await entries.close(); throw new Error(`扫描期间目录被替换：${directory}`); }
+    directories.push({ path: resolved, expected });
     for await (const entry of entries) {
         options.signal?.throwIfAborted();
         if (files.length >= maxFiles) { truncated = true; return; }
@@ -111,7 +119,7 @@ export async function scanGameDirectory(rootInput: string, options: GameScanOpti
           if (truncated) return;
           continue;
         }
-        if (bytesScanned + stat.size > maxBytes) {
+        if (budgetBytes + stat.size > maxBytes) {
           truncated = true;
           skip(absolute, '总字节上限');
           return;
@@ -119,7 +127,9 @@ export async function scanGameDirectory(rootInput: string, options: GameScanOpti
         const relativePath = path.relative(canonicalRoot, absolute).split(path.sep).join('/');
         const previous = old.get(absolute);
         const reusable = previous && previous.sha256 && previous.size === stat.size && previous.mtimeMs === stat.mtimeMs && previous.ctimeMs === stat.ctimeMs && String(previous.dev) === String(stat.dev) && String(previous.ino) === String(stat.ino);
-        const hashed = await hashFile(absolute, stat, canonicalRoot, options.signal, reusable ? previous.sha256 : undefined, maxBytes - bytesScanned);
+        const behaviorFile = entry.name === 'behavior.json' || entry.name === 'gameplay.json';
+        const hashed = await hashFile(absolute, stat, canonicalRoot, options.signal, reusable ? previous.sha256 : undefined, maxBytes - budgetBytes, behaviorFile ? MAX_BEHAVIOR_BYTES : undefined);
+        budgetBytes += stat.size;
         bytesScanned += hashed.bytesRead;
         if (hashed.exhausted) {
           truncated = true;
@@ -139,8 +149,20 @@ export async function scanGameDirectory(rootInput: string, options: GameScanOpti
           evidenceStatus: reusable ? 'INFERRED' : 'OBSERVED',
           evidenceRefs: [{ path: relativePath, detail: reusable ? '未重读文件内容；dev/ino、size、mtimeMs、ctimeMs 与上次一致，复用 SHA-256，证据降为 INFERRED' : `流式读取并校验 ${hashed.bytesRead} 字节，读后复核 dev/ino、size、mtimeMs、ctimeMs` }],
         });
+        if (behaviorFile && hashed.sha256) {
+          if (behaviorEvidence) throw new Error('发现多个行为规格，拒绝猜测目标规则');
+          if (!hashed.content || hashed.content.length > MAX_BEHAVIOR_BYTES) throw new Error(`行为规格超过 ${MAX_BEHAVIOR_BYTES} 字节上限`);
+          const contentHash = createHash('sha256').update(hashed.content).digest('hex');
+          if (contentHash !== hashed.sha256) throw new Error('行为规格内容摘要不一致');
+          behaviorEvidence = parseGameBehavior(hashed.content.toString('utf8'), relativePath, hashed.sha256);
+        }
       }
   }
   await walk(canonicalRoot, rootStat);
-  return { files: files.sort((a, b) => a.relativePath.localeCompare(b.relativePath)), filesScanned: files.length, bytesScanned, truncated, skipped };
+  for (const directory of directories) {
+    if (!sameFingerprint(await lstat(directory.path), directory.expected) || await realpath(directory.path) !== directory.path) throw new Error(`扫描期间目录被替换：${directory.path}`);
+  }
+  // A partial walk cannot prove that no second behavior contract exists.
+  if (truncated) behaviorEvidence = undefined;
+  return { files: files.sort((a, b) => a.relativePath.localeCompare(b.relativePath)), ...(behaviorEvidence ? { behaviorEvidence } : {}), filesScanned: files.length, bytesScanned, truncated, skipped };
 }

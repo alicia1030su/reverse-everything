@@ -1,0 +1,19 @@
+{
+  "format": "revival-behavior/v1",
+  "id": "min-three",
+  "title": "Three Player Camp",
+  "mode": "three-player-collect",
+  "rules": {
+    "minPlayers": 3,
+    "maxPlayers": 4,
+    "roundSeconds": 30,
+    "movementSpeed": 3,
+    "maxHealth": 50,
+    "respawn": false
+  },
+  "actions": [
+    { "id": "gatherWood", "kind": "gather", "cooldownMs": 50, "item": "wood", "amount": 2 }
+  ],
+  "winCondition": { "type": "collect", "target": 4 },
+  "map": { "width": 40, "height": 30, "obstacles": [{ "x": 0, "y": 0 }, { "x": 20, "y": 15 }] }
+}

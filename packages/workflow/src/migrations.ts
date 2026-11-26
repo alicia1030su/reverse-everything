@@ -185,6 +185,11 @@ const REQUIRED_SCHEMA_5: Record<string, readonly string[]> = {
   game_rebuilds: ['id','project_id','spec_id','status','level','output_path','error','validation_json','created_at','updated_at']
 };
 
+const REQUIRED_SCHEMA_6: Record<string, readonly string[]> = {
+  ...REQUIRED_SCHEMA_5,
+  game_profiles: [...REQUIRED_SCHEMA_5.game_profiles!, 'behavior_json'],
+};
+
 function addColumnIfMissing(raw: DatabaseSync, table: string, column: string, definition: string): void {
   const columns = raw.prepare(`PRAGMA table_info("${table}")`).all() as {name:string}[];
   if (!columns.some(item => item.name === column)) raw.exec(`ALTER TABLE "${table}" ADD COLUMN "${column}" ${definition}`);
@@ -238,6 +243,22 @@ export function assertSchema5(raw: DatabaseSync): void {
   }
 }
 
+export function assertSchema6(raw: DatabaseSync): void {
+  for (const [table, requiredColumns] of Object.entries(REQUIRED_SCHEMA_6)) {
+    const present = raw.prepare("SELECT type FROM sqlite_master WHERE name=?").get(table) as {type:string}|undefined;
+    if (!present || present.type !== 'table') throw new Error(`Database schema 6 integrity check failed: missing table ${table}`);
+    const columns = new Set((raw.prepare(`PRAGMA table_info("${table}")`).all() as {name:string}[]).map(column => column.name));
+    const missing = requiredColumns.filter(column => !columns.has(column));
+    if (missing.length) throw new Error(`Database schema 6 integrity check failed: missing column(s) ${table}.${missing.join(',')}`);
+  }
+  for (const [index, requiredColumns] of Object.entries(REQUIRED_INDEXES_3)) {
+    const present = raw.prepare("SELECT type FROM sqlite_master WHERE name=?").get(index) as {type:string}|undefined;
+    if (!present || present.type !== 'index') throw new Error(`Database schema 6 integrity check failed: missing index ${index}`);
+    const columns = (raw.prepare(`PRAGMA index_info("${index}")`).all() as {name:string|null}[]).map(column => column.name ?? '');
+    if (columns.join(',') !== requiredColumns.join(',')) throw new Error(`Database schema 6 integrity check failed: invalid index ${index}`);
+  }
+}
+
 export interface MigrationResult { previousVersion: number; version: number; backupPath?: string; applied: number[] }
 function migrationFailure(backupPath: string | undefined, error: unknown): Error {
   const code = typeof error === 'object' && error !== null && 'errcode' in error ? String(error.errcode) : '';
@@ -257,7 +278,8 @@ export function migrateDatabase(raw: DatabaseSync, file: string): MigrationResul
     addColumnIfMissing(raw, 'game_files', 'ctime_ms', 'REAL');
     addColumnIfMissing(raw, 'game_files', 'dev', 'TEXT');
     addColumnIfMissing(raw, 'game_files', 'ino', 'TEXT');
-    assertSchema5(raw);
+    addColumnIfMissing(raw, 'game_profiles', 'behavior_json', 'TEXT');
+    assertSchema6(raw);
     return {previousVersion,version:SCHEMA_VERSION,applied:[]};
   }
   let backupPath: string | undefined;
@@ -272,7 +294,7 @@ export function migrateDatabase(raw: DatabaseSync, file: string): MigrationResul
     raw.exec('BEGIN IMMEDIATE');
     const actualVersion=Number((raw.prepare('PRAGMA user_version').get() as {user_version:number}).user_version);
     if (actualVersion >= SCHEMA_VERSION) {
-      assertSchema5(raw);
+      assertSchema6(raw);
       raw.exec('COMMIT');return {previousVersion,version:SCHEMA_VERSION,...(backupPath?{backupPath}:{}),applied:[]};
     }
     raw.exec(BASE_SCHEMA);
@@ -327,7 +349,12 @@ export function migrateDatabase(raw: DatabaseSync, file: string): MigrationResul
       raw.prepare('INSERT OR REPLACE INTO schema_migrations (version,applied_at,backup_path) VALUES (?,?,?)').run(5,new Date().toISOString(),backupPath??null);
       applied.push(5);
     }
-    assertSchema5(raw);
+    if (actualVersion < 6) {
+      addColumnIfMissing(raw, 'game_profiles', 'behavior_json', 'TEXT');
+      raw.prepare('INSERT OR REPLACE INTO schema_migrations (version,applied_at,backup_path) VALUES (?,?,?)').run(6,new Date().toISOString(),backupPath??null);
+      applied.push(6);
+    }
+    assertSchema6(raw);
     raw.exec(`PRAGMA user_version=${SCHEMA_VERSION}`);
     raw.exec('COMMIT');
   } catch (error) {

@@ -4,6 +4,8 @@ export interface TaskContext {
   taskId: string;
   project: Project;
   upload?: Upload;
+  /** 任务私有不可变输入快照；存在时适配器必须读取该路径而不是原始上传。 */
+  inputSnapshotPath?: string;
   options: JsonObject;
   effectiveMaxDiskMB?: number;
   effectiveMaxMemoryMB?: number;
@@ -26,6 +28,7 @@ export interface AdapterDefinition {
   version: string;
   description: string;
   available(): Promise<{ available: boolean; detail: string }>;
+  validateInput?(ctx: TaskContext): Promise<void>;
   detect(ctx: TaskContext): Promise<Detection>;
   prepare(ctx: TaskContext): Promise<unknown>;
   analyze(ctx: TaskContext): Promise<unknown>;

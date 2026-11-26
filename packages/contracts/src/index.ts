@@ -1,5 +1,5 @@
-export const VERSION = '0.0.6' as const;
-export const SCHEMA_VERSION = 5 as const;
+export const VERSION = '0.0.7' as const;
+export const SCHEMA_VERSION = 6 as const;
 export type GameRevivalLevel = 'L0' | 'L1' | 'L2' | 'L3' | 'L4' | 'L5' | 'L6' | 'L7';
 export type GameEvidenceStatus = 'OBSERVED' | 'INFERRED' | 'VERIFIED' | 'UNKNOWN' | 'INACCESSIBLE' | 'NOT_IMPLEMENTED';
 export interface GameProfile { id:string; projectId:string; name:string; genre:string; publisher:string; region:string; clientVersion:string; shutdownDate:string; engine:string; source:string; authorizationScope:string; knownProtocols:string[]; retainedMaterials:string[]; existingImplementations:string[]; level:GameRevivalLevel; unrecoveredFeatures:string[]; rootPath?:string; createdAt:string; updatedAt:string }
@@ -14,7 +14,7 @@ export type Stage = typeof STAGES[number];
 export type TaskStatus = 'CREATED' | 'QUEUED' | 'RUNNING' | 'PAUSED' | 'BLOCKED' | 'FAILED' | 'CANCELLED' | 'PARTIAL_SUCCESS' | 'COMPLETED';
 export type StageStatus = 'PENDING' | 'RUNNING' | 'SUCCEEDED' | 'FAILED' | 'SKIPPED';
 export type ProjectKind = 'website' | 'software' | 'game' | 'security' | 'protocol' | 'hardware' | 'firmware' | 'console';
-export type AdapterName = 'website' | 'file' | 'security' | 'game' | 'network' | 'apk' | 'ghidra' | 'hardware' | 'firmware' | 'console';
+export type AdapterName = 'website' | 'file' | 'security' | 'game' | 'network' | 'apk' | 'ghidra' | 'hardware' | 'firmware' | 'console' | 'legacy';
 export type EvidenceKind = 'EVIDENCE' | 'INFERENCE' | 'UNKNOWN' | 'VERIFIED';
 export type Severity = 'info' | 'low' | 'medium' | 'high' | 'critical';
 export interface JsonObject { [key: string]: unknown }

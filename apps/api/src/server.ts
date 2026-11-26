@@ -20,6 +20,7 @@ import { registerDesktopMetricsRoutes } from './desktop-metrics.js';
 import { recoverProjectDeletions, removeManagedPaths } from './project-deletion.js';
 import { registerResearchRoutes } from './research.js';
 import { registerGameRevivalRoutes } from './game-revival.js';
+import { registerLegacyRoutes } from './legacy-routes.js';
 
 export interface ServerOptions { dataDir?: string; db?: Database; token?: string; webDir?: string; resourceDir?: string; logger?: boolean; backgroundResources?: boolean; rateLimitPerMinute?: number }
 const KINDS: ProjectKind[] = ['website','software','game','security','protocol','hardware','firmware','console'];
@@ -85,6 +86,7 @@ export async function buildServer(options:ServerOptions={}) {
   registerDesktopMetricsRoutes(app,db,retention);
   registerResearchRoutes(app,{db,engine,dataDir,resourceDir});
   registerGameRevivalRoutes(app,{db,dataDir});
+  registerLegacyRoutes(app,{db,dataDir});
   app.get('/api/health',async()=>({ok:true,product:'reverse-everything',version:VERSION,schemaVersion:SCHEMA_VERSION}));
   app.get('/api/version',async()=>({product:'reverse-everything',version:VERSION,schemaVersion:SCHEMA_VERSION,apiVersions:['v1','legacy'],evidenceModelVersion:EVIDENCE_MODEL_VERSION,securityPolicyVersion:SECURITY_POLICY_VERSION}));
   app.get('/api/session',async()=>({authenticated:true}));

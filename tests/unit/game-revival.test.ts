@@ -3,7 +3,7 @@ import { mkdtemp, mkdir, readFile, rm, symlink, utimes, writeFile } from 'node:f
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { createGameServerSpec, generateGameServer, scanGameDirectory, validateGeneratedServer } from '../../packages/game-revival/src/index.js';
+import { createGameServerSpec, generateGameServer, parseGameBehavior, requiredMatchSize, scanGameDirectory, validateGeneratedServer } from '../../packages/game-revival/src/index.js';
 import type { GameProfile, GameServerSpec } from '../../packages/game-revival/src/index.js';
 
 const temporary: string[] = [];
@@ -41,6 +41,9 @@ describe('scanGameDirectory', () => {
     expect(second.files[0]?.evidenceRefs[0]?.detail).toContain('未重读');
     expect(second.files[0]?.evidenceStatus).toBe('INFERRED');
     expect(second.bytesScanned).toBe(0);
+    const reusedBudget = await scanGameDirectory(root, { previous: first, maxBytes: 4095 });
+    expect(reusedBudget.truncated).toBe(true);
+    expect(reusedBudget.files).toHaveLength(0);
     const relativePrevious = first.files.map(file => ({ ...file, path: file.relativePath }));
     const relativeReuse = await scanGameDirectory(root, { previous: relativePrevious });
     expect(relativeReuse.files.every(file => file.evidenceRefs[0]?.detail.includes('未重读'))).toBe(true);
@@ -162,14 +165,148 @@ describe('generateGameServer', () => {
   });
 });
 
+describe('evidence-driven anti-template acceptance', () => {
+  it('两个同类型保留样本产生不同行为规格、生成实现与联机结果', async () => {
+    const base = path.join(process.cwd(), 'examples', 'revival-games', 'anti-template');
+    const samples = [];
+    for (const name of ['duel', 'survival']) {
+      const root = path.join(base, name);
+      const scan = await scanGameDirectory(root);
+      expect(scan.behaviorEvidence?.behavior.id).toBe(name);
+      const profile: GameProfile = { name, root, genre: 'unknown', assets: [], observations: [], limitations: [] };
+      const spec = createGameServerSpec(profile, scan.files, [], scan.behaviorEvidence);
+      expect(spec.behaviorEvidence?.sha256).toBe(scan.behaviorEvidence?.sha256);
+      expect(spec.provenance.targetSpecific.length).toBeGreaterThan(0);
+      expect(spec.provenance.originalClient).toBe('UNKNOWN');
+      const output = path.join(await workspace(), `${name}-server`);
+      await generateGameServer(spec, output);
+      const config = JSON.parse(await readFile(path.join(output, 'config', 'default.json'), 'utf8')) as { behavior: { id: string; rules: { maxHealth: number; respawn: boolean }; actions: Array<{ id: string; amount?: number }>; winCondition: { type: string; target: number } } };
+      const behaviorTest = await readFile(path.join(output, 'tests', 'behavior.test.mjs'), 'utf8');
+      const buildInfo = JSON.parse(await readFile(path.join(output, 'BUILD-INFO.json'), 'utf8')) as { specSha256: string; behaviorSha256: string; files: Record<string, string> };
+      expect(config.behavior.id).toBe(name);
+      expect(behaviorTest).toContain(`assert.equal(config.behavior.id, "${name}")`);
+      expect(buildInfo.specSha256).toMatch(/^[a-f0-9]{64}$/);
+      expect(buildInfo.behaviorSha256).toMatch(/^[a-f0-9]{64}$/);
+      expect(buildInfo.files['server/src/engine.ts']).toMatch(/^[a-f0-9]{64}$/);
+      samples.push({ name, spec, output, config, behaviorTest });
+    }
+    expect(samples[0]!.config.behavior.rules).toMatchObject({ maxHealth: 60, respawn: true });
+    expect(samples[1]!.config.behavior.rules).toMatchObject({ maxHealth: 30, respawn: false });
+    expect(samples[0]!.config.behavior.winCondition).toEqual({ type: 'firstToScore', target: 3 });
+    expect(samples[1]!.config.behavior.winCondition).toEqual({ type: 'collect', target: 6 });
+    expect(samples[0]!.config.behavior.actions.map(action => action.id)).toEqual(['fire']);
+    expect(samples[1]!.config.behavior.actions.map(action => action.id)).toEqual(['gatherHerb', 'useHerb']);
+    expect(samples[0]!.behaviorTest).not.toBe(samples[1]!.behaviorTest);
+    for (const sample of samples) {
+      const report = await validateGeneratedServer(sample.output, { players: 4, rounds: 1 });
+      expect(report.errors).toEqual([]);
+      expect(report.valid).toBe(true);
+      expect(report.gameMode).toBe(sample.spec.behaviorEvidence?.behavior.mode);
+      expect(report.clients[0]?.kind).toBe('internal-protocol-client');
+      expect(report.metrics.players).toBe(report.clients[0]?.count);
+      expect(report.checks.find(check => check.id === 'reconnect')?.detail).toContain('旧 token 已失效');
+      expect(report.provenance?.targetSpecific.length).toBeGreaterThan(0);
+    }
+  }, 240_000);
+  it('supports behavior contracts that require more than two players', async () => {
+    const root = path.join(process.cwd(), 'examples', 'revival-games', 'anti-template', 'min-three');
+    const scan = await scanGameDirectory(root);
+    const profile: GameProfile = { name: 'min-three', root, genre: 'unknown', assets: [], observations: [], limitations: [] };
+    const spec = createGameServerSpec(profile, scan.files, [], scan.behaviorEvidence);
+    const output = path.join(await workspace(), 'min-three-server');
+    await generateGameServer(spec, output);
+    const report = await validateGeneratedServer(output, { players: 2, rounds: 1 });
+    expect(report.errors).toEqual([]);
+    expect(report.valid).toBe(true);
+    expect(report.metrics.players).toBeGreaterThanOrEqual(3);
+    expect(report.targetEvidence?.behavior).toBe('VERIFIED');
+  }, 180_000);
+  it('covers every action including zero cooldown and oversized range', async () => {
+    const root = path.join(process.cwd(), 'examples', 'revival-games', 'anti-template', 'edge-actions');
+    const scan = await scanGameDirectory(root);
+    const profile: GameProfile = { name: 'edge-actions', root, genre: 'unknown', assets: [], observations: [], limitations: [] };
+    const spec = createGameServerSpec(profile, scan.files, [], scan.behaviorEvidence);
+    const output = path.join(await workspace(), 'edge-actions-server');
+    await generateGameServer(spec, output);
+    const report = await validateGeneratedServer(output, { players: 2, rounds: 1 });
+    expect(report.errors).toEqual([]);
+    expect(report.valid).toBe(true);
+    expect(report.targetEvidence?.behavior).toBe('VERIFIED');
+    expect(report.checks.find(check => check.id === 'behavior-runtime')?.detail).toContain('目标行为运行时条款');
+  }, 180_000);
+  it('survive 规格淘汰死亡玩家并由最后存活者获胜', async () => {
+    const root = path.join(process.cwd(), 'examples', 'revival-games', 'anti-template', 'last-standing');
+    const scan = await scanGameDirectory(root);
+    const profile: GameProfile = { name: 'last-standing', root, genre: 'unknown', assets: [], observations: [], limitations: [] };
+    const spec = createGameServerSpec(profile, scan.files, [], scan.behaviorEvidence);
+    const output = path.join(await workspace(), 'last-standing-server');
+    await generateGameServer(spec, output);
+    const report = await validateGeneratedServer(output, { players: 2, rounds: 1 });
+    expect(report.errors).toEqual([]);
+    expect(report.valid).toBe(true);
+    expect(report.metrics.players).toBeGreaterThanOrEqual(3);
+    expect(report.targetEvidence?.behavior).toBe('VERIFIED');
+    expect(report.checks.find(check => check.id === 'gameplay-settlement')?.detail).toContain('survive');
+  }, 180_000);
+});
+
+describe('parseGameBehavior constraints', () => {
+  const base = {
+    format: 'revival-behavior/v1', id: 'constraint', title: 'Constraint', mode: 'constraint',
+    rules: { minPlayers: 2, maxPlayers: 4, roundSeconds: 30, movementSpeed: 3, maxHealth: 50, respawn: true },
+    actions: [{ id: 'hit', kind: 'attack', cooldownMs: 100, damage: 10, range: 20 }],
+    winCondition: { type: 'firstToScore', target: 2 },
+    map: { width: 40, height: 30, obstacles: [{ x: 0, y: 0 }] },
+  };
+  const parse = (value: unknown) => parseGameBehavior(JSON.stringify(value), 'behavior.json', 'a'.repeat(64));
+  it('拒绝回合时限内不可达的胜负条件', () => {
+    expect(() => parse({ ...base, winCondition: { type: 'firstToScore', target: 1000 } })).toThrow(/不可达/);
+    expect(() => parse({ ...base, rules: { ...base.rules, roundSeconds: 5 }, winCondition: { type: 'firstToScore', target: 100 } })).toThrow(/不可达/);
+    expect(() => parse({ ...base, rules: { ...base.rules, respawn: false, roundSeconds: 5, minPlayers: 4 }, actions: [{ ...base.actions[0], cooldownMs: 1000 }], winCondition: { type: 'survive', target: 1 } })).toThrow();
+  });
+  it('拒绝没有物品来源的治疗动作', () => {
+    expect(() => parse({ ...base, actions: [...base.actions, { id: 'heal', kind: 'heal', cooldownMs: 0, item: 'herb', amount: 1, health: 5 }] })).toThrow(/没有可获取来源/);
+  });
+  it('拒绝可用出生点少于 maxPlayers 的地图', () => {
+    const obstacles = Array.from({ length: 8 * 8 }, (_, index) => ({ x: index % 8, y: Math.floor(index / 8) }));
+    expect(() => parse({ ...base, rules: { ...base.rules, maxPlayers: 64 }, map: { width: 8, height: 8, obstacles } })).toThrow(/出生点/);
+  });
+  it('为验证器与 Docker harness 计算相同的最低人数', () => {
+    expect(requiredMatchSize()).toBe(2);
+    expect(requiredMatchSize(parse(base).behavior)).toBe(2);
+    expect(requiredMatchSize(parse({ ...base, rules: { ...base.rules, minPlayers: 3 } }).behavior)).toBe(3);
+  });
+});
+
 describe('validateGeneratedServer', () => {
+  it('生成物校验失败时零安装零构建零测试', async () => {
+    const { spec } = await fixture('fps');
+    const output = path.join(await workspace(), 'tampered-server');
+    await generateGameServer(spec, output);
+    await writeFile(path.join(output, 'config/default.json'), '{}');
+    const report = await validateGeneratedServer(output);
+    expect(report.valid).toBe(false);
+    expect(report.checks.map(check => check.id)).toEqual(['checksums']);
+    expect(report.errors.join(' ')).toContain('完整性校验失败');
+  });
+  it('拒绝校验清单未登记的额外文件', async () => {
+    const { spec } = await fixture('fps');
+    const output = path.join(await workspace(), 'extra-file-server');
+    await generateGameServer(spec, output);
+    await writeFile(path.join(output, 'tests/extra.test.mjs'), 'throw new Error("must not run")');
+    const report = await validateGeneratedServer(output);
+    expect(report.valid).toBe(false);
+    expect(report.checks.map(check => check.id)).toEqual(['checksums']);
+    expect(report.errors.join(' ')).toContain('未登记文件');
+  });
   it('真实安装编译并以多客户端完成 FPS 同场游戏', async () => {
     const { spec } = await fixture('fps');
     const output = path.join(await workspace(), 'fps-server');
     await generateGameServer(spec, output);
-    const report = await validateGeneratedServer(output, { players: 4, rounds: 1 });
+    const report = await validateGeneratedServer(output, { players: 12, rounds: 1 });
     expect(report.errors).toEqual([]);
     expect(report.checks.every(check => check.passed)).toBe(true);
+    expect(report.metrics.players).toBeGreaterThanOrEqual(12);
     expect(report.checks.map(check => check.name)).toEqual(expect.arrayContaining(['npm run build 真实 tsc 编译', '服务端权威位置与独立玩家状态', 'FPS 动作、血量与回合结算', '断线 resume token 重连']));
     expect(report.valid).toBe(true);
   }, 180_000);

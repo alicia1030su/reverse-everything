@@ -44,17 +44,25 @@
 - Schema 4、授权范围中心、工具管理器与全入口契约。
 - 发行脚本分页、Release ID、限流重试、公开后复验。
 
-## v0.0.6：Game Revival（当前）
+## v0.0.6：Game Revival（已发布）
 
 - Game Revival Studio：合法游戏档案、只读增量目录扫描、文件指纹与证据分级服务端规格。
 - L0-L7：档案 → 扫描 → 规格 → 生成构建 → 独立启动/管理认证 → 双客户端同场/权威状态/房间隔离 → 持久化/重连/结算/多房间并发 → Docker 部署。
 - 自有多人 FPS/RPG 独立 TypeScript/Node/WebSocket 服务端、认证管理后台、可下载 ZIP；不依赖平台 API。
 - CLI `game profile|scan|spec|rebuild|status|download`、REST 游戏复活路由、MCP 44 工具（新增 7 个）与 Skill 工作流。
 - `scan_game_directory` 仅扫描 API 服务端 `RE_GAME_ROOTS` 显式允许的目录；未配置返回 403，HTTP MCP 不能绕过。
-- 当前本地最高实测 L6；本地 Docker 不可用，Docker/L7 待 CI，不提前标为通过。
+- 本机未运行 Docker；v0.0.6 正式候选 CI 的 FPS/RPG Docker/L7 已真实通过，仅证明生成服务部署能力。
 - 独立兼容实现不是原始服务端，不保证商业原客户端兼容，不绕过 DRM/反作弊/认证，不分发未授权资源。
 
-## v0.0.7：协议理解
+## v0.0.7：Legacy Studio 与 V5 Game Revival（当前）
+
+- Legacy Software Revival Studio：PE/ELF/Mach-O、MSI/JAR/Electron/Python 与安装目录只读识别，兼容性和合法许可诊断。
+- CSV/DBF/SQLite/INI/JSON/XML 有界只读恢复，独立 JSON/CSV 导出与来源/产物 SHA-256。
+- 独立 INI 编辑器、CSV 查看器与文本工具生成，真实测试和启动验证。
+- Local Privacy：Legacy 默认全本地、无远程 AI、无外部依赖下载；显式目录白名单与共享确认。
+- 游戏 V5 `revival-behavior/v1` 行为 IR、反模板样本、目标行为/原客户端/协议证据分离；原客户端与协议默认 `UNKNOWN`。
+- `tasks create` 与 MCP `create_task` 支持 `legacy`，MCP 仍为 44 工具。
+- 不以内部客户端、文件生成或 Docker/L7 冒充真实商业游戏原客户端兼容；未完成的真实兼容保持 `BLOCKED`。
 
 ## v0.0.8：安全研究
 

@@ -13,3 +13,5 @@ export type { ResourceThresholds, ResourceSampleOptions } from './resources.js';
 export { migrateDatabase } from './migrations.js';
 export type { MigrationResult } from './migrations.js';
 export { TaskExecutionError } from './engine.js';
+export { normalizeInputTarget, resolveDirectTaskInput } from './task-input.js';
+export type { DirectTaskInput } from './task-input.js';
