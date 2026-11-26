@@ -22,11 +22,11 @@
 | V007-016 | P1 | 无 planId 的直接任务可能绕过项目远程 AI 授权 | `workflow/src/agent.ts` 仅 planId 分支校验；`server.ts` 允许直接创建任务 | 在直接任务创建与 Worker 执行双层校验项目 remote_ai_allowed | VERIFIED |
 | V007-017 | P0 | L0-L7 混合生成服务能力与目标复活证据，UNKNOWN 规格也可晋级 | `apps/web/src/pages/GameRevivalStudio.tsx:26-28`；`apps/api/src/game-revival.ts:65-73` 仅看 validation capabilities | 拆分 evidenceLevel 与 implementationLevel；未知行为规格不得宣称目标游戏复活 | VERIFIED |
 | V007-018 | P1 | 游戏 ZIP 小文件导致 ArrayBuffer 内存放大 | `apps/api/src/game-archive.ts:79-130` 每文件预分配 16MiB+1 且 subarray 保留 backing store | 按实际大小分配并复制紧凑 Buffer；增加 2000 小文件内存回归 | VERIFIED |
-| V007-019 | P1 | Windows 只有全新安装，没有旧版升级验收 | `release-v006.yml` clean install；能力矩阵却标 IMPLEMENTED | 增加 v0.0.6→新版本覆盖升级、数据保留与 smoke 门禁 | FIXED |
+| V007-019 | P1 | Windows 只有全新安装，没有旧版升级验收 | `release-v006.yml` clean install；能力矩阵却标 IMPLEMENTED | 增加 v0.0.6→新版本覆盖升级、数据保留与 smoke 门禁 | VERIFIED |
 | V007-020 | P2 | 9 项 skip 缺少机器可读必跑项门禁 | CI 仅看退出码；Windows symlink 权限不足可静默 skip | JSON reporter + 指定安全用例不得跳过；环境限制单独记录 | VERIFIED |
 | V007-021 | P2 | Game Revival 子进程继承完整宿主环境 | `validator.ts` npm/build/test 与生成服务继承 `process.env` | 最小环境 allowlist，过滤 Token/Key/云凭证；哨兵回归 | VERIFIED |
 | V007-022 | P2 | 生成服务审计文件无上限且 `/audit` 全量读入内存 | `templates.ts:381-389` | URL 截断、限速、轮转、tail 读取与数据库大小上限 | VERIFIED |
-| V007-023 | P1 | NSIS 默认覆盖安装可能触发 0xC0000005，历史修复要求保留 signAndEditExecutable | `apps/desktop/electron-builder.yml` 与 release-v006 clean install 未覆盖升级路径 | 恢复 win.signAndEditExecutable=false，新增旧版覆盖升级 + 数据保留 + smoke 门禁 | FIXED |
+| V007-023 | P1 | NSIS 默认覆盖安装可能触发 0xC0000005，历史修复要求保留 signAndEditExecutable | `apps/desktop/electron-builder.yml` 与 release-v006 clean install 未覆盖升级路径 | 恢复 win.signAndEditExecutable=false，新增旧版覆盖升级 + 数据保留 + smoke 门禁 | VERIFIED |
 | V007-024 | P1 | 直接任务远程 AI 授权未绑定实际上传或路径，可跨目标外发 | `workflow/src/agent.ts` 将项目 target、路径和全部上传名并入候选集合 | 新增统一直接任务输入解析；只允许唯一 uploadId、绝对路径或项目 URL，歧义失败关闭；补旁路回归 | VERIFIED |
 | V007-025 | P1 | XML 恢复正则回溯可阻塞 Worker | `legacy-revival/src/recovery.ts` 对未闭合标签使用同步回溯正则 | 改为有界线性扫描，限制嵌套深度、单元格与记录数，周期检查取消；60KB 未闭合样本回归 | VERIFIED |
 | V007-026 | P1 | 生成数据转换器导出 CSV 公式单元格 | `legacy-revival/src/reconstruction.ts` 仅处理逗号和引号 | 对 `= + - @` 及前导空白/控制字符加文本前缀；生成工程真实转换回归 | VERIFIED |
@@ -49,8 +49,8 @@
 | V007-043 | P2 | CLI 通用文本工具未消费功能需求 | requirements 只写入说明，生成器仍为固定复制工具 | 保留为明确基础组件；复杂需求必须选择专用生成器或后续扩展 | FIXED |
 | V007-044 | P2 | 演示证据文件未纳入版本控制 | `artifacts/v007-game-compat` 仅存在工作树 | 将两份原客户端验收 JSON 纳入提交并由 CI/发行门禁复核 | VERIFIED |
 | V007-045 | P2 | 缺陷登记缺少机器可读发布门禁 | P1 仍为 IN_PROGRESS 时无自动阻断 | 新增 `defects:check`，CI 与 v007 发行工作流强制无 OPEN/IN_PROGRESS P0/P1 | VERIFIED |
-| V007-046 | P1 | 打包 Electron 的 Game Revival smoke 丢失 Node shim 标记 | `minimalProcessEnv` 未保留 `ELECTRON_RUN_AS_NODE`，生成服务以 Electron GUI 模式启动并提前退出 | 将 `ELECTRON_RUN_AS_NODE` 加入受限环境 allowlist，并新增回归断言 | FIXED |
-| V007-047 | P1 | Windows Legacy smoke 直接调用 Electron GUI 子系统导致退出码与输出不可靠 | PowerShell 直接调用 Electron exe 后 `$LASTEXITCODE` 可为 null，且脚本错误输出无法稳定捕获 | 改用 CI Node 执行 smoke 脚本，仍从安装目录导入 Legacy 包，并强制校验退出码与输出 JSON | FIXED |
+| V007-046 | P1 | 打包 Electron 的 Game Revival smoke 丢失 Node shim 标记 | `minimalProcessEnv` 未保留 `ELECTRON_RUN_AS_NODE`，生成服务以 Electron GUI 模式启动并提前退出 | 将 `ELECTRON_RUN_AS_NODE` 加入受限环境 allowlist，并新增回归断言 | VERIFIED |
+| V007-047 | P1 | Windows Legacy smoke 直接调用 Electron GUI 子系统导致退出码与输出不可靠 | PowerShell 直接调用 Electron exe 后 `$LASTEXITCODE` 可为 null，且脚本错误输出无法稳定捕获 | 改用 CI Node 执行 smoke 脚本，仍从安装目录导入 Legacy 包，并强制校验退出码与输出 JSON | VERIFIED |
 
 ## 处理纪律
 
