@@ -89,8 +89,8 @@ function npmCommand(args: string[]): { command: string; args: string[] } {
     : { command: process.platform === 'win32' ? 'npm.cmd' : 'npm', args };
 }
 
-function minimalProcessEnv(overrides: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv {
-  const allowed = ['PATH','PATHEXT','SystemRoot','SYSTEMROOT','COMSPEC','TEMP','TMP','HOME','USERPROFILE','APPDATA','LOCALAPPDATA','PROCESSOR_ARCHITECTURE','NUMBER_OF_PROCESSORS'];
+export function minimalProcessEnv(overrides: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv {
+  const allowed = ['PATH','PATHEXT','SystemRoot','SYSTEMROOT','COMSPEC','TEMP','TMP','HOME','USERPROFILE','APPDATA','LOCALAPPDATA','PROCESSOR_ARCHITECTURE','NUMBER_OF_PROCESSORS','ELECTRON_RUN_AS_NODE'];
   const env: NodeJS.ProcessEnv = {};
   for (const key of allowed) if (process.env[key] !== undefined) env[key] = process.env[key];
   if (process.env.RE_NPM_CLI) env.RE_NPM_CLI = process.env.RE_NPM_CLI;

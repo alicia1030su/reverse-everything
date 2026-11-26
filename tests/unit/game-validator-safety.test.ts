@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import WebSocket, { WebSocketServer } from 'ws';
-import { cleanupDockerProject, connectValidationClient, fetchWithTimeout, runValidationCommand } from '../../packages/game-revival/src/validator.js';
+import { cleanupDockerProject, connectValidationClient, fetchWithTimeout, minimalProcessEnv, runValidationCommand } from '../../packages/game-revival/src/validator.js';
 
 async function socketServer(onConnection: (socket: WebSocket) => void): Promise<{ url: string; close: () => Promise<void> }> {
   const server = new WebSocketServer({ host: '127.0.0.1', port: 0 });
@@ -20,6 +20,12 @@ async function socketServer(onConnection: (socket: WebSocket) => void): Promise<
 }
 
 describe('验证器安全边界', () => {
+  it('保留 Electron Node shim 标记以启动打包环境生成服务', () => {
+    const previous = process.env.ELECTRON_RUN_AS_NODE;
+    process.env.ELECTRON_RUN_AS_NODE = '1';
+    try { expect(minimalProcessEnv().ELECTRON_RUN_AS_NODE).toBe('1'); } finally { if (previous === undefined) delete process.env.ELECTRON_RUN_AS_NODE; else process.env.ELECTRON_RUN_AS_NODE = previous; }
+  });
+
   it('非法 JSON 拒绝 waiter 并关闭 socket，不产生未捕获异常', async () => {
     let client: WebSocket | undefined;
     const server = await socketServer(socket => {

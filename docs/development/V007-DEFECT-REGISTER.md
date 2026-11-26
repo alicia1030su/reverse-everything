@@ -49,6 +49,7 @@
 | V007-043 | P2 | CLI 通用文本工具未消费功能需求 | requirements 只写入说明，生成器仍为固定复制工具 | 保留为明确基础组件；复杂需求必须选择专用生成器或后续扩展 | FIXED |
 | V007-044 | P2 | 演示证据文件未纳入版本控制 | `artifacts/v007-game-compat` 仅存在工作树 | 将两份原客户端验收 JSON 纳入提交并由 CI/发行门禁复核 | VERIFIED |
 | V007-045 | P2 | 缺陷登记缺少机器可读发布门禁 | P1 仍为 IN_PROGRESS 时无自动阻断 | 新增 `defects:check`，CI 与 v007 发行工作流强制无 OPEN/IN_PROGRESS P0/P1 | VERIFIED |
+| V007-046 | P1 | 打包 Electron 的 Game Revival smoke 丢失 Node shim 标记 | `minimalProcessEnv` 未保留 `ELECTRON_RUN_AS_NODE`，生成服务以 Electron GUI 模式启动并提前退出 | 将 `ELECTRON_RUN_AS_NODE` 加入受限环境 allowlist，并新增回归断言 | FIXED |
 
 ## 处理纪律
 
