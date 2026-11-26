@@ -41,7 +41,7 @@
 | V007-035 | P1 | 无重生 firstToScore 人数口径不一致 | 解析按 maxPlayers 校验，harness 按 minPlayers 执行 | `requiredMatchSize` 统一按 target+1 计算并用于验证器与 Docker | VERIFIED |
 | V007-036 | P1 | 多回合未重置积分、任务与背包 | 模板 start 只重置血量与位置 | 每回合重置 score/quest/inventory，并加运行时回归 | VERIFIED |
 | V007-037 | P1 | SQLite WAL 边车未纳入恢复身份 | 只读打开主文件可能漏掉未检查点数据 | 默认拒绝非空 WAL，要求先 checkpoint；补回归 | VERIFIED |
-| V007-038 | P1 | INTAKE 后源文件变化可污染后续阶段 | 直接路径与上传在 INTAKE 后仍读取可变源 | 创建时与首次 INTAKE 执行 adapter 输入预检；Legacy 在建快照前校验 RE_LEGACY_ROOTS；INTAKE 后创建任务私有不可变快照，后续阶段只读快照并在恢复时复核摘要 | VERIFIED |
+| V007-038 | P1 | INTAKE 后源文件变化可污染后续阶段 | 直接路径与上传在 INTAKE 后仍读取可变源 | 创建时与首次 INTAKE 执行 adapter 输入预检；Legacy 在建快照前校验 RE_LEGACY_ROOTS；直接路径与上传均创建任务私有不可变快照，恢复 INTAKE 时复用并复核摘要，后续阶段只读快照 | VERIFIED |
 | V007-039 | P2 | 直接上传任务静默选择首个上传且未持久化 | `engine.create` 无 uploadId 时取首个上传 | 单上传自动绑定并持久化 uploadId；多上传失败关闭；补回归 | VERIFIED |
 | V007-040 | P2 | 分析器跳过符号链接未标记截断 | 嵌套链接继续扫描但不体现完整性下降 | 链接或特殊文件命中时标记 truncated，档案降为 INFERENCE | VERIFIED |
 | V007-041 | P2 | Windows 路径授权归一化不一致 | API 与 Worker 对大小写、盘符和相对段处理不同 | 共享 `normalizeInputTarget`，先识别绝对路径再规范化 URL | VERIFIED |

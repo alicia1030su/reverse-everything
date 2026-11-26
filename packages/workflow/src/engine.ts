@@ -226,7 +226,7 @@ export class WorkflowEngine {
             if(directInput?.kind==='path'&&snapshotRoot){
               const snapshot=snapshotExists?await resolveDirectSnapshot(snapshotRoot,initialTask.inputHash):await snapshotDirectPath(directInput.target,snapshotRoot,initialTask.inputHash);inputSnapshotPath=snapshot;taskOptions.path=snapshot;
             }else if(upload){
-              const source=path.resolve(this.opts.dataDir,'uploads',upload.projectId,upload.storedName);const snapshot=path.join(this.opts.dataDir,'tasks',id,'input-snapshot',path.basename(upload.storedName));await snapshotFile(source,snapshot,initialTask.inputHash);inputSnapshotPath=snapshot;
+              const source=path.resolve(this.opts.dataDir,'uploads',upload.projectId,upload.storedName);const snapshot=path.join(this.opts.dataDir,'tasks',id,'input-snapshot',path.basename(upload.storedName));const uploadSnapshotExists=await lstat(snapshot).then(()=>true).catch(()=>false);if(uploadSnapshotExists){if(await hashFile(snapshot)!==initialTask.inputHash)throw new Error('Input snapshot hash mismatch');}else await snapshotFile(source,snapshot,initialTask.inputHash);inputSnapshotPath=snapshot;
             }
           }
           assertActive(generation);outputs[stage]=result;if(!this.mutateOwned(id,token,()=>{this.db.setStageOutput(id,stage,result);return true;}))return;
@@ -337,7 +337,7 @@ async function snapshotFile(source:string,destination:string,expectedHash?:strin
   await mkdir(path.dirname(destination),{recursive:true,mode:0o700});const handle=await open(source,constants.O_RDONLY|(constants.O_NOFOLLOW??0));let temporary:string|undefined;
   try{
     const sourceStat=await handle.stat();if(!sourceStat.isFile())throw new Error('Snapshot source must be a regular file');temporary=`${destination}.${randomUUID()}.tmp`;const output=await open(temporary,'wx',0o600);const hash=createHash('sha256');const buffer=Buffer.allocUnsafe(64*1024);let offset=0;
-    try{while(offset<sourceStat.size){const {bytesRead}=await handle.read(buffer,0,Math.min(buffer.length,sourceStat.size-offset),offset);if(!bytesRead)throw new Error('Snapshot source changed while reading');hash.update(buffer.subarray(0,bytesRead));await output.write(buffer.subarray(0,bytesRead));offset+=bytesRead;}}finally{await output.close();}
+    try{while(offset<sourceStat.size){const {bytesRead}=await handle.read(buffer,0,Math.min(buffer.length,sourceStat.size-offset),offset);if(!bytesRead)throw new Error('Snapshot source changed while reading');hash.update(buffer.subarray(0,bytesRead));let written=0;while(written<bytesRead){const result=await output.write(buffer.subarray(written,bytesRead));if(result.bytesWritten<=0)throw new Error('Snapshot output write failed');written+=result.bytesWritten;}offset+=bytesRead;}}finally{await output.close();}
     const after=await handle.stat();if(after.size!==sourceStat.size||after.mtimeMs!==sourceStat.mtimeMs||after.ctimeMs!==sourceStat.ctimeMs)throw new Error('Snapshot source changed while reading');if(expectedHash&&hash.digest('hex')!==expectedHash)throw new Error('Snapshot source hash mismatch');await rename(temporary,destination);temporary=undefined;
   }finally{await handle.close();if(temporary)await unlink(temporary).catch(()=>{});}
 }

@@ -28,6 +28,13 @@ jobs:
       - run: npm run check:secrets
       - run: npm run licenses
       - run: npm test -- --reporter=json --outputFile=.artifacts/vitest-${{ matrix.os }}.json
+      - name: Upload Vitest report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: vitest-${{ matrix.os }}
+          path: .artifacts/vitest-${{ matrix.os }}.json
+          if-no-files-found: ignore
       - name: Enforce historical skip coverage and required safety tests
         run: node scripts/check-skip-coverage.mjs --platform ${{ matrix.os }} --report .artifacts/vitest-${{ matrix.os }}.json
       - name: Require Legacy unit tests
