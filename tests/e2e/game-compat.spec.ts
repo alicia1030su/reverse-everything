@@ -7,7 +7,9 @@ import { startPixelknightServer, startTronServer } from '../../packages/game-com
 const clientHashes = JSON.parse(await readFile('examples/game-compat/CLIENT-SHA256.json', 'utf8')) as Record<string, { commit: string; files: Record<string, string> }>;
 async function verifyClientHashes(game: 'pixelknight' | 'tron'): Promise<void> {
   for (const [relative, expected] of Object.entries(clientHashes[game]!.files)) {
-    const actual = createHash('sha256').update(await readFile(path.join('examples/game-compat/clients', game, relative))).digest('hex');
+    const raw = await readFile(path.join('examples/game-compat/clients', game, relative));
+    const normalized = /\.(?:js|html|css|json|md)$/i.test(relative) ? raw.toString('utf8').replace(/\r\n/g, '\n') : raw;
+    const actual = createHash('sha256').update(normalized).digest('hex');
     expect(actual, `${game}/${relative}`).toBe(expected);
   }
 }

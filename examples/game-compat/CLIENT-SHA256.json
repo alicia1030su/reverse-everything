@@ -2,21 +2,21 @@
   "pixelknight": {
     "commit": "d6636aa971983947bb5d1b0e9b40861d305e3f6e",
     "files": {
-      "game.js": "1474623fd71cb1930d05337924cb7a96c8f6e0e25a39f4ce057d41178ebfbc9d",
-      "index.html": "c6c77ef8d7e26891030881dfff73b8a7a43964f6bb83b755cbf15cdab34b8444",
-      "styles.css": "44bdc7f817307abc87dcec61092123fc6ac9908615b2e0ba71fa56dfcad77798"
+      "game.js": "96df33d15a3f1834b6b5ade9e53f8fdf269d6b01ac29bc632b7bd0adce2bbc05",
+      "index.html": "5a3a07ec9aa037bfb614e77fd78622728503f910e1c9a89c15b2719f636a68ec",
+      "styles.css": "7f3c25ee938f75d1ebb9afe27cdc4e6dfbb74bcdff8da0b15d9da40f6f0e5672"
     }
   },
   "tron": {
     "commit": "18ca856294758807749be4964e7544fd1896d140",
     "files": {
       "background-music.mp3": "49d6c33772243432d78966fb868d690de7d2391ee0b00b8f2dd9f313e996f61e",
-      "client.js": "d4edb0a107a04493062f3126d5d4955a8527f98e583058ddc25802e530b1fabd",
-      "constants.js": "ef6f2e243592bd534c395fd6adcb83a0d6c24ef7b0e7fae35cd168a0c132bcf5",
+      "client.js": "3ff261e5bcf9cbe2b2c6827afd79e64ada610e89f8ce3faf708152f11e9b8f7f",
+      "constants.js": "af3d8b23fe0bfb498ec6661aac6d143e355d2fd5006372073b2d601469d38951",
       "game-over-music.mp3": "adf9b33ed44be3289463d522dac67bc22e72464e4fd33011225f67baf45554f0",
-      "game.html": "84833add444f92e9dc028427e63e544a2d67f5ee3e177e47bc43cdc7b73595b1",
-      "index.html": "c63c691d459829f6a504d240d8518c7038e30c4d242e1ae9dcf9d4851c44de01",
-      "style.css": "c7899b9ed557246b1008ffc27f33234550e6924fb2013bf995821916318c5cf4"
+      "game.html": "32fbcdde4963bdcf19e91a98764f04dc5ed9895aefbc61a1d2a9105369ca01ba",
+      "index.html": "5cf14f85bd63e980efab8459e19497b1bc8b624503d4409716111f9e2e2cf6e7",
+      "style.css": "bfa757e5d462e7b622c88233b5c7be2b54285b1bc1dcd78986d89a8086b226b5"
     }
   }
 }
