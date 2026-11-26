@@ -1,0 +1,24 @@
+{
+  "game": "tron",
+  "upstream": "https://github.com/leodhin/trongame",
+  "commit": "18ca856294758807749be4964e7544fd1896d140",
+  "clientFiles": {
+    "background-music.mp3": "49d6c33772243432d78966fb868d690de7d2391ee0b00b8f2dd9f313e996f61e",
+    "client.js": "3ff261e5bcf9cbe2b2c6827afd79e64ada610e89f8ce3faf708152f11e9b8f7f",
+    "constants.js": "af3d8b23fe0bfb498ec6661aac6d143e355d2fd5006372073b2d601469d38951",
+    "game-over-music.mp3": "adf9b33ed44be3289463d522dac67bc22e72464e4fd33011225f67baf45554f0",
+    "game.html": "32fbcdde4963bdcf19e91a98764f04dc5ed9895aefbc61a1d2a9105369ca01ba",
+    "index.html": "5cf14f85bd63e980efab8459e19497b1bc8b624503d4409716111f9e2e2cf6e7",
+    "style.css": "bfa757e5d462e7b622c88233b5c7be2b54285b1bc1dcd78986d89a8086b226b5"
+  },
+  "license": "ISC",
+  "originalClient": true,
+  "twoPlayers": true,
+  "roomJoin": true,
+  "ready": true,
+  "movement": true,
+  "reconnect": true,
+  "matchFinished": true,
+  "evidenceStatus": "VERIFIED",
+  "screenshot": "docs/assets/v007-tron-compat.png"
+}

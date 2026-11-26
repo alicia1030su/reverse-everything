@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import {
   Activity, Boxes, ChevronRight, CirclePlus, Database, DatabaseBackup, FileSearch,
   FileText, FlaskConical, FolderKanban, Gamepad2, Gauge, KeyRound, LayoutDashboard, Menu, Moon, Network,
-  PackageSearch, Rocket, Settings, ShieldCheck, Sparkles, Sun, Usb, X,
+  PackageSearch, Rocket, Settings, ShieldCheck, Sparkles, Sun, Usb, Wrench, X,
 } from 'lucide-react';
 import { api } from '../api';
 import Onboarding from './Onboarding';
@@ -32,6 +32,7 @@ const navigation = [
       { to: '/protocols', label: '协议分析中心', icon: Network },
       { to: '/revival', label: '游戏复活实验室', icon: FlaskConical },
       { to: '/game-studio', label: '游戏复活工作台', icon: Rocket },
+      { to: '/legacy-studio', label: '古老软件复活', icon: Wrench },
       { to: '/security', label: '漏洞分析中心', icon: ShieldCheck },
       { to: '/validation', label: '重建与验证', icon: Boxes },
       { to: '/tools', label: '工具与依赖', icon: PackageSearch },

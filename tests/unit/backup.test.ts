@@ -72,7 +72,7 @@ describe('schema 4 plan binding migration integrity', () => {
     const migrated = open(file);
     const columns = (migrated.raw.prepare('PRAGMA table_info(analysis_plans)').all() as {name:string}[]).map(column => column.name);
     expect(columns).toEqual(expect.arrayContaining(['upload_id', 'upload_sha256']));
-    expect(Number((migrated.raw.prepare('PRAGMA user_version').get() as {user_version:number}).user_version)).toBe(5);
+    expect(Number((migrated.raw.prepare('PRAGMA user_version').get() as {user_version:number}).user_version)).toBe(6);
     expect(migrated.raw.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='game_rebuilds'").get()).toBeTruthy();
   });
 });
@@ -84,13 +84,13 @@ describe('schema 3 migration integrity', () => {
     createV2(file);
     const db = open(file);
     expect(db.migration.previousVersion).toBe(2);
-    expect(db.migration.applied).toEqual([3,4,5]);
+    expect(db.migration.applied).toEqual([3,4,5,6]);
     expect(db.getTask('t-old')?.inputHash).toBe('b'.repeat(64));
     expect(db.raw.prepare("SELECT kind,ref_count FROM cache_entries WHERE key='cache-old'").get()).toEqual({ kind: 'static-analysis', ref_count: 0 });
     expect(db.raw.prepare("SELECT peak_child_rss_mb,peak_cpu_percent FROM task_resources WHERE task_id='t-old'").get()).toEqual({ peak_child_rss_mb: 0, peak_cpu_percent: 0 });
     expect(db.raw.prepare("SELECT lease_owner,lease_expires_at,heartbeat_at FROM tasks WHERE id='t-old'").get()).toEqual({ lease_owner: null, lease_expires_at: null, heartbeat_at: null });
     expect((db.raw.prepare('PRAGMA index_info(idx_tasks_lease)').all() as {name:string}[]).map(column => column.name)).toEqual(['status','lease_expires_at','created_at']);
-    expect(Number((db.raw.prepare('PRAGMA user_version').get() as {user_version:number}).user_version)).toBe(5);
+    expect(Number((db.raw.prepare('PRAGMA user_version').get() as {user_version:number}).user_version)).toBe(6);
     expect(db.migration.backupPath).toBeTruthy();
     expect(await readdir(path.join(dir, 'backups'))).toHaveLength(1);
   });
@@ -99,10 +99,10 @@ describe('schema 3 migration integrity', () => {
     const dir = await temp(); const file = path.join(dir, 'reverse-everything.sqlite'); createV2(file);
     const raw = new DatabaseSync(file); migrateDatabase(raw, file); raw.exec('DROP TABLE analysis_plans; PRAGMA user_version=3;'); raw.close();
     const db = open(file);
-    expect(db.migration).toMatchObject({ previousVersion: 3, version: 5, applied: [4,5] });
+    expect(db.migration).toMatchObject({ previousVersion: 3, version: 6, applied: [4,5,6] });
     const columns = db.raw.prepare("SELECT name FROM pragma_table_info('analysis_plans')").all() as {name:string}[];
     expect(columns.map(column => column.name)).toEqual(expect.arrayContaining(['upload_id', 'upload_sha256']));
-    expect(Number((db.raw.prepare('PRAGMA user_version').get() as {user_version:number}).user_version)).toBe(5);
+    expect(Number((db.raw.prepare('PRAGMA user_version').get() as {user_version:number}).user_version)).toBe(6);
   });
 
   it('rolls back an interrupted migration, retains the original database and redacts trigger errors', async () => {

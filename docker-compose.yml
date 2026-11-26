@@ -3,7 +3,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: reverse-everything:0.0.6
+    image: reverse-everything:0.0.7
     ports:
       - "127.0.0.1:4173:4173"
     environment:
@@ -17,10 +17,14 @@ services:
       RE_TASK_TIMEOUT_MS: "300000"
       # Optional Linux/Docker allowlist (':' separator); use container paths.
       # RE_GAME_ROOTS: "/games/owned-fps:/games/owned-rpg"
+      # Optional Linux/Docker allowlist for read-only legacy software/data paths.
+      # RE_LEGACY_ROOTS: "/legacy:/retained-data"
     volumes:
       - reverse-everything-data:/data
-      # Optional: mount only lawfully retained game directories read-only.
+      # Optional: mount only lawfully retained directories read-only.
       # - /absolute/host/games:/games:ro
+      # - /absolute/host/legacy:/legacy:ro
+      # - /absolute/host/retained-data:/retained-data:ro
     restart: unless-stopped
     init: true
 volumes:

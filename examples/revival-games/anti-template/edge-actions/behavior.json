@@ -1,0 +1,22 @@
+{
+  "format": "revival-behavior/v1",
+  "id": "edge-actions",
+  "title": "Edge Actions",
+  "mode": "edge-action-coverage",
+  "rules": {
+    "minPlayers": 2,
+    "maxPlayers": 4,
+    "roundSeconds": 10,
+    "movementSpeed": 3,
+    "maxHealth": 10,
+    "respawn": true
+  },
+  "actions": [
+    { "id": "instant", "kind": "attack", "cooldownMs": 0, "damage": 10, "range": 10000 },
+    { "id": "tick", "kind": "attack", "cooldownMs": 100, "damage": 5, "range": 5 },
+    { "id": "gather", "kind": "gather", "cooldownMs": 0, "item": "herb", "amount": 1 },
+    { "id": "heal", "kind": "heal", "cooldownMs": 0, "item": "herb", "amount": 1, "health": 5 }
+  ],
+  "winCondition": { "type": "firstToScore", "target": 1 },
+  "map": { "width": 16, "height": 16, "obstacles": [{ "x": 0, "y": 0 }] }
+}

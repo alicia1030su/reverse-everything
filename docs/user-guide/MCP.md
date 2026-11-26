@@ -1,6 +1,6 @@
-# MCP（v0.0.6）
+# MCP（v0.0.7）
 
-MCP server 与 Web/CLI 共用 REST API、本地令牌、任务状态机与证据模型。当前注册 **44 个工具**，v0.0.6 新增游戏复活 7 个。
+MCP server 与 Web/CLI 共用 REST API、本地令牌、任务状态机与证据模型。当前注册 **44 个工具**；`create_task` adapter 新增 `legacy`，游戏复活仍为 7 个工具。
 
 ## stdio
 
@@ -20,7 +20,7 @@ node apps/cli/dist/cli.js mcp http --port 4174
 
 ## 工具分组
 
-- 项目与任务：`list_projects`、`create_project`、`upload_file`、`create_task`、`list_tasks`、`get_task`、`task_action`、`get_report`
+- 项目与任务：`list_projects`、`create_project`、`upload_file`、`create_task`、`list_tasks`、`get_task`、`task_action`、`get_report`；`create_task` 支持 `legacy`
 - 系统与资源：`list_capabilities`、`get_system_health`、`get_resource_metrics`
 - 硬件：`list_hardware_capabilities`、`list_hardware_devices`、`list_serial_ports`、`get_hardware_report`
 - 证据与产物：`list_evidence`、`get_evidence`、`get_task_events`、`get_artifact_manifest`
@@ -34,6 +34,7 @@ node apps/cli/dist/cli.js mcp http --port 4174
 - 不暴露缓存清理、维护删除、项目删除或备份恢复工具。
 - 不提供打开 USB/串口、实时捕获、键盘报告采集、驱动安装或固件刷写工具。
 - 硬件枚举来自本机回环 API；远程 API 模式返回 403。
-- `scan_game_directory` 仅扫描 API 服务端 `RE_GAME_ROOTS` 显式允许的目录；未配置返回 403，越界返回 403，HTTP MCP 不能绕过。
-- 游戏复活产物是独立兼容实现，不是原始服务端；不保证商业原客户端兼容，不绕过 DRM/反作弊/认证，不分发未授权资源。
+- `legacy` 本机路径仅位于 API 服务端 `RE_LEGACY_ROOTS` 白名单；不执行原程序，不自动安装依赖，不绕过许可。
+- `scan_game_directory` 仅扫描 API 服务端 `RE_GAME_ROOTS` 显式允许的目录；未配置或越界返回 403，HTTP MCP 不能绕过。
+- 游戏 L0-L7 是生成服务实现等级；目标行为、原客户端与协议兼容分开报告，后两者默认 `UNKNOWN`。不保证商业原客户端兼容，不绕过 DRM/反作弊/认证，不分发或复刻未授权资源。
 - 工具权限不由模型文本或目标内容授予；模型输出为 `INFERENCE`。

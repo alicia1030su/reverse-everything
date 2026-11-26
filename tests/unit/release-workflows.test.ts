@@ -8,7 +8,7 @@ const commit = 'a'.repeat(40);
 const run = (name: string, overrides: Record<string, unknown> = {}) => ({
   name,
   head_sha: commit,
-  event: name === 'Release v006' ? 'workflow_dispatch' : 'push',
+  event: name === 'Release v007' ? 'workflow_dispatch' : 'push',
   head_branch: 'main',
   status: 'completed',
   conclusion: 'success',
@@ -22,19 +22,20 @@ describe('release workflow identity gate', () => {
     expect(verifyReleaseWorkflowRuns(runs, { commit })).toEqual([]);
   });
 
-  it('requires the v006 release workflow in addition to every push gate', () => {
-    expect(REQUIRED_RELEASE_WORKFLOWS).toContain('Release v006');
-    const runs = REQUIRED_RELEASE_WORKFLOWS.filter(name => name !== 'Release v006').map(name => run(name));
-    expect(verifyReleaseWorkflowRuns(runs, { commit })).toEqual(['Required workflow is missing: Release v006']);
+  it('requires the v007 release workflow in addition to every push gate', () => {
+    expect(REQUIRED_RELEASE_WORKFLOWS).toContain('Release v007');
+    expect(REQUIRED_RELEASE_WORKFLOWS).not.toContain('Release v006');
+    const runs = REQUIRED_RELEASE_WORKFLOWS.filter(name => name !== 'Release v007').map(name => run(name));
+    expect(verifyReleaseWorkflowRuns(runs, { commit })).toEqual(['Required workflow is missing: Release v007']);
   });
 
-  it('allows only the current v006 dispatch run to be in progress without bypassing push gates', () => {
-    const current = run('Release v006', { id: 42, status: 'in_progress', conclusion: null });
-    const runs = REQUIRED_RELEASE_WORKFLOWS.map(name => name === 'Release v006' ? current : run(name));
-    expect(verifyReleaseWorkflowRuns(runs, { commit, currentWorkflow: 'Release v006', currentRunId: 42 })).toEqual([]);
-    expect(verifyReleaseWorkflowRuns(runs, { commit, currentWorkflow: 'Release v006', currentRunId: 43 })).toEqual(['Required workflow is not successful: Release v006']);
-    expect(verifyReleaseWorkflowRuns([...runs, run('Release v006', { id: 44, created_at: '2026-11-25T12:00:00Z', conclusion: 'failure' })], { commit, currentWorkflow: 'Release v006', currentRunId: 42 })).toEqual(['Required workflow is not successful: Release v006']);
-    expect(verifyReleaseWorkflowRuns(runs.slice(1), { commit, currentWorkflow: 'Release v006', currentRunId: 42 })).toEqual(['Required workflow is missing: CI']);
+  it('allows only the current v007 dispatch run to be in progress without bypassing push gates', () => {
+    const current = run('Release v007', { id: 42, status: 'in_progress', conclusion: null });
+    const runs = REQUIRED_RELEASE_WORKFLOWS.map(name => name === 'Release v007' ? current : run(name));
+    expect(verifyReleaseWorkflowRuns(runs, { commit, currentWorkflow: 'Release v007', currentRunId: 42 })).toEqual([]);
+    expect(verifyReleaseWorkflowRuns(runs, { commit, currentWorkflow: 'Release v007', currentRunId: 43 })).toEqual(['Required workflow is not successful: Release v007']);
+    expect(verifyReleaseWorkflowRuns([...runs, run('Release v007', { id: 44, created_at: '2026-11-25T12:00:00Z', conclusion: 'failure' })], { commit, currentWorkflow: 'Release v007', currentRunId: 42 })).toEqual(['Required workflow is not successful: Release v007']);
+    expect(verifyReleaseWorkflowRuns(runs.slice(1), { commit, currentWorkflow: 'Release v007', currentRunId: 42 })).toEqual(['Required workflow is missing: CI']);
   });
 
   it('rejects a missing workflow even when unrelated checks are green', () => {
@@ -102,10 +103,56 @@ describe('release workflow identity gate', () => {
     expect(workflow).toContain('--check windows-game-revival-smoke');
     expect(workflow).not.toContain('report.valid !== true || report.capabilities?.dockerDeployment !== true');
     expect(workflow).toContain('--check game-fps-rpg-docker-validation');
-    expect(workflow).toContain('manifest.assets.length !== 10 || files.length !== 12');
+    expect(workflow).toContain('manifest.assets.length !== 10');
     expect(workflow).toContain('test "$(git cat-file -t "refs/tags/$TAG")" = tag');
     expect(workflow).toContain('node scripts/release-atomic.mjs ensure-draft');
     expect(workflow).toContain('node scripts/release-atomic.mjs verify-draft');
+    expect(workflow).toContain('node scripts/release-atomic.mjs verify-public');
+  });
+
+  it('keeps v007 identity, frozen main, v006 upgrade and strict evidence gates', async () => {
+    const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
+    const workflow = await readFile(path.join(root, '.github/workflows/release-v007.yml'), 'utf8');
+    expect(workflow).toContain('name: Release v007');
+    expect(workflow).toContain('group: release-v007-${{ github.repository }}');
+    expect(workflow.match(/environment: release-v007/g)).toHaveLength(3);
+    expect(workflow).not.toContain('release-v006');
+    expect(workflow).toContain('git fetch origin main');
+    expect(workflow).toContain('test "$commit" = "$(git rev-parse origin/main)"');
+    expect(workflow).toContain('- run: npm run docs:check');
+    expect(workflow).toContain('- run: npm run defects:check');
+    expect(workflow).toContain('- run: npm run version:check');
+    expect(workflow).toContain('- run: npm run validate:skill');
+    expect(workflow).toContain('tests/unit/legacy-revival.test.ts');
+    expect(workflow).toContain('evidence-driven anti-template acceptance');
+    expect(workflow).toContain('schema 4 plan binding migration integrity|schema 3 migration integrity');
+    expect(workflow).toContain('gh release download v0.0.6');
+    expect(workflow).toContain('Upgrade v0.0.6 installer and preserve user data');
+    expect(workflow).toContain('Legacy reconstruction rebuild and independent start smoke');
+    expect(workflow).toContain('ref: main');
+    expect(workflow).not.toContain('inputs.ref');
+    expect(workflow).toContain("report.targetEvidence?.behavior !== 'VERIFIED' || report.targetEvidence?.originalClient !== 'UNKNOWN' || report.targetEvidence?.protocol !== 'UNKNOWN'");
+    expect(workflow.match(/client\.kind === 'internal-protocol-client' && client\.count > 0/g)).toHaveLength(3);
+    expect(workflow.match(/must not claim an original game client/g)).toHaveLength(3);
+    expect(workflow).toContain('Expected v0.0.6 Schema 5, got');
+    expect(workflow).toContain('Schema 6 upgrade or project preservation failed');
+    expect(workflow).toContain('--check windows-v006-upgrade-smoke');
+    expect(workflow).toContain('--check windows-legacy-revival-smoke');
+    expect(workflow.match(/node scripts\/verify-game-docker-evidence\.mjs/g)).toHaveLength(3);
+    expect(workflow).toContain('needs: [freeze, candidate-linux, candidate-game-docker, candidate-windows]');
+    expect(workflow).toContain('test "$VERSION" = "0.0.7"');
+    expect(workflow).toContain('"openapi-v$VERSION.json"');
+    expect(workflow).toContain('test "$GITHUB_RUN_ID" = "$EXPECTED_RUN_ID"');
+    expect(workflow).toContain('test "$LINUX_RUN_ID" = "$GITHUB_RUN_ID"');
+    expect(workflow).toContain('test "$GAME_DOCKER_RUN_ID" = "$GITHUB_RUN_ID"');
+    expect(workflow).toContain('test "$WINDOWS_RUN_ID" = "$GITHUB_RUN_ID"');
+    expect(workflow).toContain('manifest.assets.length !== 13');
+    expect(workflow).toContain('Expected exactly 15 Release assets');
+    expect(workflow).toContain('reverse-everything-game-compat-demo-$VERSION.zip');
+    expect(workflow).toContain('reverse-everything-legacy-demo-$VERSION.zip');
+    expect(workflow).toContain("'demo-evidence.json'");
+    expect(workflow).toContain('BUILD-INFO');
+    expect(workflow).toContain('ACCEPTANCE');
     expect(workflow).toContain('node scripts/release-atomic.mjs verify-public');
   });
 
@@ -113,6 +160,8 @@ describe('release workflow identity gate', () => {
     const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
     const workflow = await readFile(path.join(root, '.github/workflows/ci.yml'), 'utf8');
     const gameDocker = workflow.slice(workflow.indexOf('  game-docker:'));
+    expect(workflow).toContain('- run: npm run docs:check');
+    expect(workflow).toContain('- run: npm run defects:check');
     expect(gameDocker).toContain('node scripts/validate-game-docker.mjs --genre ${{ matrix.genre }}');
     expect(gameDocker).toContain('node scripts/verify-game-docker-evidence.mjs');
     expect(gameDocker).toContain('--sums .artifacts/game-docker-${{ matrix.genre }}/SHA256SUMS.txt');

@@ -1,6 +1,6 @@
 {
   "name": "@reverse/firmware",
-  "version": "0.0.6",
+  "version": "0.0.7",
   "private": true,
   "type": "module",
   "exports": {
@@ -13,7 +13,7 @@
     "build": "tsc -p tsconfig.json"
   },
   "dependencies": {
-    "@reverse/security": "0.0.6"
+    "@reverse/security": "0.0.7"
   },
   "devDependencies": {
     "typescript": "5.9.3",

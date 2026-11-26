@@ -1,4 +1,4 @@
-# 逆向万物 v0.0.6 产品需求文档
+# 逆向万物 v0.0.7 产品需求文档
 
 ## 1. 定位与目标
 
@@ -8,24 +8,26 @@
 
 核心原则：证据驱动、自动化优先、可验证、可恢复、可扩展、安全隔离。不能可靠实现的能力必须标为 `UNKNOWN`、`PARTIAL` 或 `BLOCKED`，不得伪装成完成。
 
-v0.0.6 聚焦 Game Revival Studio、L0-L7 证据等级、自有多人 FPS/RPG 独立服务端、管理后台与 Docker/Windows/Linux 部署；本版本状态以最终测试、CI 与发布记录为准。
+v0.0.7 聚焦 Legacy Software Revival Studio、只读软件识别、兼容/合法许可诊断、数据恢复、独立软件重建、Local Privacy，以及 V5 行为 IR 驱动的反模板游戏复活；本版本状态以最终测试、CI 与发布记录为准。
 
 ## 2. 用户与场景
 
 - 开发者：理解自己维护或获授权的网页、软件、Android 应用与固件。
 - 安全研究员：对授权目标做被动检查、静态复核与离线记录分析。
 - 数字保存/兼容开发者：用合法保留的客户端与回放生成独立本地兼容服务。
+- 老软件用户：只读识别旧程序与安装目录，恢复个人数据并生成独立 INI/CSV/文本工具。
 - 硬件研究者：只读枚举本机设备、分析授权 USB/HID 记录与开发板固件。
 - Agent/自动化用户：通过 CLI、MCP、REST 或 Skill 调用同一任务契约。
 
-非目标：匿名多租户、公开托管、无授权扫描、绕过登录/验证码/付费/DRM/反作弊、自动漏洞利用、打开未授权物理设备、实时键盘捕获、固件刷写、商业资源分发、保证恢复所有软件。
+非目标：匿名多租户、公开托管、无授权扫描、破解或许可/授权绕过、绕过登录/验证码/付费/DRM/反作弊、自动漏洞利用、打开未授权物理设备、实时键盘捕获、固件刷写、商业资源分发、复刻未授权资源、保证恢复所有软件。
 
-## 3. 九类分析入口
+## 3. 分析入口与场景
 
 | 入口 | 用户输入 | 项目 kind | adapter | 主要产物 |
 |---|---|---|---|---|
 | website | 授权 URL | `website` | `website` | 网页快照、交互/路由、截图、同源网络元数据 |
 | software | 本地二进制/归档 | `software` | `file` | 格式、section/import、熵、字符串、ZIP、SBOM |
+| legacy | 合法老软件文件/安装目录/数据文件 | `software` | `legacy` | 只读档案、兼容/许可诊断、数据恢复、独立工具 |
 | android | APK/ZIP/DEX | `software` | `apk` | Manifest、DEX 表、组件与原生库元数据；JADX 产物按可用性 |
 | game | 合法 replay-trace | `game` | `game` | 协议字段、状态转换、独立兼容服务 |
 | network | HAR/PCAP/PCAPNG | `protocol` | `network` | 端点、HTTP/DNS/TLS 与传输元数据 |
@@ -35,7 +37,7 @@ v0.0.6 聚焦 Game Revival Studio、L0-L7 证据等级、自有多人 FPS/RPG �
 | board | 开发板 USB/HID/枚举记录 | `hardware` | `hardware` | 只读串口/设备列表与离线记录分析；不调用 firmware，不宣称特定品牌/型号或实时设备支持 |
 | console | 主机档案、USB 诊断、合法固件/应用样本 | `console` | `console` | C0-C5 证据档案、连接诊断、离线分析与双视图报告 |
 
-`board` 是硬件场景路由，不新增 `board` adapter 或项目 kind。Ghidra 是 `software` 卡片内高级选项，使用独立 `ghidra` adapter；Ghidra 12.2/JDK25 与 JADX 1.5.3 已通过官方已知答案 CI，验证范围限于 CI 覆盖的 PE/ELF/APK 样本。
+`board` 是硬件场景路由，不新增 `board` adapter 或项目 kind。`legacy` 使用 `software` 项目与独立 adapter；本机路径仅限 API 服务端 `RE_LEGACY_ROOTS` 白名单，且不执行原程序。Ghidra 是 `software` 卡片内高级选项，使用独立 `ghidra` adapter；Ghidra 12.2/JDK25 与 JADX 1.5.3 已通过官方已知答案 CI，验证范围限于 CI 覆盖的 PE/ELF/APK 样本。
 
 ## 4. 核心流程
 
@@ -49,12 +51,14 @@ v0.0.6 聚焦 Game Revival Studio、L0-L7 证据等级、自有多人 FPS/RPG �
 ## 5. 页面与验收
 
 - 总览：统计全部来自 API；空状态不是假数据。
-- 创建项目：九类入口、URL/文件/本地列表、授权与本地确认。
+- 创建项目：分析入口与场景、URL/文件/本地列表、授权与本地确认。
 - 任务工作台：阶段、当前工具、日志、控制按钮、证据/发现/报告/产物。
 - 证据探索器：搜索、过滤、关系、只读代码查看；原始内容不作为 HTML 渲染。
 - 协议中心：消息类型、字段出现次数、转换与未知项。
 - 复活实验室：L0-L7 等级、E2E 检查、独立重建声明。
-- Game Revival Studio：游戏档案、允许目录只读扫描、服务端规格、重建状态、验证报告与 ZIP 下载。
+- Game Revival Studio：游戏档案、允许目录只读扫描、V5 行为 IR、重建状态、实现等级与目标兼容证据、ZIP 下载。
+- Legacy Studio：老软件档案、兼容/许可诊断、数据恢复预览与导出、独立工具规格、真实测试/启动报告。
+- Local Privacy Center：本地/远程边界、网络与下载记录、目录白名单、保留与共享确认。
 - 安全中心：候选发现、证据、置信度与修复建议。
 - 硬件实验室：真实只读 USB 拓扑、描述符、串口与离线任务入口。
 - 主机研究实验室：设备目录、能力矩阵、USB 诊断、C0-C5 档案与报告。
@@ -66,10 +70,10 @@ v0.0.6 聚焦 Game Revival Studio、L0-L7 证据等级、自有多人 FPS/RPG �
 
 ## 6. 自动化入口
 
-- CLI：`health`、`capabilities`、`analyzers`、`projects`、`analyze`、`tasks`、`report`、`hardware`、`firmware`、`console`、`game profile|scan|spec|rebuild|status|download`、`plans`、`tools`、`demos`、`resources`、`cache`、`retention`、`mcp`。
-- REST：`/api/v1` 与 `/api` 同路由；OpenAPI v0.0.6。
-- MCP：stdio 与 Streamable HTTP，共 44 个工具；新增游戏档案、目录扫描、规格、重建列表/创建/状态 7 个工具。
-- Skill：授权检查、环境检测、任务查询与九类工作流；优先 MCP，否则 CLI/API。
+- CLI：`health`、`capabilities`、`analyzers`、`projects`、`analyze`、`tasks`、`report`、`hardware`、`firmware`、`console`、`game profile|scan|spec|rebuild|status|download`、`plans`、`tools`、`demos`、`resources`、`cache`、`retention`、`mcp`；`tasks create` 支持 `legacy`。
+- REST：`/api/v1` 与 `/api` 同路由；OpenAPI v0.0.7。
+- MCP：stdio 与 Streamable HTTP，共 44 个工具；`create_task` adapter 新增 `legacy`，游戏工具保持 7 个。
+- Skill：授权检查、环境检测、任务查询与 Legacy/游戏工作流；优先 MCP，否则 CLI/API。
 
 所有入口共享项目/任务 ID、令牌、队列、预算与证据契约。
 
@@ -83,7 +87,7 @@ v0.0.6 聚焦 Game Revival Studio、L0-L7 证据等级、自有多人 FPS/RPG �
 - `MISSING`：未实现。
 - `VERIFIED` 只能用于可重复测试证据，不能仅凭代码存在。
 
-Ghidra/JADX 仅在官方 CI 已知答案范围内可标 `VERIFIED`，不扩展到未测试格式、架构或物理设备。游戏复活 L0-L7 只由真实报告推进：文件生成不算联机或部署成功；当前本地最高实测 L6，Docker 不可用，L7 待 CI。物理设备、实时 USB 捕获与刷写在未授权时保持 `BLOCKED` 或禁用。
+Ghidra/JADX 仅在官方 CI 已知答案范围内可标 `VERIFIED`，不扩展到未测试格式、架构或物理设备。游戏复活 L0-L7 是生成服务实现等级，只由真实报告推进；目标行为、原客户端和协议兼容分开报告，后两者默认 `UNKNOWN`。v0.0.6 正式候选 CI 的 FPS/RPG Docker/L7 已通过，但不能外推为商业原客户端兼容。Legacy 恢复只有来源未变和导出哈希可核验时才使用相应 `VERIFIED` 证据。物理设备、实时 USB 捕获与刷写在未授权时保持 `BLOCKED` 或禁用。
 
 ## 8. 硬件、固件与安全需求
 
@@ -94,7 +98,16 @@ Ghidra/JADX 仅在官方 CI 已知答案范围内可标 `VERIFIED`，不扩展�
 - 加密/高熵固件保持 `UNKNOWN`，不绕过保护。
 - Windows 私有快照 ACL、reparse point 拒绝、API runtime lease 与 Electron 单实例锁属于交付要求。
 
-## 9. 缓存、保留与删除
+## 9. Legacy 软件、恢复与隐私需求
+
+- 只读识别合法保留的 PE/ELF/Mach-O、MSI/JAR/Electron/Python 线索与安装目录；不执行原程序。
+- 兼容性与许可诊断必须带证据状态；许可证默认 `UNKNOWN`，不提供破解、授权绕过或盗版激活。
+- CSV/DBF/SQLite/INI/JSON/XML 恢复写入独立目录，保留来源与导出 SHA-256；损坏数据不得伪造恢复。
+- 独立 INI/CSV/文本工具不得复用未授权源码、资源或品牌标识；只有真实测试和启动通过才可描述为可运行。
+- Legacy 本机路径仅接受 API 服务端 `RE_LEGACY_ROOTS` 白名单；默认全本地、不调用远程 AI、不下载外部依赖。
+- 外部运行时只提供官方来源建议，安装由用户显式确认。
+
+## 10. 缓存、保留与删除
 
 - 缓存仅用于可复用纯阶段；默认项目隔离，跨项目共享需显式批准。
 - 缓存键包含输入哈希、adapter/阶段/工具版本与脱敏选项；读取验证 SHA-256。
@@ -102,10 +115,10 @@ Ghidra/JADX 仅在官方 CI 已知答案范围内可标 `VERIFIED`，不扩展�
 - 保留策略不自动删除原始上传或正式任务产物。
 - 清缓存与项目删除必须显式确认；项目有活动任务时拒绝删除。
 
-## 10. 质量门禁
+## 11. 质量门禁
 
 - P0 阻塞缺陷为 0；失败测试不得删除或伪造通过。
 - CLI 命令按当前 `--help` 核对；所有本地文档链接存在。
 - Ghidra/JADX 真实工具 CI、官方离线样本、Windows/Web/桌面与打包入口由最终门禁验收。
-- 测试数量、跳过项、CI Run ID 与性能数据以最终 `V006-TEST-RESULTS.md` 为准；未定稿处写“以最终门禁为准”。
-- 不得提前宣称 Tag、Release、签名、物理设备或未运行检查已通过。
+- v0.0.7 测试数量、跳过项、CI Run ID 与性能数据以最终 `V007-*` 报告为准；历史基线见 `V006-TEST-RESULTS.md` 与 `V007-BASELINE.md`。
+- 不得提前宣称 Tag、Release、签名、物理设备、macOS、真实 AI Key、商业游戏原客户端或未运行检查已通过。

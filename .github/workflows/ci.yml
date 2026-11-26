@@ -14,25 +14,44 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
       - run: npm ci --no-audit --no-fund
       - run: npx playwright install chromium
       - run: npm run build
+      - run: npm run docs:check
+      - run: npm run defects:check
       - run: npm run lint
       - run: npm run check:secrets
       - run: npm run licenses
-      - run: npm test
+      - run: npm test -- --reporter=json --outputFile=.artifacts/vitest-${{ matrix.os }}.json
+      - name: Upload Vitest report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: vitest-${{ matrix.os }}
+          path: .artifacts/vitest-${{ matrix.os }}.json
+          if-no-files-found: ignore
+      - name: Enforce historical skip coverage and required safety tests
+        run: node scripts/check-skip-coverage.mjs --platform ${{ matrix.os }} --report .artifacts/vitest-${{ matrix.os }}.json
+      - name: Require Legacy unit tests
+        run: npx vitest run tests/unit/legacy-revival.test.ts --reporter=verbose
+      - name: Require anti-template game behavior tests
+        run: npx vitest run tests/unit/game-revival.test.ts -t "evidence-driven anti-template acceptance" --reporter=verbose
+      - name: Require Schema 6 migration tests
+        run: npx vitest run tests/unit/backup.test.ts -t "schema 4 plan binding migration integrity|schema 3 migration integrity" --reporter=verbose
       - run: npm run test:e2e
+      - name: Require real original-client game compatibility evidence
+        run: node --input-type=module -e "import {readFile} from 'node:fs/promises';for(const name of ['pixelknight','tron']){const value=JSON.parse(await readFile('artifacts/v007-game-compat/'+name+'.json','utf8'));if(value.evidenceStatus!=='VERIFIED'||value.originalClient!==true)throw new Error(name+' evidence missing')}"
   docker:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
@@ -57,8 +76,8 @@ jobs:
       matrix:
         genre: [fps, rpg]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
@@ -75,7 +94,7 @@ jobs:
             --sums .artifacts/game-docker-${{ matrix.genre }}/SHA256SUMS.txt
       - name: Upload Docker validation evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: game-docker-${{ matrix.genre }}
           path: |

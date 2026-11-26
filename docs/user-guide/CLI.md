@@ -1,4 +1,4 @@
-# CLI 指南（v0.0.6）
+# CLI 指南（v0.0.7）
 
 ## 启动与认证
 
@@ -19,12 +19,13 @@ export RE_DATA_DIR=/absolute/data
 
 不要把令牌放入 URL 或提交到仓库。全局参数为 `--json`、`--quiet`、`--timeout <ms>`、`--api-url <url>`；`--timeout` 同时用于 HTTP 超时和任务等待预算。Ctrl+C 只终止当前等待，不删除服务端任务。
 
-## 九类入口与实际路由
+## 分析入口与实际路由
 
 | 用户入口 | `projects create` 的 kind | `tasks create` 的 adapter |
 |---|---|---|
 | website | `website` | `website` |
 | software | `software` | `file` |
+| legacy | `software` | `legacy` |
 | android | `software` | `apk` |
 | game | `game` | `game` |
 | network | `protocol` | `network` |
@@ -34,7 +35,7 @@ export RE_DATA_DIR=/absolute/data
 | board | `hardware` | `hardware` |
 | console | `console` | `console` |
 
-第七类入口 id 为 `usb`，CLI/API 对应 `hardware`。`board` 是开发板场景路由，仅复用 `hardware`，不调用 `firmware`，不是新 adapter，也不宣称特定品牌/型号或实时设备支持。Ghidra 使用 `software` 项目与 `ghidra` adapter；官方 Ghidra/JDK 已知答案 CI 已通过，验证范围限于 CI 覆盖的 PE/ELF 样本。
+`usb` 对应 `hardware`。`board` 是开发板场景路由，仅复用 `hardware`，不调用 `firmware`，不是新 adapter，也不宣称特定品牌/型号或实时设备支持。`legacy` 使用 `software` 项目和独立 adapter；本机路径必须位于 API 服务端 `RE_LEGACY_ROOTS` 白名单内，不执行原程序。Ghidra 使用 `software` 项目与 `ghidra` adapter；官方 Ghidra/JDK 已知答案 CI 已通过，验证范围限于 CI 覆盖的 PE/ELF 样本。
 
 ## 健康、能力与资源
 
@@ -65,7 +66,7 @@ reverse-everything firmware inspect ./firmware.bin --authorized
 
 `analyze file` 与 `firmware inspect` 会自动创建项目、上传并创建任务；加 `--no-wait` 可立即返回任务 ID。`analyze web` 只接受 HTTP/HTTPS，本地目标还需 `--confirm-local`。
 
-项目 kind 的有效值为 `website`、`software`、`game`、`security`、`protocol`、`hardware`、`firmware`、`console`。任务 adapter 的有效值为 `website`、`file`、`security`、`game`、`network`、`apk`、`ghidra`、`hardware`、`firmware`、`console`。
+项目 kind 的有效值为 `website`、`software`、`game`、`security`、`protocol`、`hardware`、`firmware`、`console`。任务 adapter 的有效值为 `website`、`file`、`legacy`、`security`、`game`、`network`、`apk`、`ghidra`、`hardware`、`firmware`、`console`。
 
 ## 任务与报告
 
@@ -124,6 +125,20 @@ reverse-everything report plain <taskId> ./plain-report.md
 
 `plans create` 会创建显式授权范围、读取文件头部并生成确定性计划；不会自动安装工具或扩大权限。`demos run` 创建真实项目与任务，不伪造成功结果。
 
+## 老软件（Legacy Studio）
+
+```bash
+reverse-everything projects create "授权老软件" software --authorized
+reverse-everything projects upload <projectId> ./retained-tool.exe
+reverse-everything tasks create <projectId> legacy
+reverse-everything tasks get <taskId>
+reverse-everything report export <taskId> ./legacy-report.md
+```
+
+`legacy` adapter 只读识别软件与数据格式，生成兼容性/许可诊断，不执行原程序。未上传而使用本机路径时，必须在 API 服务端配置 `RE_LEGACY_ROOTS`（Windows 用 `;`，Linux/Docker 用 `:`），仅允许绝对目录及其子目录。
+
+当前 CLI 的 `tasks create` 只传 adapter；恢复与独立重建选项通过 MCP `create_task` 或 REST `POST /api/projects/:id/tasks` 的 `options` 传入。详见 [老软件指南](../LEGACY-SOFTWARE.md)、[数据恢复](../DATA-RECOVERY.md) 与 [独立重建](../SOFTWARE-RECONSTRUCTION.md)。
+
 ## 游戏复活（Game Revival）
 
 先创建 `game` 项目，并在 **API 服务端**配置 `RE_GAME_ROOTS`。Windows 使用 `;` 分隔多个绝对目录，Linux 使用 `:`；仅允许目录本身及其子目录。未配置或路径越界返回 403，HTTP MCP 也不能绕过。
@@ -138,9 +153,9 @@ reverse-everything game status <rebuildId>
 reverse-everything game download <rebuildId> ./server.zip
 ```
 
-`profile` 的类型为 `fps|rpg|unknown`；`scan` 只读、增量扫描并保存指纹，不上传游戏文件；`spec` 生成证据分级规格；`rebuild` 异步生成并验证独立服务端；`status` 返回真实阶段与 L0-L7 报告；`download` 仅在重建完成且通过验证后提供 ZIP。
+`profile` 的类型为 `fps|rpg|unknown`；`scan` 只读、增量扫描并保存指纹，可读取唯一 `behavior.json`/`gameplay.json` 的 V5 行为 IR；`spec` 生成证据分级规格；`rebuild` 异步生成并验证独立服务端；`status` 返回真实阶段、L0-L7 实现等级与目标兼容证据；`download` 仅在重建完成且通过验证后提供 ZIP。
 
-生成服务包含自有多人 FPS/RPG、权威状态、房间隔离、持久化、重连、结算、多房间并发与认证管理后台，可独立构建/启动，不依赖平台 API。当前本地最高实测 L6；Docker 不可用，Docker/L7 待 CI。产物不是原始服务端，不保证商业原客户端兼容。
+生成服务包含自有多人 FPS/RPG、权威状态、房间隔离、持久化、重连、结算、多房间并发与认证管理后台，可独立构建/启动，不依赖平台 API。L0-L7 只表示实现等级；目标行为、原客户端和协议兼容分开报告，原客户端与协议默认 `UNKNOWN`。v0.0.6 正式候选 CI 的 Docker/L7 已通过，但不保证商业原客户端兼容。详见 [游戏兼容指南](../GAME-COMPATIBILITY.md)。
 
 ### 独立服务端部署
 
@@ -152,7 +167,7 @@ npm run build
 npm start
 ```
 
-启动前按生成物 `.env.example` 通过环境变量设置至少 16 字符的 `ADMIN_TOKEN`、`GAME_PORT`、`ADMIN_PORT` 与数据路径（生成服务不自动读取 `.env` 文件）；管理后台/API 默认仅回环，必须 Bearer 认证。Docker 环境可在生成物目录运行 `docker compose up -d --build`，其 Compose 文件包含健康检查与数据卷；该命令是部署说明，当前本地未实跑，不能据此宣称 L7 通过。
+启动前按生成物 `.env.example` 通过环境变量设置至少 16 字符的 `ADMIN_TOKEN`、`GAME_PORT`、`ADMIN_PORT` 与数据路径（生成服务不自动读取 `.env` 文件）；管理后台/API 默认仅回环，必须 Bearer 认证。Docker 环境可在生成物目录运行 `docker compose up -d --build`，其 Compose 文件包含健康检查与数据卷。v0.0.6 正式候选 CI 已验证该部署路径；未在本机实跑时，本机报告仍应注明限制。
 
 ## MCP
 

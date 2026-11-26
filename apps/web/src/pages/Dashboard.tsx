@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { Activity, ArrowRight, ArrowUpRight, Binary, CheckCircle2, Cpu, FileSearch, FlaskConical, FolderKanban, Gamepad2, Globe2, History, Play, ShieldAlert, Sparkles } from 'lucide-react';
+import { Activity, ArrowRight, ArrowUpRight, Binary, CheckCircle2, Cpu, FileSearch, FlaskConical, FolderKanban, Gamepad2, Globe2, History, Play, ShieldAlert, Sparkles, Wrench } from 'lucide-react';
 import { api } from '../api';
 import { Badge, Button, Card, Empty, PageTitle, StatusBadge } from '../components/ui';
 import AiDataBoundary from '../components/AiDataBoundary';
@@ -8,7 +8,7 @@ import type { AdapterName, ProjectKind, Stats } from '@reverse/contracts';
 
 const adapterLabels: Record<AdapterName, string> = {
   website: '网页分析', file: '软件分析', game: '游戏复活', security: '安全分析',
-  network: '网络协议', apk: 'Android APK', ghidra: 'Ghidra', hardware: 'USB 硬件', firmware: '固件', console: '主机研究',
+  network: '网络协议', apk: 'Android APK', ghidra: 'Ghidra', hardware: 'USB 硬件', firmware: '固件', console: '主机研究', legacy: '古老软件复活',
 };
 const projectLabels: Record<ProjectKind, string> = {
   website: '网页项目', software: '软件项目', game: '游戏项目', security: '安全项目',
@@ -17,6 +17,7 @@ const projectLabels: Record<ProjectKind, string> = {
 const quickActions = [
   { to: '/console-lab', title: '分析游戏主机', description: '整理公开资料、只读信息与研究证据', icon: Gamepad2 },
   { to: '/wizard?category=software', title: '分析软件', description: '识别文件格式、字符串与静态信息', icon: Binary },
+  { to: '/legacy-studio', title: '复活老软件', description: '兼容诊断、数据恢复与独立功能重建', icon: Wrench },
   { to: '/wizard?category=firmware', title: '分析固件', description: '查看镜像身份、布局与字符串', icon: Cpu },
   { to: '/wizard?category=website', title: '分析网页', description: '采集页面结构、资源与网络元数据', icon: Globe2 },
   { to: '/wizard?category=game', title: '复活游戏', description: '从合法回放研究协议与兼容服务', icon: FlaskConical },

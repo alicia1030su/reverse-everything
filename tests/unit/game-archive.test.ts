@@ -97,6 +97,13 @@ describe('生成游戏服务归档', () => {
     expect(open).toHaveBeenCalledWith(file, 'r');
   });
 
+  it('大量小文件不会按单文件上限预分配内存', async () => {
+    const dir = await fixture();
+    for (let index = 0; index < 300; index += 1) await writeFile(path.join(dir, `small-${index}.txt`), 'x');
+    const bytes = await zipDirectory(dir, { maxEntryBytes: 16 * 1024 * 1024, maxTotalBytes: 64 * 1024 * 1024 });
+    expect(bytes.readUInt16LE(bytes.length - 12)).toBe(300);
+  });
+
   it('严格限制条目数与总字节，且限制可调', async () => {
     const dir = await fixture();
     await writeFile(path.join(dir, 'a.txt'), '1234');

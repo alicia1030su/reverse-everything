@@ -36,7 +36,7 @@ jobs:
       version: ${{ steps.meta.outputs.version }}
       tag: ${{ steps.meta.outputs.tag }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ inputs.ref }}
           fetch-depth: 0
@@ -68,7 +68,7 @@ jobs:
     outputs:
       commit: ${{ steps.meta.outputs.commit }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ needs.freeze.outputs.commit }}
           fetch-depth: 0
@@ -84,7 +84,7 @@ jobs:
           test "$(node scripts/release-atomic.mjs version --root .)" = "$EXPECTED_VERSION"
           test -z "$(git status --porcelain)"
           echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
@@ -169,7 +169,7 @@ jobs:
           image_id="$(docker image inspect --format '{{.Id}}' "reverse-everything:$version")"
           node -e 'require("node:fs").writeFileSync("dist/release/docker-image.json",JSON.stringify({image:process.argv[1],imageId:process.argv[2],commit:process.argv[3],version:process.argv[4]},null,2)+"\n")' "reverse-everything:$version" "$image_id" "$commit" "$version"
           docker rm -f re-release-docker
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: candidate-linux
           if-no-files-found: error
@@ -186,7 +186,7 @@ jobs:
     outputs:
       commit: ${{ steps.meta.outputs.commit }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ needs.freeze.outputs.commit }}
           fetch-depth: 0
@@ -202,7 +202,7 @@ jobs:
           test "$(node scripts/release-atomic.mjs version --root .)" = "$EXPECTED_VERSION"
           test -z "$(git status --porcelain)"
           echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
@@ -281,7 +281,7 @@ jobs:
           if ($process.ExitCode -ne 0) { throw "Portable smoke exited $($process.ExitCode)" }
           $result = Get-Content $env:RE_SMOKE_OUTPUT -Raw | ConvertFrom-Json
           if (-not $result.ok -or $result.version -ne $version) { throw 'Portable smoke result mismatch' }
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: candidate-windows
           if-no-files-found: error
@@ -296,7 +296,7 @@ jobs:
     outputs:
       commit: ${{ steps.meta.outputs.commit }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ needs.freeze.outputs.commit }}
           persist-credentials: false
@@ -315,11 +315,11 @@ jobs:
           test "$(node scripts/release-atomic.mjs version --root .)" = "$EXPECTED_VERSION"
           test -z "$(git status --porcelain)"
           echo "commit=$EXPECTED_COMMIT" >> "$GITHUB_OUTPUT"
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           pattern: candidate-*
           path: dist/release
@@ -355,7 +355,7 @@ jobs:
           node scripts/release-provenance.mjs verify \
             --dir dist/release --tag "$TAG" --version "$VERSION" \
             --tag-commit "$COMMIT" --skip-tag-check
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: candidate-${{ needs.freeze.outputs.version }}
           if-no-files-found: error
@@ -387,12 +387,12 @@ jobs:
       version: ${{ needs.freeze.outputs.version }}
       commit: ${{ needs.candidate-acceptance.outputs.commit }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ needs.candidate-acceptance.outputs.commit }}
           fetch-depth: 0
           persist-credentials: true
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: candidate-${{ needs.freeze.outputs.version }}
           path: dist/release
@@ -445,11 +445,11 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ needs.tag-draft.outputs.commit }}
           persist-credentials: false
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: candidate-${{ needs.tag-draft.outputs.version }}
           path: dist/release
@@ -482,11 +482,11 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ needs.tag-draft.outputs.commit }}
           persist-credentials: false
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: candidate-${{ needs.tag-draft.outputs.version }}
           path: dist/release

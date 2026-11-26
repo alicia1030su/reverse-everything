@@ -4,7 +4,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { createGameServerSpec, generateGameServer, scanGameDirectory, validateGeneratedServer } from '../../packages/game-revival/src/index.js';
+import { createGameServerSpec, generateGameServer, requiredMatchSize, scanGameDirectory, validateGeneratedServer } from '../../packages/game-revival/src/index.js';
 
 const dockerCalls: string[][] = [];
 const spawnCalls: Array<{ command: string; args: readonly string[] }> = [];
@@ -75,6 +75,25 @@ describe('游戏 Docker 验证', () => {
     expect(compose).toContain('test: ["CMD", "node", "scripts/healthcheck.mjs"]');
   });
 
+  it('Docker 多人 harness 使用行为规格的最低人数', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'game-docker-min-players-'));
+    temporary.push(root);
+    await mkdir(path.join(root, 'assets'));
+    await writeFile(path.join(root, 'assets', 'map.json'), JSON.stringify({ name: 'arena', width: 64, height: 64 }));
+    await writeFile(path.join(root, 'behavior.json'), JSON.stringify({
+      format: 'revival-behavior/v1', id: 'docker-min-three', title: 'Docker Min Three', mode: 'docker-min-three',
+      rules: { minPlayers: 3, maxPlayers: 4, roundSeconds: 30, movementSpeed: 3, maxHealth: 50, respawn: false },
+      actions: [{ id: 'gather', kind: 'gather', cooldownMs: 0, item: 'herb', amount: 2 }],
+      winCondition: { type: 'collect', target: 2 }, map: { width: 40, height: 30, obstacles: [] },
+    }));
+    const scan = await scanGameDirectory(root);
+    const spec = createGameServerSpec({ name: 'docker-min-three', root, genre: 'unknown', assets: ['assets'], observations: [], limitations: [] }, scan.files, [], scan.behaviorEvidence);
+    expect(requiredMatchSize(spec.behaviorEvidence?.behavior)).toBe(3);
+    const output = path.join(root, 'server');
+    await generateGameServer(spec, output);
+    const validator = await readFile(path.join(process.cwd(), 'packages/game-revival/src/validator.ts'), 'utf8');
+    expect(validator).toContain('const dockerCount = requiredMatchSize(config.behavior)');
+  });
   it('默认校验不调用 Docker 且保持 dockerDeployment=false', async () => {
     const { output } = await fixture();
     const report = await validateGeneratedServer(output, { players: 4, rounds: 1 });
@@ -112,31 +131,26 @@ describe('游戏 Docker 验证', () => {
   }, 180_000);
 
   it('配置 RE_NPM_CLI 时使用当前 Node 执行 npm CLI', async () => {
+    const { output } = await fixture();
     const root = await mkdtemp(path.join(os.tmpdir(), 'game-npm-cli-test-'));
     temporary.push(root);
     const cli = path.join(root, 'npm-cli.mjs');
     const log = path.join(root, 'npm-args.jsonl');
     await writeFile(cli, `import { appendFileSync } from 'node:fs'; appendFileSync(${JSON.stringify(log)}, JSON.stringify(process.argv.slice(2)) + '\\n');`);
-    await writeFile(path.join(root, 'SHA256SUMS.txt'), '');
     vi.stubEnv('RE_NPM_CLI', cli);
-    await validateGeneratedServer(root);
+    await validateGeneratedServer(output);
     const npmCalls = spawnCalls.filter(call => call.command === process.execPath && call.args[0] === cli);
     expect(npmCalls.map(call => call.args[1])).toEqual(['ci', 'run', 'test']);
     expect(npmCalls[0]?.args).toContain('--ignore-scripts');
   });
 
   it('显式启用后 Docker 不可用必须失败而不是跳过或虚标', async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), 'game-docker-unavailable-'));
-    temporary.push(root);
-    await mkdir(path.join(root, 'config'));
-    await writeFile(path.join(root, 'config/default.json'), JSON.stringify({ gamePort: 8080, adminPort: 8081, adminHost: '127.0.0.1', genre: 'fps' }));
-    await writeFile(path.join(root, 'BUILD-INFO.json'), JSON.stringify({ genre: 'fps' }));
-    await writeFile(path.join(root, 'SHA256SUMS.txt'), '');
+    const { output } = await fixture();
     dockerUnavailable = true;
     const previousPath = process.env.PATH;
     process.env.PATH = '';
     try {
-      const report = await validateGeneratedServer(root, { docker: true, signal: AbortSignal.timeout(500) });
+      const report = await validateGeneratedServer(output, { docker: true, signal: AbortSignal.timeout(5000) });
       expect(report.valid).toBe(false);
       expect(report.capabilities.dockerDeployment).toBe(false);
       expect(report.deployment?.docker.tested).toBe(true);

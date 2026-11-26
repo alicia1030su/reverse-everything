@@ -1,4 +1,4 @@
-# 逆向万物 v0.0.6 技术架构
+# 逆向万物 v0.0.7 技术架构
 
 ## 1. 选型决策
 
@@ -21,12 +21,13 @@ Fastify API ────── SQLite (projects/tasks/stages/evidence/findings/l
 Independent Worker ── Adapter Registry ────┘
         │
         ├── website: Playwright + pinned DNS + same-origin route
-        ├── file/security/game/network: bounded static/offline/replay analysis
+        ├── file/legacy/security/game/network: bounded static/offline/replay analysis
         ├── apk/ghidra: Android metadata + optional real external tools
         ├── hardware: read-only enumeration + offline USB/HID parsers
         ├── firmware: bounded streaming static analysis
         ├── console: evidence-graded profiles, USB diagnosis and offline samples
-        └── game-revival: read-only directory scan, spec, standalone FPS/RPG server generation
+        ├── game-revival: read-only scan, V5 behavior IR, standalone server generation
+        └── legacy-revival: read-only identification, recovery, independent tool generation
 ```
 
 API 不执行常规重型 adapter 分析；Worker 默认并发 1。游戏复活重建由 API 异步触发，在独立输出目录生成并通过真实进程验证。`scripts/start.mjs` 同时启动两个进程并转发退出信号。Docker Compose 使用同一入口。
@@ -41,9 +42,10 @@ API 不执行常规重型 adapter 分析；Worker 默认并发 1。游戏复活�
 - `packages/hardware`：Windows/Linux 只读枚举、USB PCAP/PCAPNG/usbmon、HID 与热插拔身份。
 - `packages/firmware`：BIN/IMG、HEX、UF2、ELF、布局、熵、字符串、组件与 SBOM 线索。
 - `packages/console`：主机设备目录、C0-C5 证据等级、档案、USB 诊断与报告。
-- `packages/game-revival`：游戏目录增量扫描、L0-L7 规格、独立 FPS/RPG 服务端生成与真实联机验证。
+- `packages/game-revival`：游戏目录增量扫描、V5 行为 IR、L0-L7 实现等级、独立服务端生成与内部协议客户端验证。
+- `packages/legacy-revival`：老软件只读识别、兼容/许可诊断、CSV/DBF/SQLite/INI/JSON/XML 恢复与独立工具生成。
 - `packages/planner`：目标检测、分析器选择、确定性计划、预算与自适应重规划。
-- `packages/core`：统一 Adapter 与十个实现。
+- `packages/core`：统一 Adapter 与十一个实现。
 - `apps/api`：REST、认证、上传、SSE、硬件、桌面指标、静态站点。
 - `apps/worker`：独立分析进程。
 - `apps/cli`：CLI、stdio MCP 与 Streamable HTTP MCP。
@@ -56,6 +58,7 @@ API 不执行常规重型 adapter 分析；Worker 默认并发 1。游戏复活�
 |---|---|---|
 | website | `website` | `website` |
 | software | `software` | `file` |
+| legacy | `software` | `legacy` |
 | android | `software` | `apk` |
 | game | `game` | `game` |
 | network | `protocol` | `network` |
@@ -65,7 +68,7 @@ API 不执行常规重型 adapter 分析；Worker 默认并发 1。游戏复活�
 | board | `hardware` | `hardware` |
 | console | `console` | `console` |
 
-第七类入口 id 为 `usb`，项目 kind/adapter 为 `hardware`；第九类 `board` 仅复用 `hardware`，不调用 `firmware`，不宣称特定品牌/型号或实时设备支持。Ghidra 是 `software` 卡片内高级选项，使用独立 `ghidra` adapter。Web 卡片、CLI 项目 kind 与 API adapter 必须保持上述映射；不得为 UI 名称虚构后端能力。
+`usb` 的项目 kind/adapter 为 `hardware`；`board` 仅复用 `hardware`，不调用 `firmware`，不宣称特定品牌/型号或实时设备支持。`legacy` 使用 `software` 项目与独立 adapter，本机路径受 `RE_LEGACY_ROOTS` 限制，且不执行原程序。Ghidra 是 `software` 卡片内高级选项，使用独立 `ghidra` adapter。Web 卡片、CLI 项目 kind 与 API adapter 必须保持上述映射；不得为 UI 名称虚构后端能力。
 
 ## 5. 持久化模型
 
@@ -119,9 +122,9 @@ validate(ctx) → reproducible checks and limitations
 
 ## 9. API、MCP 与 Skill
 
-- REST：`/api/v1` 与 `/api` 同路由；运行时 OpenAPI 版本 0.0.6。
+- REST：`/api/v1` 与 `/api` 同路由；运行时 OpenAPI 版本 0.0.7。
 - 认证：本地 Bearer token 或 HttpOnly SameSite=Strict cookie；Host/Origin 校验。
-- MCP：stdio 与 Streamable HTTP 共用 API，注册 44 个工具（新增 7 个游戏复活工具）；不暴露破坏性维护或设备执行能力。
+- MCP：stdio 与 Streamable HTTP 共用 API，注册 44 个工具；`create_task` 新增 `legacy` adapter，游戏工具保持 7 个；不暴露破坏性维护或设备执行能力。
 - CLI：命令由 `apps/cli/src/cli.ts` 单一解析器提供；文档以 `--help` 为准。
 - Skill：环境检查与工作流封装，不拥有独立业务逻辑。
 
@@ -145,7 +148,9 @@ validate(ctx) → reproducible checks and limitations
 - 硬件只读枚举仅本机回环；不打开设备、不实时捕获、不刷写。
 - 固件与 USB/HID 输入有界解析；原始 payload、凭证与键盘报告不进入证据。
 - 游戏目录扫描仅接受 API 服务端 `RE_GAME_ROOTS` 显式允许的绝对目录及其子目录；未配置或越界返回 403。stdio/HTTP MCP 与 CLI 均调用同一 API，不能绕过；HTTP MCP 不接受本机路径上传。
-- 游戏生成物是独立兼容实现，不是原始服务端；不保证商业原客户端兼容，不绕过 DRM/反作弊/认证，不分发未授权资源。
+- Legacy 本机路径仅接受 API 服务端 `RE_LEGACY_ROOTS` 允许目录；拒绝符号链接/junction/特殊文件，不执行原程序，不自动安装外部运行时。
+- Legacy 恢复只读来源并写入独立目录，核验恢复前后来源 SHA-256；超限、损坏或加密内容保持 `UNKNOWN`。
+- 游戏生成物消费 V5 行为 IR，L0-L7 仅表示实现等级；目标行为、原客户端和协议兼容分开记录，后两者默认 `UNKNOWN`。不保证商业原客户端兼容，不绕过 DRM/反作弊/认证，不分发或复刻未授权资源。
 
 完整边界见 [安全模型](SECURITY-MODEL.md)。
 
@@ -156,5 +161,5 @@ validate(ctx) → reproducible checks and limitations
 3. **SQLite**：零外部服务，WAL、事务与租约足够。
 4. **固定 DNS + 同源浏览器**：兼顾真实采集与 SSRF 边界。
 5. **独立兼容服务而非伪造原始恢复**：只生成可验证实现。
-6. **九类入口共享 adapter 契约**：UI 名称不扩大执行权限。
-7. **实现与验收分离**：真实外部工具、物理设备与 CI 证据决定 `VERIFIED`；L0-L7 由真实报告推进，当前最高实测 L6，Docker/L7 待 CI。
+6. **分析入口共享 adapter 契约**：UI 名称不扩大执行权限。
+7. **实现与验收分离**：真实外部工具、物理设备与 CI 证据决定 `VERIFIED`；游戏 L0-L7 与目标兼容证据分开，Legacy 恢复以来源/导出哈希和真实测试为准。v0.0.6 Docker/L7 已有正式候选 CI 证据，不外推为商业原客户端兼容。

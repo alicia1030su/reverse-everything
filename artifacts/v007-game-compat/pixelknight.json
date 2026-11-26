@@ -1,0 +1,19 @@
+{
+  "game": "pixelknight",
+  "upstream": "https://github.com/imdvls/Pixelknight",
+  "commit": "d6636aa971983947bb5d1b0e9b40861d305e3f6e",
+  "clientFiles": {
+    "game.js": "96df33d15a3f1834b6b5ade9e53f8fdf269d6b01ac29bc632b7bd0adce2bbc05",
+    "index.html": "5a3a07ec9aa037bfb614e77fd78622728503f910e1c9a89c15b2719f636a68ec",
+    "styles.css": "7f3c25ee938f75d1ebb9afe27cdc4e6dfbb74bcdff8da0b15d9da40f6f0e5672"
+  },
+  "license": "ISC",
+  "originalClient": true,
+  "twoPlayers": true,
+  "movement": true,
+  "persistence": true,
+  "reconnect": true,
+  "serverRestart": true,
+  "evidenceStatus": "VERIFIED",
+  "screenshot": "docs/assets/v007-pixelknight-compat.png"
+}

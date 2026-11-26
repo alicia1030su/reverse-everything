@@ -1,0 +1,19 @@
+{
+  "format": "revival-behavior/v1",
+  "id": "duel",
+  "title": "Duel Arena",
+  "mode": "first-to-three-duel",
+  "rules": {
+    "minPlayers": 2,
+    "maxPlayers": 4,
+    "roundSeconds": 60,
+    "movementSpeed": 4,
+    "maxHealth": 60,
+    "respawn": true
+  },
+  "actions": [
+    { "id": "fire", "kind": "attack", "cooldownMs": 250, "damage": 20, "range": 30 }
+  ],
+  "winCondition": { "type": "firstToScore", "target": 3 },
+  "map": { "width": 64, "height": 64, "obstacles": [{ "x": 32, "y": 32 }] }
+}

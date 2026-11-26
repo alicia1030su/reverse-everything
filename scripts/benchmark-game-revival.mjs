@@ -12,7 +12,7 @@ import WebSocket from 'ws';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const MB = 1024 * 1024;
 const DEFAULT_CLIENTS = [2, 8, 16, 32, 64];
-const DEFAULT_OUTPUT = 'artifacts/v006-game-benchmark.json';
+const DEFAULT_OUTPUT = 'artifacts/v007-game-benchmark.json';
 const COMMAND_TIMEOUT_MS = 180_000;
 const TIER_TIMEOUT_MS = 180_000;
 const START_TIMEOUT_MS = 20_000;
@@ -458,14 +458,14 @@ async function generateProject(gameRevival, temporaryRoot, maxClients) {
   const fixtureDir = path.join(temporaryRoot, 'fixture');
   const projectDir = path.join(temporaryRoot, 'generated-fps');
   await mkdir(path.join(fixtureDir, 'assets'), { recursive: true });
-  await writeFile(path.join(fixtureDir, 'assets', 'fps-map.json'), JSON.stringify({ name: 'v006-benchmark-arena', width: 128, height: 128 }));
+  await writeFile(path.join(fixtureDir, 'assets', 'fps-map.json'), JSON.stringify({ name: 'v007-benchmark-arena', width: 128, height: 128 }));
   await writeFile(path.join(fixtureDir, 'client.exe'), Buffer.from([0x4d, 0x5a, 1, 2, 3]));
   const scan = await gameRevival.scanGameDirectory(fixtureDir);
   const spec = gameRevival.createGameServerSpec(
-    { name: 'v006-benchmark-fps', root: fixtureDir, genre: 'fps', assets: ['assets'], observations: [{ path: 'client.exe', detail: '基准夹具客户端占位文件' }], limitations: [] },
+    { name: 'v007-benchmark-fps', root: fixtureDir, genre: 'fps', assets: ['assets'], observations: [{ path: 'client.exe', detail: '基准夹具客户端占位文件' }], limitations: [] },
     scan.files,
     [
-      { kind: 'map', ref: 'assets/fps-map.json', detail: '基准地图尺寸', value: { name: 'v006-benchmark-arena', width: 128, height: 128 }, status: 'OBSERVED' },
+      { kind: 'map', ref: 'assets/fps-map.json', detail: '基准地图尺寸', value: { name: 'v007-benchmark-arena', width: 128, height: 128 }, status: 'OBSERVED' },
       { kind: 'rule', ref: 'benchmark-config', detail: '基准房间容量与回合时长', value: { maxPlayers: maxClients, roundSeconds: 600 }, status: 'OBSERVED' },
     ],
   );
@@ -503,7 +503,7 @@ async function generateProject(gameRevival, temporaryRoot, maxClients) {
 async function startServer(projectDir, tierDir, clientCount) {
   const gamePort = await freePort();
   const adminPort = await freePort();
-  const token = `v006-bench-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const token = `v007-bench-${Date.now()}-${Math.random().toString(36).slice(2)}`;
   const dataFile = path.join(tierDir, 'game.json');
   const auditFile = path.join(tierDir, 'admin-audit.jsonl');
   const pidFile = path.join(tierDir, 'game.pid');
@@ -516,6 +516,7 @@ async function startServer(projectDir, tierDir, clientCount) {
     ADMIN_HOST: '127.0.0.1',
     ALLOWED_HOSTS: '127.0.0.1',
     MAX_CONNECTIONS: String(Math.max(256, clientCount + 16)),
+    RE_BENCHMARK_LOAD_PROFILE: 'explicit-load-test-only',
     DATA_FILE: dataFile,
     AUDIT_FILE: auditFile,
     PID_FILE: pidFile,
@@ -780,13 +781,13 @@ async function writeReport(output, report) {
 async function main() {
   const config = parseArgs(process.argv.slice(2));
   if (config.help) {
-    console.log(JSON.stringify({ usage: 'node scripts/benchmark-game-revival.mjs [--clients 2,8,16,32,64] [--output artifacts/v006-game-benchmark.json]', defaults: { clients: DEFAULT_CLIENTS, output: DEFAULT_OUTPUT }, actionRounds: ACTION_ROUNDS, tierTimeoutMs: TIER_TIMEOUT_MS }, null, 2));
+    console.log(JSON.stringify({ usage: 'node scripts/benchmark-game-revival.mjs [--clients 2,8,16,32,64] [--output artifacts/v007-game-benchmark.json]', defaults: { clients: DEFAULT_CLIENTS, output: DEFAULT_OUTPUT }, actionRounds: ACTION_ROUNDS, tierTimeoutMs: TIER_TIMEOUT_MS }, null, 2));
     return;
   }
   const productVersion = (await readFile(path.join(ROOT, 'VERSION'), 'utf8')).trim();
   const report = {
     schemaVersion: 1,
-    benchmark: 'v006-game-multiplayer-fps',
+    benchmark: 'v007-game-multiplayer-fps',
     productVersion,
     startedAt: new Date().toISOString(),
     finishedAt: null,
@@ -799,6 +800,7 @@ async function main() {
       actionRounds: ACTION_ROUNDS,
       actionIntervalMs: ACTION_INTERVAL_MS,
       authBatchSize: AUTH_BATCH_SIZE,
+      loadTestProfile: { explicit: true, maxConnections: Math.max(256, clientCount + 16), note: 'Load-test override only; production defaults remain MAX_CONNECTIONS=256 and bounded auth queues.' },
       commandTimeoutMs: COMMAND_TIMEOUT_MS,
       tierTimeoutMs: TIER_TIMEOUT_MS,
       startTimeoutMs: START_TIMEOUT_MS,
@@ -823,7 +825,7 @@ async function main() {
   let temporaryRoot = null;
   try {
     const gameRevival = await import('../packages/game-revival/dist/index.js');
-    temporaryRoot = await mkdtemp(path.join(os.tmpdir(), 'v006-game-benchmark-'));
+    temporaryRoot = await mkdtemp(path.join(os.tmpdir(), 'v007-game-benchmark-'));
     report.generation = await generateProject(gameRevival, temporaryRoot, Math.max(...config.clients));
     report.setup.npmCi = await runCommand(npmCommand(), ['ci', '--no-audit', '--no-fund'], report.generation.projectDir, COMMAND_TIMEOUT_MS);
     assertCommand(report.setup.npmCi, 'npm ci');
@@ -863,6 +865,6 @@ async function main() {
 }
 
 main().catch(error => {
-  console.error(JSON.stringify({ schemaVersion: 1, benchmark: 'v006-game-multiplayer-fps', passed: false, fatalError: error instanceof Error ? error.message : String(error) }, null, 2));
+  console.error(JSON.stringify({ schemaVersion: 1, benchmark: 'v007-game-multiplayer-fps', passed: false, fatalError: error instanceof Error ? error.message : String(error) }, null, 2));
   process.exitCode = 1;
 });

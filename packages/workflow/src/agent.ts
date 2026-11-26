@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { redactSecrets } from '@reverse/ai';
 import { safeFetch } from '@reverse/security';
 import type { Database } from './database.js';
+import { resolveDirectTaskInput } from './task-input.js';
 
 export interface AiRuntimeConfig { enabled:boolean;baseUrl:string;model:string;apiKey?:string;allowRemoteData?:boolean;promptVersion?:string }
 export function isLoopbackHost(hostname:string):boolean {
@@ -51,15 +52,32 @@ export function aiRoleFor(adapter:string,stage:'PLAN'|'MODEL_BEHAVIOR'|'VALIDATE
   return 'native-analyst';
 }
 export function aiSystemPrompt(role:AiRole,fallback:string):string { return role in V3_PROMPTS?V3_PROMPTS[role as Exclude<AiRole,'planner'|'interpreter'|'validator'>]:fallback; }
+function stringArray(value:unknown):string[]{try{const parsed=JSON.parse(String(value??'[]')) as unknown;return Array.isArray(parsed)?parsed.filter((item):item is string=>typeof item==='string'):[];}catch{return [];}}
+function validRemoteAiAuth(row:Record<string,unknown>|undefined,adapter:string,targets:string[]):boolean{
+  if(!row||Number(row.remote_ai_allowed)!==1||row.revoked_at)return false;
+  if(row.expires_at&&(!Number.isFinite(Date.parse(String(row.expires_at)))||Date.parse(String(row.expires_at))<=Date.now()))return false;
+  if(!stringArray(row.allowed_operations_json).includes('network-access'))return false;
+  if(!stringArray(row.allowed_interfaces_json).includes(adapter))return false;
+  const target=String(row.target??'').trim();return Boolean(target)&&targets.includes(target);
+}
 export async function callAgent(input:{db:Database;taskId:string;config:AiRuntimeConfig;role:AiRole;iteration:number;system:string;prompt:string;signal:AbortSignal}):Promise<string>{
   const endpoint=assertAiEndpoint(input.config);
   if(!isLoopbackHost(endpoint.hostname)){
     const task=input.db.getTask(input.taskId);const planId=task?.options.planId;
-    if(typeof planId==='string'){
-      const plan=input.db.raw.prepare('SELECT project_id,authorization_id FROM analysis_plans WHERE id=? AND task_id=?').get(planId,input.taskId) as {project_id:string;authorization_id:string}|undefined;
-      const auth=plan?input.db.raw.prepare('SELECT remote_ai_allowed,revoked_at,expires_at FROM authorization_scopes WHERE id=? AND project_id=?').get(plan.authorization_id,plan.project_id) as {remote_ai_allowed:number;revoked_at:string|null;expires_at:string|null}|undefined:undefined;
-      if(!auth||auth.remote_ai_allowed!==1||auth.revoked_at||(auth.expires_at&&Date.parse(auth.expires_at)<=Date.now()))throw new Error('Project authorization does not allow remote AI data sharing');
+    let allowed=false;
+    if(task){
+      const bound=resolveDirectTaskInput(input.db,task);
+      if(!bound.target)throw new Error('Project authorization does not allow remote AI data sharing for this task target and adapter');
+      if(typeof planId==='string'){
+        const plan=input.db.raw.prepare('SELECT project_id,authorization_id FROM analysis_plans WHERE id=? AND task_id=? AND project_id=?').get(planId,input.taskId,task.projectId) as {project_id:string;authorization_id:string}|undefined;
+        const auth=plan?input.db.raw.prepare('SELECT * FROM authorization_scopes WHERE id=? AND project_id=?').get(plan.authorization_id,plan.project_id) as Record<string,unknown>|undefined:undefined;
+        allowed=validRemoteAiAuth(auth,task.adapter,[bound.target]);
+      }else{
+        const candidates=input.db.raw.prepare("SELECT * FROM authorization_scopes WHERE project_id=? AND remote_ai_allowed=1 AND revoked_at IS NULL ORDER BY created_at DESC").all(task.projectId) as Record<string,unknown>[];
+        allowed=candidates.some(auth=>validRemoteAiAuth(auth,task.adapter,[bound.target]));
+      }
     }
+    if(!allowed)throw new Error('Project authorization does not allow remote AI data sharing for this task target and adapter');
   }
   const id=randomUUID();const now=new Date().toISOString();
   input.db.raw.prepare('INSERT INTO agent_runs (id,task_id,role,status,iteration,input_json,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?)').run(id,input.taskId,input.role,'RUNNING',input.iteration,JSON.stringify({model:input.config.model,promptVersion:input.config.promptVersion??'analysis-v1',prompt:redactSecrets(input.prompt).slice(0,120000)}),now,now);

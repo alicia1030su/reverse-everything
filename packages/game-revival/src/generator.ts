@@ -15,6 +15,11 @@ export async function generateGameServer(spec: GameServerSpec, outputDir: string
   const existing = await readdir(root);
   if (existing.length) throw new Error('输出目录必须为空，避免覆盖用户文件');
   const files = projectFiles(spec);
+  const specSha256 = sha256(JSON.stringify({ id: spec.id, name: spec.name, genre: spec.genre, level: spec.level, behaviorEvidence: spec.behaviorEvidence ?? null, provenance: spec.provenance }));
+  const behaviorSha256 = spec.behaviorEvidence ? sha256(JSON.stringify(spec.behaviorEvidence.behavior)) : null;
+  const fileHashes = Object.fromEntries([...files].filter(([name]) => name !== 'BUILD-INFO.json' && name !== 'SHA256SUMS.txt').map(([name, content]) => [name, sha256(content)]));
+  const buildInfo = JSON.parse(files.get('BUILD-INFO.json')!) as Record<string, unknown>;
+  files.set('BUILD-INFO.json', JSON.stringify({ ...buildInfo, schemaVersion: 1, specSha256, behaviorSha256, files: fileHashes }, null, 2) + '\n');
   const sums: string[] = [];
   for (const [relative, content] of files) {
     const destination = path.resolve(root, relative);

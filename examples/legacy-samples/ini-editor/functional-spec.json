@@ -1,0 +1,10 @@
+{
+  "name": "Legacy INI Editor",
+  "kind": "ini-editor",
+  "requirements": [
+    "读取 INI 的 section 与 key=value",
+    "在本地编辑并保存配置",
+    "导出独立 INI 文件，不覆盖来源"
+  ],
+  "license": "User-owned test sample; no third-party code or assets"
+}

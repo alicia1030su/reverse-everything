@@ -43,6 +43,13 @@ describe('API safety and recovery boundaries',()=>{
     const {app}=await setup();
     for(const kind of ['hardware','firmware']){const response=await app.inject({method:'POST',url:'/api/projects',headers:{...auth,'content-type':'application/json'},body:JSON.stringify({name:`${kind} project`,kind,authorizationConfirmed:true})});expect(response.statusCode,response.body).toBe(201);expect(response.json().kind).toBe(kind);}
   });
+  it('rejects Legacy direct paths outside RE_LEGACY_ROOTS with 403 before creating a task',async()=>{
+    const {app,db,dataDir}=await setup();const allowed=path.join(dataDir,'allowed');await mkdir(allowed);const outside=path.join(dataDir,'outside.ini');await writeFile(outside,'[general]\nname=outside\n');const created=await app.inject({method:'POST',url:'/api/projects',headers:{...auth,'content-type':'application/json'},body:JSON.stringify({name:'legacy allowlist',kind:'software',authorizationConfirmed:true})});expect(created.statusCode,created.body).toBe(201);const projectId=created.json().id as string;
+    await withEnv({RE_LEGACY_ROOTS:allowed},async()=>{
+      const denied=await app.inject({method:'POST',url:`/api/projects/${projectId}/tasks`,headers:{...auth,'content-type':'application/json'},body:JSON.stringify({adapter:'legacy',options:{path:outside}})});expect(denied.statusCode,denied.body).toBe(403);expect(db.raw.prepare('SELECT COUNT(*) count FROM tasks WHERE project_id=?').get(projectId)).toEqual({count:0});
+      const permitted=path.join(allowed,'sample.ini');await writeFile(permitted,'[general]\nname=allowed\n');const accepted=await app.inject({method:'POST',url:`/api/projects/${projectId}/tasks`,headers:{...auth,'content-type':'application/json'},body:JSON.stringify({adapter:'legacy',options:{path:permitted}})});expect(accepted.statusCode,accepted.body).toBe(201);
+    });
+  });
   it('accepts bounded local desktop metrics and rejects remote or forged snapshots',async()=>{
     const {app,db}=await setup();const snapshot={sampledAt:new Date().toISOString(),source:'desktop',treeRssMB:100,selfRssMB:60,childRssMB:40,heapUsedMB:20,cpuPercent:5,handles:10,processes:[{pid:100,ppid:1,rssMB:60,name:'main'},{pid:101,ppid:100,rssMB:40,name:'renderer'}],systemFreeMemoryMB:2048,systemTotalMemoryMB:8192,dataDirBytes:1024,diskAvailableBytes:1048576,queuedTasks:0,runningTasks:0,peakTreeRssMB:100,pressure:'normal',limitations:[]};const headers={...auth,'content-type':'application/json'};const body=JSON.stringify(snapshot);
     expect((await app.inject({method:'POST',url:'/api/resources/desktop',headers:{'content-type':'application/json'},body})).statusCode).toBe(401);
@@ -64,7 +71,7 @@ describe('API safety and recovery boundaries',()=>{
     await withEnv({RE_MAX_QUEUE:'2'},async()=>{const {app,db}=await setup();const project=db.project({name:'queue race',kind:'software',authorizationConfirmed:true});const headers={...auth,'content-type':'application/json'};const responses=await Promise.all(Array.from({length:8},()=>app.inject({method:'POST',url:`/api/projects/${project.id}/tasks`,headers,body:JSON.stringify({adapter:'file'})})));expect(responses.map(response=>response.statusCode).filter(status=>status===201)).toHaveLength(2);expect(responses.map(response=>response.statusCode).filter(status=>status===429)).toHaveLength(6);expect(responses.filter(response=>response.statusCode===429).every(response=>response.json().error.code==='QUEUE_FULL')).toBe(true);expect(db.raw.prepare("SELECT COUNT(*) n FROM tasks WHERE status='QUEUED'").get()).toEqual({n:2});});
   });
   it('keeps public health minimal and protects resource details',async()=>{
-    const {app}=await setup();const health=await app.inject({method:'GET',url:'/api/health'});expect(health.statusCode).toBe(200);expect(health.json()).toEqual({ok:true,product:'reverse-everything',version:'0.0.6',schemaVersion:5});
+    const {app}=await setup();const health=await app.inject({method:'GET',url:'/api/health'});expect(health.statusCode).toBe(200);expect(health.json()).toEqual({ok:true,product:'reverse-everything',version:'0.0.7',schemaVersion:6});
     expect((await app.inject({method:'GET',url:'/api/resources'})).statusCode).toBe(401);
     expect((await app.inject({method:'GET',url:'/api/resources',headers:auth})).statusCode).toBe(200);
   });

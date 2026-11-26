@@ -3,12 +3,12 @@ import { realpath, rm } from 'node:fs/promises';
 import path from 'node:path';
 import type { FastifyInstance } from 'fastify';
 import { AppError, type GameEvidenceStatus, type GameProfile, type GameRebuildRecord, type GameRevivalLevel } from '@reverse/contracts';
-import { createGameServerSpec, generateGameServer, scanGameDirectory, validateGeneratedServer, type EvidenceStatus, type GameFileRecord, type GameObservation, type GameValidationReport } from '@reverse/game-revival';
+import { createGameServerSpec, generateGameServer, scanGameDirectory, validateGeneratedServer, type EvidenceStatus, type GameBehaviorEvidence, type GameFileRecord, type GameObservation, type GameValidationReport } from '@reverse/game-revival';
 import type { Database } from '@reverse/workflow';
 import { archiveDigest, zipDirectory } from './game-archive.js';
 
 interface Options { db: Database; dataDir: string }
-interface ProfileRow { id:string; project_id:string; name:string; genre:string; publisher:string; region:string; client_version:string; shutdown_date:string; engine:string; source_text:string; authorization_scope:string; known_protocols_json:string; retained_materials_json:string; existing_implementations_json:string; level:string; unrecovered_features_json:string; root_path:string|null; created_at:string; updated_at:string }
+interface ProfileRow { id:string; project_id:string; name:string; genre:string; publisher:string; region:string; client_version:string; shutdown_date:string; engine:string; source_text:string; authorization_scope:string; known_protocols_json:string; retained_materials_json:string; existing_implementations_json:string; level:string; unrecovered_features_json:string; root_path:string|null; behavior_json:string|null; created_at:string; updated_at:string }
 interface StoredFile { path:string; size:number; mtime_ms:number; ctime_ms:number|null; dev:string|number|null; ino:string|number|null; sha256:string; kind:string }
 const MAX_SCANS = 2;
 const MAX_REBUILDS = 1;
@@ -120,7 +120,7 @@ export function registerGameRevivalRoutes(app:FastifyInstance,options:Options):v
         obsoleteOutputs=(db.raw.prepare('SELECT output_path FROM game_rebuilds WHERE project_id=? AND output_path IS NOT NULL').all(current.id) as Array<{output_path:string}>).map(item=>item.output_path);
         clearProjectEvidence(current.id);
       }
-      db.raw.prepare(`INSERT INTO game_profiles (id,project_id,name,genre,publisher,region,client_version,shutdown_date,engine,source_text,authorization_scope,known_protocols_json,retained_materials_json,existing_implementations_json,level,unrecovered_features_json,root_path,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(project_id) DO UPDATE SET name=excluded.name,genre=excluded.genre,publisher=excluded.publisher,region=excluded.region,client_version=excluded.client_version,shutdown_date=excluded.shutdown_date,engine=excluded.engine,source_text=excluded.source_text,authorization_scope=excluded.authorization_scope,known_protocols_json=excluded.known_protocols_json,retained_materials_json=excluded.retained_materials_json,existing_implementations_json=excluded.existing_implementations_json,unrecovered_features_json=excluded.unrecovered_features_json,root_path=excluded.root_path,level=CASE WHEN ? THEN excluded.level ELSE game_profiles.level END,updated_at=excluded.updated_at`).run(id,current.id,...values,now,now,rootChanged?1:0);
+      db.raw.prepare(`INSERT INTO game_profiles (id,project_id,name,genre,publisher,region,client_version,shutdown_date,engine,source_text,authorization_scope,known_protocols_json,retained_materials_json,existing_implementations_json,level,unrecovered_features_json,root_path,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(project_id) DO UPDATE SET name=excluded.name,genre=excluded.genre,publisher=excluded.publisher,region=excluded.region,client_version=excluded.client_version,shutdown_date=excluded.shutdown_date,engine=excluded.engine,source_text=excluded.source_text,authorization_scope=excluded.authorization_scope,known_protocols_json=excluded.known_protocols_json,retained_materials_json=excluded.retained_materials_json,existing_implementations_json=excluded.existing_implementations_json,unrecovered_features_json=excluded.unrecovered_features_json,root_path=excluded.root_path,level=CASE WHEN ? THEN excluded.level ELSE game_profiles.level END,behavior_json=CASE WHEN ? THEN NULL ELSE game_profiles.behavior_json END,updated_at=excluded.updated_at`).run(id,current.id,...values,now,now,rootChanged?1:0,rootChanged?1:0);
       db.raw.exec('COMMIT');
     }catch(error){db.raw.exec('ROLLBACK');throw error;}
     profileRevisions.set(current.id,(profileRevisions.get(current.id)??0)+1);
@@ -150,7 +150,7 @@ export function registerGameRevivalRoutes(app:FastifyInstance,options:Options):v
         }
         const insert=db.raw.prepare('INSERT INTO game_files (project_id,path,size,mtime_ms,ctime_ms,dev,ino,sha256,kind,scanned_at) VALUES (?,?,?,?,?,?,?,?,?,?)');
         for(const file of result.files){const scanned=file as GameFileRecord&{ctimeMs:number;dev:number;ino:number};insert.run(current.id,file.relativePath,file.size,file.mtimeMs,scanned.ctimeMs,String(scanned.dev),String(scanned.ino),file.sha256??'',file.evidenceStatus,now);}
-        const updated=db.raw.prepare("UPDATE game_profiles SET root_path=?,level='L1',updated_at=? WHERE project_id=? AND updated_at=?").run(root,now,current.id,saved.updated_at);if(updated.changes!==1)throw new AppError('CONFLICT','Game profile changed while the scan was running',409);db.raw.exec('COMMIT');
+        const updated=db.raw.prepare("UPDATE game_profiles SET root_path=?,level='L1',behavior_json=?,updated_at=? WHERE project_id=? AND updated_at=?").run(root,result.behaviorEvidence?JSON.stringify(result.behaviorEvidence):null,now,current.id,saved.updated_at);if(updated.changes!==1)throw new AppError('CONFLICT','Game profile changed while the scan was running',409);db.raw.exec('COMMIT');
       }catch(error){db.raw.exec('ROLLBACK');throw error;}
       if(!sameRoot)profileRevisions.set(current.id,(profileRevisions.get(current.id)??0)+1);
       await Promise.allSettled(obsoleteOutputs.map(output=>rm(output,{recursive:true,force:true})));
@@ -162,7 +162,8 @@ export function registerGameRevivalRoutes(app:FastifyInstance,options:Options):v
   app.post<{Params:{id:string}}>('/api/projects/:id/game-spec',async req=>{
     const current=project(db,req.params.id),saved=profileRow(db,(db.raw.prepare('SELECT id FROM game_profiles WHERE project_id=?').get(current.id) as {id:string}|undefined)?.id??''),input=body(req.body);
     const parsed=observations(input.observations),files=storedFiles(db,current.id);
-    const spec=createGameServerSpec({name:saved.name,root:saved.root_path??'',genre:saved.genre==='fps'||saved.genre==='rpg'?saved.genre:'unknown',...(saved.engine?{engine:saved.engine}:{}),assets:[],observations:[],limitations:saved.authorization_scope?['Independent design requires validation']:[]},files,parsed);
+    const behaviorEvidence=saved.behavior_json?JSON.parse(saved.behavior_json) as GameBehaviorEvidence:undefined;
+    const spec=createGameServerSpec({name:saved.name,root:saved.root_path??'',genre:saved.genre==='fps'||saved.genre==='rpg'?saved.genre:'unknown',...(saved.engine?{engine:saved.engine}:{}),assets:[],observations:[],limitations:saved.authorization_scope?['Independent design requires validation']:[]},files,parsed,behaviorEvidence);
     const id=randomUUID(),now=nextTimestamp(saved.updated_at),evidenceStatus=specEvidenceStatus(spec);db.raw.prepare('INSERT INTO game_specs (id,project_id,spec_json,evidence_status,created_at) VALUES (?,?,?,?,?)').run(id,current.id,JSON.stringify(spec),evidenceStatus,now);db.raw.prepare("UPDATE game_profiles SET level=?,updated_at=? WHERE project_id=?").run(spec.level,now,current.id);return{spec:{...spec,id,evidenceStatus}};
   });
   app.get<{Params:{id:string}}>('/api/projects/:id/game-specs',async req=>{project(db,req.params.id);return{items:(db.raw.prepare('SELECT * FROM game_specs WHERE project_id=? ORDER BY created_at DESC').all(req.params.id) as Record<string,unknown>[]).map(row=>({id:String(row.id),projectId:String(row.project_id),spec:JSON.parse(String(row.spec_json)),evidenceStatus:String(row.evidence_status),createdAt:String(row.created_at)}))};});

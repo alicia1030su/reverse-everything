@@ -3,7 +3,7 @@ import { constants } from 'node:fs';
 import { lstat, open } from 'node:fs/promises';
 import type { Stage } from '@reverse/contracts';
 import type { AdapterDefinition, TaskContext } from '@reverse/workflow';
-export function uploadPath(ctx:TaskContext):string { if(!ctx.upload) throw new Error('This adapter requires an uploaded file'); return path.resolve(ctx.dataDir,'uploads',ctx.upload.projectId,ctx.upload.storedName); }
+export function uploadPath(ctx:TaskContext):string { if(!ctx.upload) throw new Error('This adapter requires an uploaded file'); if(ctx.inputSnapshotPath) return path.resolve(ctx.inputSnapshotPath); return path.resolve(ctx.dataDir,'uploads',ctx.upload.projectId,ctx.upload.storedName); }
 export function output<T>(ctx:TaskContext,stage:Stage):T { return ctx.stageOutputs[stage] as T; }
 export async function limitedRead(file:string,max=10_000_000):Promise<Buffer> {
   if(!Number.isSafeInteger(max)||max<=0)throw new Error('Bounded read limit must be a positive safe integer');

@@ -1,15 +1,15 @@
 # Reverse Everything
 
-**AI-assisted local reverse engineering, console research, and digital compatibility reconstruction · v0.0.6**
+**AI-assisted local reverse engineering, console research, and digital compatibility reconstruction · v0.0.7**
 
 [![CI](https://github.com/alicia1030su/reverse-everything/actions/workflows/ci.yml/badge.svg)](https://github.com/alicia1030su/reverse-everything/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
-[![Release](https://img.shields.io/badge/release-v0.0.6-blue.svg)](https://github.com/alicia1030su/reverse-everything/releases/latest)
+[![Release](https://img.shields.io/badge/release-latest-blue.svg)](https://github.com/alicia1030su/reverse-everything/releases/latest)
 [简体中文](README.md)
 
 ![Reverse Everything banner](docs/assets/banner.svg)
 
-Reverse Everything turns **authorized targets** into traceable analysis jobs: real tool output, persisted stages, recoverable state, reproducible checks, and downloadable artifacts. v0.0.6 introduces Game Revival: a revival studio, L0-L7 evidence levels, generated self-owned multiplayer FPS/RPG servers, an administration console, and standalone deployment artifacts.
+Reverse Everything turns **authorized targets** into traceable analysis jobs: real tool output, persisted stages, recoverable state, reproducible checks, and downloadable artifacts. v0.0.7 adds Legacy Software Revival Studio, read-only identification, compatibility and lawful-license diagnostics, data recovery, independent tool generation, and V5 behavior-IR-driven anti-template game revival.
 
 ## Interface preview
 
@@ -19,14 +19,17 @@ Reverse Everything turns **authorized targets** into traceable analysis jobs: re
 
 > Analyze only targets you own or are explicitly authorized to inspect. Do not bypass login, captcha, paywalls, DRM, anti-cheat, or access controls. The project does not provide console jailbreaking, privilege escalation, secure-boot bypass, automated exploitation, or unauthorized device access. See [DISCLAIMER.en.md](DISCLAIMER.en.md).
 
-## What is new in v0.0.6
+## What is new in v0.0.7
 
-- **Game Revival Studio**: keep profiles for lawfully retained games, incrementally scan local directories read-only, and create evidence-bounded server specifications.
-- **L0-L7**: advance from profile and file fingerprints through generation, real same-match play, persistence/reconnect, and Docker deployment. Generated files alone do not prove revival.
-- **Self-owned multiplayer FPS/RPG**: generate standalone TypeScript/Node/WebSocket servers with authoritative state, room isolation, reconnect, persistence, settlement, multi-room concurrency, and an authenticated administration console.
-- **Standalone generated servers**: downloaded artifacts do not depend on this platform API and can be built, started, and deployed in an isolated environment.
-- **Every entrypoint**: new `game profile|scan|spec|rebuild|status|download` CLI commands, REST routes, and 7 MCP tools bring the MCP total to 44.
-- **Measured boundary**: the highest local result is L6. Docker is unavailable locally, so Docker/L7 remains pending CI and is not marked passed.
+- **Legacy Software Revival Studio**: read-only PE/ELF/Mach-O, MSI/JAR/Electron/Python clue and installation-directory identification with compatibility and lawful-license diagnostics; the original program is never executed.
+- **Data recovery**: bounded read-only parsing for CSV, DBF, SQLite, INI, JSON, and XML, with independent JSON/CSV exports and SHA-256 manifests.
+- **Independent software reconstruction**: generate INI editors, CSV viewers, and text tools, then run real tests and startup checks without reusing unauthorized source code or assets.
+- **Local Privacy**: Legacy analysis is local by default, with no remote AI calls or external dependency downloads; directory allowlists and sharing consent remain explicit.
+- **V5 behavior IR**: the game generator consumes `revival-behavior/v1` actions, rules, win conditions, and maps; retained anti-template samples verify behavioral differences.
+- **Separate compatibility evidence**: L0-L7 grades the generated service implementation, while target behavior, original-client compatibility, and protocol compatibility are reported separately; the latter two default to `UNKNOWN`.
+- **Every entrypoint**: `tasks create` and MCP `create_task` add the `legacy` adapter while the MCP total remains 44; existing game CLI and REST routes remain available.
+- **Real original-client cases**: the retained Pixelknight and Tron browser clients connect to independent servers for two-player movement, persistence/reconnect, and match completion; licenses and pinned commits are recorded in `examples/game-compat/UPSTREAM.md`.
+- **CI fact**: v0.0.6 FPS/RPG Docker/L7 passed in the official candidate CI; this is not evidence of commercial original-client compatibility.
 
 ## Six ways to use it
 
@@ -66,7 +69,20 @@ docker compose down          # keep data
 docker compose down -v       # delete the data volume
 ```
 
-The host port binds only to `127.0.0.1`. USB is not mapped and privileged mode is not used by default. On Windows, use the installer, Portable build, or the Node.js flow above; on Linux, use Node.js 22.13+ or Docker Compose. Game scanning also requires the API server's explicit `RE_GAME_ROOTS` allowlist (`;`-separated on Windows, `:`-separated on Linux/Docker) of absolute directories and their descendants. See [docker-compose.yml](docker-compose.yml) and [.env.example](.env.example) for read-only mounts and configuration. Local Docker is unavailable; these instructions do not mean Docker/L7 has passed.
+The host port binds only to `127.0.0.1`. USB is not mapped and privileged mode is not used by default. On Windows, use the installer, Portable build, or the Node.js flow above; on Linux, use Node.js 22.13+ or Docker Compose. Game scanning requires the API server's explicit `RE_GAME_ROOTS`; Legacy local-path analysis requires `RE_LEGACY_ROOTS` (`;`-separated on Windows, `:`-separated on Linux/Docker), limited to absolute directories and their descendants. See [docker-compose.yml](docker-compose.yml) and [.env.example](.env.example). v0.0.6 generated-service Docker/L7 passed in the official candidate CI; local measurements still exclude Docker when it was not run locally.
+
+## Legacy Software Revival Studio
+
+Create a legacy-software project and open the studio:
+
+1. Save the lawful sample, source, authorization scope, and missing features.
+2. Upload a file, or configure API-server `RE_LEGACY_ROOTS` and read an allowed directory.
+3. Identify format, architecture, runtimes, dependencies, and data files read-only; never execute the original program.
+4. Review compatibility advice and license-record status; `UNKNOWN` does not become known merely because a program runs.
+5. Optionally recover CSV/DBF/SQLite/INI/JSON/XML or generate an independent INI/CSV/text tool.
+6. Inspect real tests, startup checks, SHA-256, and limitations before downloading artifacts.
+
+See the [legacy guide](docs/LEGACY-SOFTWARE.md), [data recovery](docs/DATA-RECOVERY.md), [independent reconstruction](docs/SOFTWARE-RECONSTRUCTION.md), [local privacy](docs/LOCAL-PRIVACY.md), and [license diagnostics](docs/LICENSE-DIAGNOSTICS.md).
 
 ## Game Revival Studio
 
@@ -75,10 +91,10 @@ Create a game revival project and open the studio:
 1. Save the game name, FPS/RPG genre, source, authorization scope, and unrecovered features.
 2. Configure `RE_GAME_ROOTS` on the API server and enter an absolute path inside an allowed directory; missing configuration or out-of-scope paths return 403.
 3. Scan read-only and incrementally for file fingerprints without uploading original game files.
-4. Generate an evidence-graded specification, then create a standalone server rebuild.
-5. Inspect real build, two-client same-match, room isolation, persistence, reconnect, settlement, and concurrency reports; download a validated ZIP when available.
+4. Scan for a unique `behavior.json`/`gameplay.json`, create a V5 behavior-IR specification, then create a standalone server rebuild.
+5. Inspect real build, internal-protocol-client same-match, room isolation, persistence, reconnect, settlement, and concurrency reports; download a validated ZIP when available.
 
-L0 profile → L1 scan fingerprints → L2 specification → L3 generation/build → L4 standalone start/admin authentication → L5 two-client same match/authoritative state/room isolation → L6 persistence/reconnect/settlement/multi-room concurrency → L7 Docker deployment. Only validation reports advance a level. This does not guarantee commercial original-client compatibility or constitute recovery of the original server.
+L0 profile → L1 scan fingerprints → L2 specification → L3 generation/build → L4 standalone start/admin authentication → L5 internal-client same match/authoritative state/room isolation → L6 persistence/reconnect/settlement/multi-room concurrency → L7 Docker deployment. L0-L7 grades the generated service implementation; target behavior, original-client compatibility, and protocol compatibility are separate, with the latter two defaulting to `UNKNOWN`. Anti-template samples prove behavioral differences, while internal-client or Docker success does not prove commercial original-client compatibility. See the [game compatibility guide](docs/GAME-COMPATIBILITY.md).
 
 ## Start intelligent analysis
 
@@ -110,6 +126,7 @@ See the [console research guide](docs/user-guide/CONSOLE-RESEARCH.md), [PS5](doc
 |---|---|---|
 | `website` | DOM, scripts, routes, forms, screenshots, same-origin network metadata | `website` adapter; no access-control bypass |
 | `software` | PE/ELF/Mach-O, sections/imports, entropy, bounded strings, ZIP, SBOM | `file` adapter; unknown programs are not executed |
+| `legacy` | Read-only software profiles, compatibility/license diagnostics, data recovery, independent tool generation | `legacy` adapter; no original execution or license bypass |
 | `android` | Safe APK/ZIP inventory, AXML manifest, DEX tables, native-library metadata | `apk` adapter; JADX decompilation requires the official tool |
 | `game` | Protocol fields, state transitions, and an independent compatibility service from a lawful replay | `game` adapter; not recovery of the original server |
 | `network` | HAR, PCAP, PCAPNG endpoints, HTTP/DNS/TLS and transport metadata | `network` adapter; offline uploads only |
@@ -130,6 +147,7 @@ reverse-everything capabilities
 reverse-everything console devices
 reverse-everything projects create "Authorized sample" software --authorized
 reverse-everything projects upload <projectId> ./sample.bin
+reverse-everything tasks create <projectId> legacy
 reverse-everything analyze file ./sample.bin --authorized
 reverse-everything plans create <projectId> "Summarize offline requests" ./capture.har --authorized
 reverse-everything plans execute <planId>
@@ -152,7 +170,7 @@ Local URLs require `--confirm-local`. The CLI reads `RE_DATA_DIR/local-token` by
 
 - API: `http://127.0.0.1:4173/api/v1`; `/api` remains an alias.
 - OpenAPI: runtime `GET /api/openapi.json`.
-- MCP: stdio and Streamable HTTP share the API and expose **44 tools**, including the new `list_game_profiles`, `save_game_profile`, `scan_game_directory`, `create_game_server_spec`, `list_game_rebuilds`, `create_game_rebuild`, and `get_game_rebuild`.
+- MCP: stdio and Streamable HTTP share the API and expose **44 tools**; `create_task` now accepts the `legacy` adapter, while game tools remain `list_game_profiles`, `save_game_profile`, `scan_game_directory`, `create_game_server_spec`, `list_game_rebuilds`, `create_game_rebuild`, and `get_game_rebuild`.
 - Skill: `skills/reverse-everything`; prefer MCP, otherwise CLI/API.
 
 All entrypoints share backend authorization, schemas, budgets, and structured errors. Cleanup, device opening, live capture, flashing, driver installation, and arbitrary host command execution are not exposed to MCP.
@@ -161,7 +179,8 @@ All entrypoints share backend authorization, schemas, budgets, and structured er
 
 - Read-only, local storage, credential redaction, and isolation of unknown programs are the defaults.
 - Arbitrary hardware writes, driver installation, administrator operations, and arbitrary host commands are disabled by default.
-- User samples are not uploaded to remote AI by default; remote sharing requires explicit consent.
+- User samples are not uploaded to remote AI by default; remote sharing requires explicit consent. Legacy analysis is local by default and does not call remote AI or download dependencies.
+- Legacy local paths are limited to `RE_LEGACY_ROOTS`; recovery writes to an independent directory and verifies the source hash.
 - Device-controlled free text is represented only by one-way hashes by default.
 - Unauthorized physical devices are not accessed. Live USB capture, driver installation, and flashing remain disabled.
 - Firmware analysis is bounded and static. Encrypted or high-entropy content remains `UNKNOWN`.
@@ -169,6 +188,8 @@ All entrypoints share backend authorization, schemas, budgets, and structured er
 See the [security policy](SECURITY.md) and [disclaimer](DISCLAIMER.en.md).
 
 ## Downloads
+
+v0.0.7 is still in development/candidate stages. The following are current stable v0.0.6 assets and do not mean v0.0.7 has been released.
 
 | Platform / form | File |
 |---|---|
@@ -192,9 +213,10 @@ npm run validate:skill
 npm run version:check
 ```
 
-Test counts, skips, CI run IDs, and gate conclusions are governed by the [v0.0.6 test results](docs/development/V006-TEST-RESULTS.md). Checks that did not run are not marked passed. Local Docker is unavailable; the highest measured level is L6 and L7 awaits CI.
+Historical baselines and v0.0.6 gates are governed by the [V006 test results](docs/development/V006-TEST-RESULTS.md) and [V007 baseline audit](docs/development/V007-BASELINE.md). v0.0.6 FPS/RPG Docker/L7 passed in the official candidate CI. Final v0.0.7 tests, skips, and release gates remain governed by the final report; checks that did not run are not marked passed.
 
 - [PRD](docs/PRD.md) · [Architecture](docs/ARCHITECTURE.md) · [Security model](docs/SECURITY-MODEL.md) · [Roadmap](docs/ROADMAP.md)
+- [Legacy software](docs/LEGACY-SOFTWARE.md) · [Reconstruction](docs/SOFTWARE-RECONSTRUCTION.md) · [Data recovery](docs/DATA-RECOVERY.md) · [Local privacy](docs/LOCAL-PRIVACY.md) · [License diagnostics](docs/LICENSE-DIAGNOSTICS.md) · [Game compatibility](docs/GAME-COMPATIBILITY.md)
 - [Beginner guide](docs/user-guide/BEGINNER.md) · [Console research](docs/user-guide/CONSOLE-RESEARCH.md)
 - [CLI](docs/user-guide/CLI.md) · [CLI/MCP](docs/user-guide/CLI-MCP.md) · [API](docs/user-guide/API.md) · [Skill](docs/user-guide/SKILL.md)
 - [Windows](docs/user-guide/WINDOWS.md) · [Upgrade](docs/user-guide/UPGRADE.md) · [Capability matrix](docs/development/V006-CAPABILITY-MATRIX.md)

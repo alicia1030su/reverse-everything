@@ -1,6 +1,6 @@
 {
   "name": "@reverse/core",
-  "version": "0.0.6",
+  "version": "0.0.7",
   "private": true,
   "type": "module",
   "exports": {
@@ -13,14 +13,15 @@
     "build": "tsc -p tsconfig.json"
   },
   "dependencies": {
-    "@reverse/contracts": "0.0.6",
-    "@reverse/console": "0.0.6",
-    "@reverse/planner": "0.0.6",
-    "@reverse/evidence": "0.0.6",
-    "@reverse/hardware": "0.0.6",
-    "@reverse/firmware": "0.0.6",
-    "@reverse/security": "0.0.6",
-    "@reverse/workflow": "0.0.6",
+    "@reverse/contracts": "0.0.7",
+    "@reverse/console": "0.0.7",
+    "@reverse/planner": "0.0.7",
+    "@reverse/evidence": "0.0.7",
+    "@reverse/hardware": "0.0.7",
+    "@reverse/legacy-revival": "0.0.7",
+    "@reverse/firmware": "0.0.7",
+    "@reverse/security": "0.0.7",
+    "@reverse/workflow": "0.0.7",
     "playwright": "1.65.1",
     "ws": "8.23.0"
   },

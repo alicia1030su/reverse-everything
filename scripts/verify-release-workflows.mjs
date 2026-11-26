@@ -5,10 +5,10 @@ export const REQUIRED_RELEASE_WORKFLOWS = Object.freeze([
   'CI',
   'Android v0.0.4 real JADX',
   'Ghidra V004 Real Verification',
-  'Release v006',
+  'Release v007',
 ]);
 
-const WORKFLOW_DISPATCH_RELEASES = new Set(['Release v006']);
+const WORKFLOW_DISPATCH_RELEASES = new Set(['Release v007']);
 
 export function verifyReleaseWorkflowRuns(runs, { commit, branch = 'main', currentWorkflow, currentRunId } = {}) {
   if (!/^[0-9a-f]{40}$/i.test(String(commit ?? ''))) return ['A full frozen commit SHA is required'];

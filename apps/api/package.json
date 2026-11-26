@@ -1,6 +1,6 @@
 {
   "name": "@reverse/api",
-  "version": "0.0.6",
+  "version": "0.0.7",
   "private": true,
   "type": "module",
   "scripts": {
@@ -10,14 +10,14 @@
   "dependencies": {
     "@fastify/multipart": "10.1.9",
     "@fastify/static": "10.1.12",
-    "@reverse/ai": "0.0.6",
-    "@reverse/contracts": "0.0.6",
-    "@reverse/console": "0.0.6",
-    "@reverse/game-revival": "0.0.6",
-    "@reverse/planner": "0.0.6",
-    "@reverse/core": "0.0.6",
-    "@reverse/hardware": "0.0.6",
-    "@reverse/workflow": "0.0.6",
+    "@reverse/ai": "0.0.7",
+    "@reverse/contracts": "0.0.7",
+    "@reverse/console": "0.0.7",
+    "@reverse/game-revival": "0.0.7",
+    "@reverse/planner": "0.0.7",
+    "@reverse/core": "0.0.7",
+    "@reverse/hardware": "0.0.7",
+    "@reverse/workflow": "0.0.7",
     "fastify": "5.12.8"
   },
   "devDependencies": {

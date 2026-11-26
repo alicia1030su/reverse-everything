@@ -77,7 +77,7 @@ export function createMcpServer(localFileRead = false): McpServer {
   });
   register('create_task', 'Create a task through the shared engine', {
     projectId: z.string(),
-    adapter: z.enum(['website', 'file', 'security', 'game', 'network', 'apk', 'ghidra', 'hardware', 'firmware', 'console']),
+    adapter: z.enum(['website', 'file', 'security', 'game', 'network', 'apk', 'ghidra', 'hardware', 'firmware', 'console', 'legacy']),
     options: z.record(z.string(), z.unknown()).optional(),
     confirmLocal: z.literal(true).optional(),
   }, args => {

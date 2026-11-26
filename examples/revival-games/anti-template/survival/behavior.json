@@ -1,0 +1,20 @@
+{
+  "format": "revival-behavior/v1",
+  "id": "survival",
+  "title": "Survival Camp",
+  "mode": "survive-and-gather",
+  "rules": {
+    "minPlayers": 2,
+    "maxPlayers": 4,
+    "roundSeconds": 45,
+    "movementSpeed": 3,
+    "maxHealth": 30,
+    "respawn": false
+  },
+  "actions": [
+    { "id": "gatherHerb", "kind": "gather", "cooldownMs": 100, "item": "herb", "amount": 2 },
+    { "id": "useHerb", "kind": "heal", "cooldownMs": 500, "item": "herb", "amount": 1, "health": 15 }
+  ],
+  "winCondition": { "type": "collect", "target": 6 },
+  "map": { "width": 48, "height": 32, "obstacles": [{ "x": 12, "y": 12 }, { "x": 24, "y": 16 }] }
+}
