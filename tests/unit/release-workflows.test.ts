@@ -129,6 +129,7 @@ describe('release workflow identity gate', () => {
     expect(workflow).toContain('gh release download v0.0.6');
     expect(workflow).toContain('Upgrade v0.0.6 installer and preserve user data');
     expect(workflow).toContain('Legacy reconstruction rebuild and independent start smoke');
+    expect(workflow).toContain('node $script $resources $work $output');
     expect(workflow).toContain('$legacyExitCode = $LASTEXITCODE');
     expect(workflow).toContain('Test-Path -LiteralPath $output');
     expect(workflow).toContain('ref: main');
