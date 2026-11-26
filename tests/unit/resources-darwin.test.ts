@@ -19,6 +19,10 @@ describe('macOS process-tree sampling',()=>{
   it('fails closed on malformed rows and empty output',()=>{
     expect(()=>parseDarwinProcessOutput('not-a-process-row')).toThrow(/Malformed macOS/);expect(()=>parseDarwinProcessOutput('')).toThrow(/no processes/);
   });
+  it('rejects out-of-range macOS CPU time components',()=>{
+    expect(()=>parseDarwinProcessOutput(`${process.pid} 1 2048 00:60:00 node\n`)).toThrow(/Invalid macOS/);
+    expect(()=>parseDarwinProcessOutput(`${process.pid} 1 2048 00:00:60 node\n`)).toThrow(/Invalid macOS/);
+  });
   it('runs the real ps branch and excludes the sampler and its descendants',async()=>{
     const output=[`4321 1 10 0:00.01 ps`,`4322 4321 10 0:00.01 ps-child`,`${process.pid} 1 2048 0:01.00 node`,`9001 ${process.pid} 1024 0:02.00 analyzer`,`9002 9001 512 0:01.00 analyzer-child`].join('\n');processMock.spawn.mockReturnValue(samplerChild(output));
     const rows=await darwinProcesses();expect(processMock.spawn).toHaveBeenCalledWith('/bin/ps',['-axo','pid=,ppid=,rss=,time=,comm='],{windowsHide:true});expect(rows.map(row=>row.pid)).toEqual([process.pid,9001,9002]);

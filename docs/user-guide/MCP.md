@@ -1,6 +1,6 @@
-# MCP（v0.0.4）
+# MCP（v0.0.5）
 
-MCP server 与 Web/CLI 共用 REST API、本地令牌、任务状态机与证据模型。当前注册 **21 个工具**。
+MCP server 与 Web/CLI 共用 REST API、本地令牌、任务状态机与证据模型。当前注册 **37 个工具**。
 
 ## stdio
 

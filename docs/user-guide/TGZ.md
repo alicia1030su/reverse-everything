@@ -1,42 +1,42 @@
-# 安装包与候选产物（v0.0.4）
+# 安装包与候选产物（v0.0.5）
 
-v0.0.4 仍在开发分支。以下文件名对应构建脚本输出，不表示正式 Release 已发布；安装包是否可交付以最终门禁为准。
+最终发行资产由 `Release v005` 工作流从冻结 Commit 构建，文件名如下。是否可交付以候选验收、provenance、SHA-256 与公开发布结果为准。
 
-## CLI TGZ
+## CLI
 
 ```bash
-npm run package:cli
-npm install -g ./dist/release/reverse-everything-cli-0.0.4.tgz
+npm install -g ./dist/release/reverse-everything-cli-0.0.5.tgz
 reverse-everything --version
-reverse-everything health
 ```
 
-CLI 包包含 dist 与公开依赖，不依赖 monorepo 私有 workspace。需要 Node.js 22.13+。
-
-## Server TGZ
+## Server
 
 ```bash
-npm run package:server
-tar -xzf ./dist/release/reverse-everything-server-0.0.4.tar.gz
+tar -xzf ./dist/release/reverse-everything-server-0.0.5.tar.gz
 cd server
 npm ci --omit=dev
 npm start
 ```
 
-服务端包需要 Node.js 22.13+，不是自带运行时便携包。网页分析另需 `npx playwright install chromium`。默认仅监听 `127.0.0.1:4173`。
-
-## Skill ZIP
+## Skill
 
 ```bash
-npm run validate:skill
 npm run package:skill
 ```
 
-输出为 `dist/release/reverse-everything-skill-0.0.4.zip`。Windows EXE/Portable 见 [Windows 指南](WINDOWS.md)。
+输出为 `dist/release/reverse-everything-skill-0.0.5.zip`。将包内 `reverse-everything` 目录整体放入客户端技能目录。
 
-## 验收边界
+## Windows
 
-- 从干净目录安装并验证 CLI、Server、Skill、OpenAPI 与 API 版本一致。
-- Ghidra Node launcher 与外部工具路径必须从 neutral CWD 验证，不只检查文件存在。
-- 默认无宿主 USB、无 privileged、无实时捕获。
-- 发布前核对包内版本、哈希、构建 Commit 与最终清单；不得把候选包称为已发布稳定版。
+- `Reverse-Everything-Setup-0.0.5-win-x64.exe`
+- `Reverse-Everything-Portable-0.0.5-win-x64.zip`
+
+详见 [Windows 指南](WINDOWS.md)。安装包未代码签名时，Windows SmartScreen 可能提示未知发布者；请核对来源与哈希，不要关闭系统安全功能。
+
+## 校验
+
+```bash
+sha256sum -c SHA256SUMS.txt
+```
+
+同时核对 `RELEASE-MANIFEST.json`、`BUILD-INFO.json`、`ACCEPTANCE.json` 与 `SBOM-v0.0.5.json`。

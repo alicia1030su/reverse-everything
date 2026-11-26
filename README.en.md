@@ -1,34 +1,44 @@
 # Reverse Everything
 
-**Local AI-assisted reverse engineering and digital compatibility reconstruction · v0.0.4 development branch**
+**AI-assisted local reverse engineering, console research, and digital compatibility reconstruction · v0.0.5**
 
 [![CI](https://github.com/alicia1030su/reverse-everything/actions/workflows/ci.yml/badge.svg)](https://github.com/alicia1030su/reverse-everything/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+[![Release](https://img.shields.io/badge/release-v0.0.5-blue.svg)](https://github.com/alicia1030su/reverse-everything/releases/latest)
 [简体中文](README.md)
 
 ![Reverse Everything banner](docs/assets/banner.svg)
 
-Reverse Everything turns **authorized targets** into traceable analysis jobs: real tool output, persisted stages, recoverable state, reproducible checks, and downloadable artifacts. It is not a decompiler leaderboard and does not promise unconditional recovery.
+Reverse Everything turns **authorized targets** into traceable analysis jobs: real tool output, persisted stages, recoverable state, reproducible checks, and downloadable artifacts. v0.0.5 adds a Console Research Lab, Intelligent Reverse Engineering Wizard, automatic analysis planning, and a bounded AI V3 workflow so users without reverse-engineering experience can perform safe offline analysis.
 
-> Analyze only targets you own or are explicitly authorized to inspect. Do not bypass login, captcha, paywall, DRM, anti-cheat, or access controls. v0.0.4 is developed on `feat/v0.0.4-hardware-lab`; this page does not claim that a tag or stable release has been published.
+## Interface preview
 
-## v0.0.4 entrypoints
-
-Web, REST, CLI, MCP, and Skill share one task engine. The nine entrypoints below are not necessarily new adapters.
-
-| Entrypoint | Inputs and outputs | Actual routing and boundary |
+| Intelligent wizard | Console Research Lab | Plain-language report |
 |---|---|---|
-| `website` | DOM, scripts, routes, forms, screenshots, same-origin network metadata | `website` adapter; no access-control bypass; local demos require separate confirmation |
-| `software` | PE/ELF/Mach-O, sections/imports, entropy, bounded strings, ZIP, SBOM | `file` adapter; unknown programs are not executed |
-| `android` | Safe APK/ZIP inventory, AXML manifest, DEX tables, native-library metadata | `apk` adapter; JADX decompilation code exists but remains `PARTIAL` until real CI evidence is complete |
-| `game` | Protocol fields, state transitions, and an independent compatibility service from a lawful replay | `game` adapter; not recovery of the original server |
-| `network` | HAR, PCAP, PCAPNG endpoints, HTTP/DNS/TLS and transport metadata | `network` adapter; offline uploads only; targets inside captures are not contacted |
-| `security` | Passive HTTP header/cookie/CORS checks, static CWE candidates, SARIF | `security` adapter; no exploitation or unauthorized active scanning |
-| `usb` USB hardware | USB identity/topology, offline PCAP/PCAPNG/usbmon, HID descriptors, snapshots | Project kind and adapter are both `hardware`; read-only enumeration; no device handles, live capture, or keystroke capture |
-| `firmware` | BIN/IMG, Intel HEX, UF2, ELF, layout, entropy, strings, component/SBOM clues | `firmware` adapter; bounded static analysis; no execution, runtime unpacking, or flashing |
-| `board` | Board USB/HID/enumeration records and read-only serial inventory | **Hardware scenario routing**: project kind and adapter are both `hardware`; it does not call `firmware` and claims no brand/model-specific or live-device support |
+| ![Intelligent wizard](docs/assets/v005-wizard.png) | ![Console Research Lab](docs/assets/v005-console-lab.png) | ![Plain-language report](docs/assets/v005-report.png) |
 
-Ghidra Headless is an advanced option inside the `software` card and uses the separate `ghidra` adapter. Function, pseudocode, call-graph, and string-reference code exists, but remains `PARTIAL` / `BLOCKED` until known-answer CI with real Ghidra/JDK is complete; it is not `VERIFIED`. See the [capability matrix](docs/development/V004-CAPABILITY-MATRIX.md).
+> Analyze only targets you own or are explicitly authorized to inspect. Do not bypass login, captcha, paywalls, DRM, anti-cheat, or access controls. The project does not provide console jailbreaking, privilege escalation, secure-boot bypass, automated exploitation, or unauthorized device access. See [DISCLAIMER.en.md](DISCLAIMER.en.md).
+
+## What is new in v0.0.5
+
+- **Console Research Lab**: PS5 / PS4 / Xbox / Android TV / open embedded device profiles, USB connection diagnostics, C0-C5 evidence grading, and official development-environment guidance.
+- **Intelligent Reverse Engineering Wizard**: beginner, professional, and AI Agent modes with automatic target, environment, authorization, and analyzer detection.
+- **Automatic analysis plans**: target identification → environment detection → authorization check → capability match → planning → execution → evidence → validation → report.
+- **AI V3**: dynamically selected device, firmware, native, Android, web, protocol, game, defensive-security, and evidence-validation roles. Every call is constrained by allowlists, permissions, and budgets.
+- **Built-in demo center**: one-click website, game, APK, UF2, USB, HAR, and security-sample demos.
+- **Dual-view reports**: plain-language and professional views with Markdown, JSON, and HTML export.
+- **Authorization center**: one permission, privacy, and budget mechanism shared by Web, REST, CLI, MCP, and Skill.
+
+## Six ways to use it
+
+| Method | Audience | Entrypoint |
+|---|---|---|
+| Web console | Browser users | `npm start`, then open `http://127.0.0.1:4173` |
+| Windows desktop | General users | Install the EXE or unpack Portable |
+| CLI | Scripts and automation | `reverse-everything` |
+| REST API | Integrations and custom clients | `/api/v1` or `/api` |
+| MCP | AI clients | stdio and Streamable HTTP |
+| Skill | General AI assistants | `skills/reverse-everything` |
 
 ## Quick start
 
@@ -59,87 +69,99 @@ docker compose down -v       # delete the data volume
 
 The host port binds only to `127.0.0.1`. USB is not mapped and privileged mode is not used by default.
 
-## Create the first task
+## Start intelligent analysis
 
-1. Open “New analysis” and choose one of the nine entrypoints.
-2. Enter an authorized URL or select a local file. For boards, inspect read-only serial/device lists in the hardware lab.
-3. Confirm authorization; local demo URLs require an additional local permission.
-4. Inspect real stages, logs, evidence, and artifacts; pause, resume, cancel, or retry as needed.
-5. Download `report.md`, `findings.sarif`, `manifest.json`, or compatibility-service artifacts and verify SHA-256.
+1. Click “Start intelligent analysis”.
+2. Choose PS5, Xbox, Android TV, USB, firmware, software, Android, web, game, protocol, or security.
+3. Provide a file, device summary, or authorized URL and confirm the lawful analysis scope.
+4. The system detects the environment, selects available analyzers, and creates a bounded plan.
+5. Inspect real steps, logs, evidence, and resource usage.
+6. Switch between plain-language and professional reports and export the result.
 
-Rule-based analysis works without AI configuration. AI text is always `INFERENCE` and cannot replace tool evidence.
+Deterministic planning and rule-based analysis work without AI configuration. AI text is always `INFERENCE` and cannot replace tool evidence.
 
-## CLI
+## Console Research Lab
 
-After building, use the repository entrypoint. Installed CLI packages expose `reverse-everything`.
+The lab targets **console devices themselves**, not game controllers.
+
+- Device catalog: PS5, PS5 Slim, PS5 Pro, PS4, Xbox Series X/S, Xbox One, Android TV, Android TV boxes, and other open embedded devices.
+- Profiles: manufacturer, series, model, hardware version, system version, official interfaces, authorized development environments, firmware samples, evidence, and limitations.
+- USB diagnostics: read-only assessment of OS recognition, descriptors, normal interfaces, topology, official-environment needs, and hardware safety risk.
+- Levels: C0 profile, C1 identity and official-document record, C2 lawful interface, C3 static analysis, C4 authorized development-environment test, C5 independent compatibility implementation on owned lab hardware. C1 only records source material; C2 and above require backend-verified evidence, and user statements cannot raise the level.
+
+A device appearing in the catalog does not mean its internal system is supported. USB Type-C shape is not evidence of debugging. Ordinary retail console-to-console connections are not supported.
+
+See the [console research guide](docs/user-guide/CONSOLE-RESEARCH.md), [PS5](docs/user-guide/PS5.md), [Xbox](docs/user-guide/XBOX.md), and [Android TV](docs/user-guide/ANDROID-TV.md).
+
+## Capability entrypoints
+
+| Entrypoint | Inputs and outputs | Actual routing and boundary |
+|---|---|---|
+| `website` | DOM, scripts, routes, forms, screenshots, same-origin network metadata | `website` adapter; no access-control bypass |
+| `software` | PE/ELF/Mach-O, sections/imports, entropy, bounded strings, ZIP, SBOM | `file` adapter; unknown programs are not executed |
+| `android` | Safe APK/ZIP inventory, AXML manifest, DEX tables, native-library metadata | `apk` adapter; JADX decompilation requires the official tool |
+| `game` | Protocol fields, state transitions, and an independent compatibility service from a lawful replay | `game` adapter; not recovery of the original server |
+| `network` | HAR, PCAP, PCAPNG endpoints, HTTP/DNS/TLS and transport metadata | `network` adapter; offline uploads only |
+| `security` | Passive HTTP header/cookie/CORS checks, static CWE candidates, SARIF | `security` adapter; no exploitation |
+| `usb` | USB identity/topology, offline PCAP/PCAPNG/usbmon, HID descriptors, snapshots | `hardware` adapter; read-only enumeration; no device handles |
+| `firmware` | BIN/IMG, Intel HEX, UF2, ELF, layout, entropy, strings, component/SBOM clues | `firmware` adapter; bounded static analysis; no flashing |
+| `board` | Board USB/HID/enumeration records and read-only serial inventory | `hardware` adapter; no model-specific or live-device claims |
+| `console` | Device profiles, USB diagnostics, C0-C5 evidence, offline samples, reports | `console` adapter; no device operations or bypass |
+
+Ghidra Headless is an advanced option inside the `software` card and uses the separate `ghidra` adapter. Ghidra 12.2 and JADX 1.5.3 have passed official-tool known-answer CI; this does not cover every format, architecture, or physical device.
+
+## CLI examples
 
 ```bash
-node apps/cli/dist/cli.js --version
-node apps/cli/dist/cli.js health
-node apps/cli/dist/cli.js capabilities
-node apps/cli/dist/cli.js analyzers list
-node apps/cli/dist/cli.js projects list
-node apps/cli/dist/cli.js projects create "Authorized sample" software --authorized
-node apps/cli/dist/cli.js projects upload <projectId> ./sample.bin
-node apps/cli/dist/cli.js analyze file ./sample.bin --authorized
-node apps/cli/dist/cli.js analyze web https://example.com --authorized
-node apps/cli/dist/cli.js tasks create <projectId> firmware
-node apps/cli/dist/cli.js tasks list
-node apps/cli/dist/cli.js tasks get <taskId>
-node apps/cli/dist/cli.js tasks action <taskId> pause
-node apps/cli/dist/cli.js report export <taskId> ./report.md
-node apps/cli/dist/cli.js hardware list
-node apps/cli/dist/cli.js hardware doctor
-node apps/cli/dist/cli.js hardware serial
-node apps/cli/dist/cli.js firmware inspect ./firmware.bin --authorized
-node apps/cli/dist/cli.js resources status
-node apps/cli/dist/cli.js cache stats
-node apps/cli/dist/cli.js retention show
-node apps/cli/dist/cli.js mcp stdio
-node apps/cli/dist/cli.js mcp http --port 4174
+reverse-everything --version
+reverse-everything health
+reverse-everything capabilities
+reverse-everything console devices
+reverse-everything projects create "Authorized sample" software --authorized
+reverse-everything projects upload <projectId> ./sample.bin
+reverse-everything analyze file ./sample.bin --authorized
+reverse-everything plans create <projectId> "Summarize offline requests" ./capture.har --authorized
+reverse-everything plans execute <planId>
+reverse-everything demos list
+reverse-everything demos run firmware
+reverse-everything report plain <taskId> ./report.md
+reverse-everything mcp stdio
+reverse-everything mcp http --port 4174
 ```
 
-Local URLs require `--confirm-local`. The CLI reads `RE_DATA_DIR/local-token` by default; override with `RE_API_URL`, `RE_API_TOKEN`, or `RE_DATA_DIR`. See the [CLI guide](docs/user-guide/CLI.md) for all commands and project-kind/adapter mappings.
+Local URLs require `--confirm-local`. The CLI reads `RE_DATA_DIR/local-token` by default; override with `RE_API_URL`, `RE_API_TOKEN`, or `RE_DATA_DIR`. See the [CLI guide](docs/user-guide/CLI.md).
 
 ## REST API, OpenAPI, and MCP
 
-- API: `http://127.0.0.1:4173/api/v1`; `/api` remains an alias for the same handlers.
-- OpenAPI: runtime `GET /api/openapi.json`, version **0.0.4**; source generator: `scripts/generate-openapi.mjs`.
-- MCP: stdio and Streamable HTTP share the API and expose **21 tools**.
+- API: `http://127.0.0.1:4173/api/v1`; `/api` remains an alias.
+- OpenAPI: runtime `GET /api/openapi.json`.
+- MCP: stdio and Streamable HTTP share the API and expose project, task, report, capability, hardware, evidence, cache, console, authorization, planning, tool, and demo tools.
 - Skill: `skills/reverse-everything`; prefer MCP, otherwise CLI/API.
 
-MCP covers projects/tasks/reports, capabilities/health/resources, hardware capabilities/devices/serial/reports, evidence/events/artifact manifests, and cache listing/statistics. Cleanup, device opening, live capture, and flashing are not exposed. See the [CLI/MCP guide](docs/user-guide/CLI-MCP.md) and [API guide](docs/user-guide/API.md).
+All entrypoints share backend authorization, schemas, budgets, and structured errors. Cleanup, device opening, live capture, flashing, driver installation, and arbitrary host command execution are not exposed to MCP.
 
-## Hardware and firmware boundaries
+## Security and privacy
 
-- USB and serial enumeration is read-only. Serial numbers are not read; device-controlled friendly names, manufacturer/driver strings, and interface/configuration free text are not returned verbatim and are represented only by one-way hashes. Serial ports are not opened and DTR/RTS are not changed.
-- Hardware analysis accepts offline USB PCAP/PCAPNG, usbmon, HID descriptors, or enumeration snapshots. Raw packet payloads are not written to evidence.
-- Unauthorized physical devices are not accessed. Live USB capture, driver installation, and keyboard-report capture remain disabled. Reconnect requires identity and authorization revalidation.
-- Firmware analysis is bounded and static. Encrypted or high-entropy content remains `UNKNOWN`; protection is not bypassed.
-- A board entrypoint grants no new execution permission: listing a serial port does not authorize login, reset, control-line changes, or flashing.
+- Read-only, local storage, credential redaction, and isolation of unknown programs are the defaults.
+- Arbitrary hardware writes, driver installation, administrator operations, and arbitrary host commands are disabled by default.
+- User samples are not uploaded to remote AI by default; remote sharing requires explicit consent.
+- Device-controlled free text is represented only by one-way hashes by default.
+- Unauthorized physical devices are not accessed. Live USB capture, driver installation, and flashing remain disabled.
+- Firmware analysis is bounded and static. Encrypted or high-entropy content remains `UNKNOWN`.
 
-See the [security model](docs/SECURITY-MODEL.md).
+See the [security policy](SECURITY.md) and [disclaimer](DISCLAIMER.en.md).
 
-## Evidence and acceptance states
+## Downloads
 
-- `EVIDENCE`: actual tool output.
-- `INFERENCE`: rule/model inference that must be traceable.
-- `UNKNOWN`: missing evidence, never disguised as a conclusion.
-- `VERIFIED`: a conclusion supported by reproducible tests.
+| Platform / form | File |
+|---|---|
+| Windows installer | [Reverse-Everything-Setup-0.0.5-win-x64.exe](https://github.com/alicia1030su/reverse-everything/releases/latest/download/Reverse-Everything-Setup-0.0.5-win-x64.exe) |
+| Windows Portable | [Reverse-Everything-Portable-0.0.5-win-x64.zip](https://github.com/alicia1030su/reverse-everything/releases/latest/download/Reverse-Everything-Portable-0.0.5-win-x64.zip) |
+| CLI | [reverse-everything-cli-0.0.5.tgz](https://github.com/alicia1030su/reverse-everything/releases/latest/download/reverse-everything-cli-0.0.5.tgz) |
+| Server | [reverse-everything-server-0.0.5.tar.gz](https://github.com/alicia1030su/reverse-everything/releases/latest/download/reverse-everything-server-0.0.5.tar.gz) |
+| Skill | [reverse-everything-skill-0.0.5.zip](https://github.com/alicia1030su/reverse-everything/releases/latest/download/reverse-everything-skill-0.0.5.zip) |
 
-Implementation labels such as `IMPLEMENTED`, `PARTIAL`, `BLOCKED`, and `MISSING` are separate from evidence levels. Major evidence includes source, locator, and SHA-256; exported manifests record input hashes, tool versions, stages, and artifact hashes.
-
-## Cache, retention, and deletion
-
-- Cache covers reusable pure stages only. It is project-scoped by default; cross-project sharing requires explicit approval. Keys include input, adapter/stage/tool versions, and redacted options. Reads verify SHA-256; corrupt entries are treated as misses.
-- `retention show` only displays policy. Maintenance uses preview followed by `confirm=CLEAN`. Temporary files and logs for active tasks are protected.
-- Retention does not automatically delete original uploads or formal task artifacts. Cache clearing requires `confirm=CLEAR_CACHE`; project deletion requires the exact project name and is rejected while tasks are active.
-
-## Desktop, Windows, and single instance
-
-- Desktop metrics combine Electron `app.getAppMetrics()` with real API/Worker sidecar snapshots. Failed, stale, or truncated sampling is recorded in `limitations`; a complete process tree is never fabricated.
-- Windows artifact downloads use private temporary snapshots, restricted to the current user with `icacls`, and reject reparse-point paths. POSIX uses mode 0600.
-- The API uses a SQLite runtime lease to prevent multiple instances on one data directory. Electron uses a single-instance lock and focuses the existing window on a second launch.
+Download `SHA256SUMS.txt` and run `sha256sum -c SHA256SUMS.txt`. Windows installers are unsigned and may trigger SmartScreen; no code-signing claim is made.
 
 ## Tests and documentation
 
@@ -153,12 +175,13 @@ npm run validate:skill
 npm run version:check
 ```
 
-Test counts, skips, CI run IDs, and gate conclusions are governed by the [v0.0.4 test results](docs/development/V004-TEST-RESULTS.md) and the final gate. Checks that did not run are not marked passed. Current limitations are listed in [v0.0.4 known issues](docs/development/V004-KNOWN-ISSUES.md).
+Test counts, skips, CI run IDs, and gate conclusions are governed by the [v0.0.5 test results](docs/development/V005-TEST-RESULTS.md). Checks that did not run are not marked passed.
 
 - [PRD](docs/PRD.md) · [Architecture](docs/ARCHITECTURE.md) · [Security model](docs/SECURITY-MODEL.md) · [Roadmap](docs/ROADMAP.md)
+- [Beginner guide](docs/user-guide/BEGINNER.md) · [Console research](docs/user-guide/CONSOLE-RESEARCH.md)
 - [CLI](docs/user-guide/CLI.md) · [CLI/MCP](docs/user-guide/CLI-MCP.md) · [API](docs/user-guide/API.md) · [Skill](docs/user-guide/SKILL.md)
-- [Windows](docs/user-guide/WINDOWS.md) · [Upgrade](docs/user-guide/UPGRADE.md) · [Capability matrix](docs/development/V004-CAPABILITY-MATRIX.md)
+- [Windows](docs/user-guide/WINDOWS.md) · [Upgrade](docs/user-guide/UPGRADE.md) · [Capability matrix](docs/development/V005-CAPABILITY-MATRIX.md)
 
 ## License
 
-Apache-2.0. Third-party components retain their own licenses; see [NOTICE](NOTICE). Do not distribute unauthorized commercial software, firmware, or game assets with this project.
+Apache-2.0. Third-party components retain their own licenses; see [NOTICE](NOTICE) and [DISCLAIMER.en.md](DISCLAIMER.en.md). Do not distribute unauthorized commercial software, firmware, or game assets with this project.

@@ -1,4 +1,4 @@
-# CLI 指南（v0.0.4）
+# CLI 指南（v0.0.5）
 
 ## 启动与认证
 
@@ -32,6 +32,7 @@ export RE_DATA_DIR=/absolute/data
 | usb | `hardware` | `hardware` |
 | firmware | `firmware` | `firmware` |
 | board | `hardware` | `hardware` |
+| console | `console` | `console` |
 
 第七类入口 id 为 `usb`，CLI/API 对应 `hardware`。`board` 是开发板场景路由，仅复用 `hardware`，不调用 `firmware`，不是新 adapter，也不宣称特定品牌/型号或实时设备支持。Ghidra 使用 `software` 项目与 `ghidra` adapter；官方 Ghidra/JDK 已知答案 CI 已通过，验证范围限于 CI 覆盖的 PE/ELF 样本。
 
@@ -64,7 +65,7 @@ reverse-everything firmware inspect ./firmware.bin --authorized
 
 `analyze file` 与 `firmware inspect` 会自动创建项目、上传并创建任务；加 `--no-wait` 可立即返回任务 ID。`analyze web` 只接受 HTTP/HTTPS，本地目标还需 `--confirm-local`。
 
-项目 kind 的有效值为 `website`、`software`、`game`、`security`、`protocol`、`hardware`、`firmware`。任务 adapter 的有效值为 `website`、`file`、`security`、`game`、`network`、`apk`、`ghidra`、`hardware`、`firmware`。
+项目 kind 的有效值为 `website`、`software`、`game`、`security`、`protocol`、`hardware`、`firmware`、`console`。任务 adapter 的有效值为 `website`、`file`、`security`、`game`、`network`、`apk`、`ghidra`、`hardware`、`firmware`、`console`。
 
 ## 任务与报告
 
@@ -105,6 +106,23 @@ reverse-everything projects create "授权 USB 记录" hardware --authorized
 reverse-everything projects upload <projectId> ./usb-capture.pcapng
 reverse-everything tasks create <projectId> hardware
 ```
+
+## 主机研究、计划与演示
+
+```bash
+reverse-everything console devices
+reverse-everything console device ps5
+reverse-everything plans create <projectId> "总结离线请求" ./capture.har --authorized
+reverse-everything plans list <projectId>
+reverse-everything plans get <planId>
+reverse-everything plans execute <planId>
+reverse-everything tools list
+reverse-everything demos list
+reverse-everything demos run firmware
+reverse-everything report plain <taskId> ./plain-report.md
+```
+
+`plans create` 会创建显式授权范围、读取文件头部并生成确定性计划；不会自动安装工具或扩大权限。`demos run` 创建真实项目与任务，不伪造成功结果。
 
 ## MCP
 

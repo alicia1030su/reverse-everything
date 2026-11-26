@@ -3,11 +3,12 @@ import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import {
   Activity, Boxes, ChevronRight, CirclePlus, Database, DatabaseBackup, FileSearch,
-  FlaskConical, FolderKanban, Gauge, LayoutDashboard, Menu, Moon, Network,
-  Settings, ShieldCheck, Sun, Usb, X,
+  FileText, FlaskConical, FolderKanban, Gamepad2, Gauge, KeyRound, LayoutDashboard, Menu, Moon, Network,
+  PackageSearch, Settings, ShieldCheck, Sparkles, Sun, Usb, X,
 } from 'lucide-react';
 import { api } from '../api';
 import Onboarding from './Onboarding';
+import { useAiDataBoundary } from './AiDataBoundary';
 import { Button } from './ui';
 
 const themeKey = 'reverse-everything:theme';
@@ -16,25 +17,31 @@ const navigation = [
     label: '分析工作区',
     items: [
       { to: '/', label: '总览', icon: LayoutDashboard, end: true },
+      { to: '/wizard', label: '智能分析向导', icon: Sparkles },
       { to: '/new', label: '创建项目', icon: CirclePlus },
       { to: '/tasks', label: '任务工作台', icon: Activity },
       { to: '/evidence', label: '证据探索器', icon: FileSearch },
+      { to: '/reports', label: '分析报告', icon: FileText },
     ],
   },
   {
     label: '专业分析',
     items: [
+      { to: '/console-lab', label: '游戏主机分析', icon: Gamepad2 },
       { to: '/hardware', label: '硬件实验室', icon: Usb },
       { to: '/protocols', label: '协议分析中心', icon: Network },
       { to: '/revival', label: '游戏复活实验室', icon: FlaskConical },
       { to: '/security', label: '漏洞分析中心', icon: ShieldCheck },
       { to: '/validation', label: '重建与验证', icon: Boxes },
+      { to: '/tools', label: '工具与依赖', icon: PackageSearch },
+      { to: '/demos', label: '内置演示', icon: FlaskConical },
     ],
   },
   {
     label: '本地管理',
     items: [
       { to: '/projects', label: '项目档案', icon: FolderKanban },
+      { to: '/authorizations', label: '授权管理', icon: KeyRound },
       { to: '/operations/system', label: '系统运维', icon: Gauge },
       { to: '/operations/backups', label: '备份中心', icon: DatabaseBackup },
       { to: '/settings', label: '设置中心', icon: Settings },
@@ -69,6 +76,7 @@ function Navigation({ onNavigate }: { onNavigate?: () => void }) {
 export default function Layout() {
   const location = useLocation();
   const version = useQuery({ queryKey: ['version'], queryFn: api.version, staleTime: 60_000 });
+  const aiBoundary = useAiDataBoundary();
   const [menuOpen, setMenuOpen] = useState(false);
   const [theme, setTheme] = useState<Theme>(() => {
     try { return window.localStorage.getItem(themeKey) === 'light' ? 'light' : 'dark'; }
@@ -94,7 +102,7 @@ export default function Layout() {
       <div className="flex h-[76px] shrink-0 items-center border-b border-line px-5"><Brand/></div>
       <div className="flex-1 overflow-y-auto p-3"><Navigation/></div>
       <div className="shrink-0 border-t border-line p-4 text-[11px] text-muted">
-        <div className="flex items-center gap-2"><span className="h-1.5 w-1.5 rounded-full bg-accent"/>本地模式 · 数据不出机</div>
+        <div className="flex items-start gap-2" title={aiBoundary.label}><span className={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${aiBoundary.tone === 'warn' ? 'bg-amber-400' : 'bg-accent'}`}/><span>{aiBoundary.label}</span></div>
         <div className="mt-2 font-mono text-[10px] text-slate-600">{versionLabel} · Apache-2.0</div>
       </div>
     </aside>
@@ -110,7 +118,7 @@ export default function Layout() {
           <Button variant="ghost" aria-label={theme === 'dark' ? '切换到浅色主题' : '切换到深色主题'} title={theme === 'dark' ? '切换到浅色主题' : '切换到深色主题'} onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>
             {theme === 'dark' ? <Sun className="h-4 w-4"/> : <Moon className="h-4 w-4"/>}
           </Button>
-          <NavLink to="/new" className="inline-flex min-h-10 items-center gap-2 rounded-lg bg-accent px-3 text-xs font-semibold text-ink"><CirclePlus className="h-3.5 w-3.5"/>新建分析</NavLink>
+          <NavLink to="/wizard" className="inline-flex min-h-10 items-center gap-2 rounded-lg bg-accent px-3 text-xs font-semibold text-ink"><Sparkles className="h-3.5 w-3.5"/>开始智能分析</NavLink>
         </div>
       </header>
       <main className="mx-auto max-w-[1500px] p-4 sm:p-7"><Outlet/></main>
@@ -120,7 +128,7 @@ export default function Layout() {
       <section role="dialog" aria-modal="true" aria-label="移动导航" className="absolute inset-y-0 left-0 flex w-[min(84vw,320px)] flex-col border-r border-line bg-panel p-4 shadow-2xl">
         <div className="flex items-center justify-between border-b border-line pb-4"><Brand/><Button variant="ghost" aria-label="关闭导航" onClick={() => setMenuOpen(false)}><X className="h-5 w-5"/></Button></div>
         <div className="flex-1 overflow-y-auto py-5"><Navigation onNavigate={() => setMenuOpen(false)}/></div>
-        <div className="border-t border-line pt-3 text-[11px] text-muted">本地模式 · 数据不出机 · {versionLabel}</div>
+        <div className="space-y-1 border-t border-line pt-3 text-[11px] text-muted"><div>{aiBoundary.label}</div><div className="font-mono text-[10px] text-slate-600">{versionLabel}</div></div>
       </section>
     </div>}
     <Onboarding/>

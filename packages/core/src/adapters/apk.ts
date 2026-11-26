@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process';
+import { runExternalTool } from './external-tool.js';
 import { createHash } from 'node:crypto';
 import { constants, createWriteStream } from 'node:fs';
 import { createReadStream } from 'node:fs';
@@ -211,23 +211,15 @@ function resolveJadxTool():Promise<JadxAvailability> {
   const key=JSON.stringify([process.env.RE_JADX_BIN??'',process.env.RE_JADX_HOME??'',process.env.RE_JADX_ARCHIVE??'',process.env.RE_JAVA??'',process.env.JAVA_HOME??'']);const now=Date.now(),cached=jadxToolCache.get(key);if(cached&&cached.expiresAt>now)return cached.pending;
   const pending=resolveJadxToolUncached();jadxToolCache.set(key,{expiresAt:now+30_000,pending});return pending;
 }
-async function killTree(child:{pid?:number|undefined;kill(signal?:NodeJS.Signals):boolean},platform=process.platform):Promise<void> {
-  if(child.pid===undefined)return;
-  if(platform==='win32'){await new Promise<void>(resolve=>{const killer=spawn('taskkill',['/PID',String(child.pid),'/T','/F'],{stdio:'ignore',shell:false,windowsHide:true});let done=false;const finish=()=>{if(done)return;done=true;clearTimeout(timer);resolve();};const timer=setTimeout(finish,3_000);killer.once('error',finish);killer.once('exit',finish);});try{child.kill('SIGKILL');}catch{/* process already exited */}return;}
-  try{process.kill(-child.pid,'SIGKILL');}catch{try{child.kill('SIGKILL');}catch{/* process already exited */}}
-}
 async function probeJadx(tool:JadxTool,signal?:AbortSignal,registerProcess?:((pid:number)=>()=>void)|undefined):Promise<{version:string}|{reason:string}> {
-  throwIfAborted(signal);const child=spawn(tool.command,[...tool.prefix,'--version'],{stdio:['ignore','pipe','pipe'],shell:false,detached:process.platform!=='win32',windowsHide:true,env:{...process.env,JADX_DISABLE_XML_SECURITY:'false',JADX_DISABLE_ZIP_SECURITY:'false'}});
-  return new Promise(resolve=>{
-    let output='',settled=false,killing=false,unregisterProcess:(()=>void)|undefined;
-    const finish=(value:{version:string}|{reason:string})=>{if(settled)return;settled=true;clearTimeout(timer);signal?.removeEventListener('abort',onAbort);unregisterProcess?.();resolve(value);};
-    const terminate=(reason:string)=>{if(settled||killing)return;killing=true;void killTree(child).then(()=>finish({reason}));};
-    const onAbort=()=>terminate('JADX availability probe was aborted');
-    const timer=setTimeout(()=>terminate('JADX version probe timed out'),15_000);signal?.addEventListener('abort',onAbort,{once:true});
-    const append=(chunk:Buffer)=>{if(output.length<8192)output+=chunk.toString('utf8').slice(0,8192-output.length);};child.stdout?.on('data',append);child.stderr?.on('data',append);
-    child.once('error',error=>finish({reason:`Unable to start JADX: ${error.message}`}));child.once('close',code=>{if(settled||killing)return;if(code!==0){finish({reason:`JADX version probe exited with code ${code}`});return;}const versionOutput=output.replace(/\u001b\[[0-?]*[ -/]*[@-~]/g,'').trim();if(!new RegExp(`^(?:jadx\\s+)?${JADX_VERSION.replaceAll('.','\\.')}\\s*$`,'im').test(versionOutput)){finish({reason:`JADX version must be pinned to ${JADX_VERSION}; probe returned ${redactSensitive(versionOutput).slice(0,300)||'no version'}`});return;}finish({version:JADX_VERSION});});
-    if(child.pid!==undefined&&registerProcess){try{unregisterProcess=registerProcess(child.pid);}catch(error){terminate(error instanceof Error?error.message:String(error));}}
-  });
+  throwIfAborted(signal);
+  try{
+    const execution=await runExternalTool({label:'JADX version probe',command:tool.command,args:[...tool.prefix,'--version'],timeoutMs:15_000,maxOutputBytes:8192,signal,registerProcess,env:{...process.env,JADX_DISABLE_XML_SECURITY:'false',JADX_DISABLE_ZIP_SECURITY:'false'}});
+    if(execution.code!==0)return {reason:`JADX version probe exited with code ${execution.code}`};
+    const versionOutput=`${execution.stdout}\n${execution.stderr}`.replace(/\u001b\[[0-?]*[ -/]*[@-~]/g,'').trim();
+    if(!new RegExp(`^(?:jadx\\s+)?${JADX_VERSION.replaceAll('.','\\.')}\\s*$`,'im').test(versionOutput))return {reason:`JADX version must be pinned to ${JADX_VERSION}; probe returned ${redactSensitive(versionOutput).slice(0,300)||'no version'}`};
+    return {version:JADX_VERSION};
+  }catch(error){return {reason:error instanceof Error?error.message:String(error)};}
 }
 const jadxInspectCache=new Map<string,{expiresAt:number;pending:Promise<{available:boolean;detail:string;version?:string}>}>();
 export async function inspectJadx(signal?:AbortSignal,registerProcess?:((pid:number)=>()=>void)|undefined):Promise<{available:boolean;detail:string;version?:string}> {
@@ -243,20 +235,7 @@ function assertOutputBudget(scan:DirectoryScan,options:JadxOptions):void { if(!s
 function assertDiskBudget(scan:DirectoryScan,maxDiskBytes:number):void { if(!scan.complete)throw new Error(`JADX work directory disk accounting exceeded ${JADX_MAX_SCAN_ENTRIES} entries or was incomplete`);if(scan.bytes>maxDiskBytes)throw new Error(`JADX work directory exceeds task disk budget: ${scan.bytes} bytes used of ${maxDiskBytes} bytes`); }
 async function runJadx(tool:JadxTool,args:string[],work:string,taskDir:string,options:JadxOptions,signal:AbortSignal,registerProcess?:((pid:number)=>()=>void)|undefined):Promise<{code:number;stdout:string;stderr:string}> {
   throwIfAborted(signal);const env:NodeJS.ProcessEnv={...process.env,JADX_CONFIG_DIR:path.join(work,'config'),JADX_CACHE_DIR:path.join(work,'cache'),JADX_TMP_DIR:path.join(work,'tmp'),JADX_DISABLE_XML_SECURITY:'false',JADX_DISABLE_ZIP_SECURITY:'false'};delete env._JAVA_OPTIONS;delete env.JAVA_TOOL_OPTIONS;delete env.JDK_JAVA_OPTIONS;
-  const child=spawn(tool.command,[...tool.prefix,...args],{cwd:work,stdio:['ignore','pipe','pipe'],shell:false,detached:process.platform!=='win32',windowsHide:true,env});
-  return new Promise((resolve,reject)=>{
-    let stdout='',stderr='',outputBytes=0,settled=false,killing=false,checking=false,unregisterProcess:(()=>void)|undefined;
-    const append=(kind:'stdout'|'stderr',chunk:Buffer)=>{outputBytes+=chunk.length;const target=kind==='stdout'?stdout:stderr;if(target.length<4000){const text=target+chunk.toString('utf8').slice(0,Math.max(0,4000-target.length));if(kind==='stdout')stdout=text;else stderr=text;}};
-    const cleanup=()=>{clearTimeout(timer);clearInterval(monitor);signal.removeEventListener('abort',onAbort);unregisterProcess?.();};
-    const rejectOnce=(error:unknown)=>{if(settled)return;settled=true;cleanup();reject(error);};
-    const terminate=(reason:()=>Error)=>{if(settled||killing)return;killing=true;void killTree(child).then(()=>rejectOnce(reason()));};
-    const onAbort=()=>terminate(()=>signal.reason instanceof Error?signal.reason:new DOMException('The operation was aborted','AbortError'));
-    const timer=setTimeout(()=>terminate(()=>new Error(`JADX timeout after ${options.timeoutMs}ms`)),options.timeoutMs);
-    const check=async()=>{if(settled||killing||checking)return;checking=true;try{if(outputBytes>options.maxLogBytes)terminate(()=>new Error(`JADX process output exceeds ${options.maxLogBytes}-byte limit`));const output=await scanDirectory(path.join(work,'output'));assertOutputBudget(output,options);const disk=await scanDirectory(taskDir);assertDiskBudget(disk,options.maxDiskBytes);}catch(error){terminate(()=>error instanceof Error?error:new Error(String(error)));}finally{checking=false;}};
-    const monitor=setInterval(()=>{void check();},50);void check();signal.addEventListener('abort',onAbort,{once:true});child.stdout?.on('data',(chunk:Buffer)=>append('stdout',chunk));child.stderr?.on('data',(chunk:Buffer)=>append('stderr',chunk));
-    child.once('error',error=>{if(!killing)rejectOnce(new Error(`Unable to start JADX: ${error.message}`));});child.once('close',code=>{if(settled||killing)return;if(outputBytes>options.maxLogBytes){killing=true;rejectOnce(new Error(`JADX process output exceeds ${options.maxLogBytes}-byte limit`));return;}settled=true;cleanup();resolve({code:code??-1,stdout,stderr});});
-    if(child.pid!==undefined&&registerProcess){try{unregisterProcess=registerProcess(child.pid);}catch(error){terminate(()=>error instanceof Error?error:new Error(String(error)));}}
-  });
+  return runExternalTool({label:'JADX',command:tool.command,args:[...tool.prefix,...args],cwd:work,env,timeoutMs:options.timeoutMs,maxOutputBytes:options.maxLogBytes,signal,registerProcess,outputLimitError:()=>new Error(`JADX process output exceeds ${options.maxLogBytes}-byte limit`),monitor:async({terminate})=>{try{const output=await scanDirectory(path.join(work,'output'));assertOutputBudget(output,options);const disk=await scanDirectory(taskDir);assertDiskBudget(disk,options.maxDiskBytes);}catch(error){terminate(error instanceof Error?error:new Error(String(error)));}}});
 }
 function boundedText(value:string,limit=16_384):string { const truncated=value.length>limit;return redactSensitive(truncated?value.slice(0,limit+256):value).slice(0,limit)+(truncated?'[TRUNCATED]':''); }
 function parseJavaInventory(relative:string,text:string):{classes:string[];methods:ApkDecompiledMethod[]} {

@@ -1,4 +1,4 @@
-# 逆向万物 v0.0.4 技术架构
+# 逆向万物 v0.0.5 技术架构
 
 ## 1. 选型决策
 
@@ -24,7 +24,8 @@ Independent Worker ── Adapter Registry ────┘
         ├── file/security/game/network: bounded static/offline/replay analysis
         ├── apk/ghidra: Android metadata + optional real external tools
         ├── hardware: read-only enumeration + offline USB/HID parsers
-        └── firmware: bounded streaming static analysis
+        ├── firmware: bounded streaming static analysis
+        └── console: evidence-graded profiles, USB diagnosis and offline samples
 ```
 
 API 不执行重型分析；Worker 默认并发 1。`scripts/start.mjs` 同时启动两个进程并转发退出信号。Docker Compose 使用同一入口。
@@ -38,7 +39,9 @@ API 不执行重型分析；Worker 默认并发 1。`scripts/start.mjs` 同时�
 - `packages/workflow`：SQLite 仓储、队列、阶段执行、缓存、资源、保留、报告/SARIF。
 - `packages/hardware`：Windows/Linux 只读枚举、USB PCAP/PCAPNG/usbmon、HID 与热插拔身份。
 - `packages/firmware`：BIN/IMG、HEX、UF2、ELF、布局、熵、字符串、组件与 SBOM 线索。
-- `packages/core`：统一 Adapter 与九个实现。
+- `packages/console`：主机设备目录、C0-C5 证据等级、档案、USB 诊断与报告。
+- `packages/planner`：目标检测、分析器选择、确定性计划、预算与自适应重规划。
+- `packages/core`：统一 Adapter 与十个实现。
 - `apps/api`：REST、认证、上传、SSE、硬件、桌面指标、静态站点。
 - `apps/worker`：独立分析进程。
 - `apps/cli`：CLI、stdio MCP 与 Streamable HTTP MCP。
@@ -58,6 +61,7 @@ API 不执行重型分析；Worker 默认并发 1。`scripts/start.mjs` 同时�
 | usb | `hardware` | `hardware` |
 | firmware | `firmware` | `firmware` |
 | board | `hardware` | `hardware` |
+| console | `console` | `console` |
 
 第七类入口 id 为 `usb`，项目 kind/adapter 为 `hardware`；第九类 `board` 仅复用 `hardware`，不调用 `firmware`，不宣称特定品牌/型号或实时设备支持。Ghidra 是 `software` 卡片内高级选项，使用独立 `ghidra` adapter。Web 卡片、CLI 项目 kind 与 API adapter 必须保持上述映射；不得为 UI 名称虚构后端能力。
 
@@ -74,8 +78,10 @@ API 不执行重型分析；Worker 默认并发 1。`scripts/start.mjs` 同时�
 | logs/events | 阶段日志与持久化事件序号 |
 | artifacts | name, stored_path, size, sha256, mime |
 | settings/cache/resource_samples/backups | 加密设置、缓存、指标、备份与审计 |
+| console_profiles/analysis_plans/authorization_scopes | 主机档案、计划与授权范围 |
+| tool_installations/demo_runs/project_deletion_intents | 工具、演示与删除恢复 |
 
-上传位于 `data/uploads/<projectId>/<random>`；产物位于 `data/tasks/<taskId>/artifacts/`。用户文件名只作为元数据，不直接作为路径。当前 schema 为 3。
+上传位于 `data/uploads/<projectId>/<random>`；产物位于 `data/tasks/<taskId>/artifacts/`。用户文件名只作为元数据，不直接作为路径。当前 schema 为 4。
 
 ## 6. 任务执行与恢复
 
@@ -110,9 +116,9 @@ validate(ctx) → reproducible checks and limitations
 
 ## 9. API、MCP 与 Skill
 
-- REST：`/api/v1` 与 `/api` 同路由；运行时 OpenAPI 版本 0.0.4。
+- REST：`/api/v1` 与 `/api` 同路由；运行时 OpenAPI 版本 0.0.5。
 - 认证：本地 Bearer token 或 HttpOnly SameSite=Strict cookie；Host/Origin 校验。
-- MCP：stdio 与 Streamable HTTP 共用 API，注册 21 个工具；不暴露破坏性维护或设备执行能力。
+- MCP：stdio 与 Streamable HTTP 共用 API，注册 37 个工具；不暴露破坏性维护或设备执行能力。
 - CLI：命令由 `apps/cli/src/cli.ts` 单一解析器提供；文档以 `--help` 为准。
 - Skill：环境检查与工作流封装，不拥有独立业务逻辑。
 

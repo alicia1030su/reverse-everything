@@ -9,6 +9,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { buildServer } from '../../apps/api/src/server.js';
 import { Database } from '@reverse/workflow';
+import { removeManagedPaths } from '../../apps/api/src/project-deletion.js';
 
 const token='api-safety-token';const auth={authorization:`Bearer ${token}`};
 const queueHashGate=vi.hoisted(()=>({delay:false}));
@@ -20,6 +21,10 @@ async function withEnv<T>(values:Record<string,string>,operation:()=>Promise<T>)
 async function within(parent:string,child:string){const canonicalParent=await realpath(parent).catch(()=>path.resolve(parent));const canonicalChild=await realpath(child).catch(()=>path.resolve(child));const relative=path.relative(canonicalParent,canonicalChild);return relative!=='..'&&!relative.startsWith(`..${path.sep}`)&&!path.isAbsolute(relative);}
 
 describe('API safety and recovery boundaries',()=>{
+  it.skipIf(process.platform==='win32')('refuses project deletion through a linked parent component',async()=>{
+    const dataDir=await mkdtemp(path.join(os.tmpdir(),'re-delete-link-'));dirs.push(dataDir);const outside=await mkdtemp(path.join(os.tmpdir(),'re-delete-outside-'));dirs.push(outside);const victim=path.join(outside,'keep.txt');await writeFile(victim,'must survive');await mkdir(path.join(dataDir,'managed'));await symlink(outside,path.join(dataDir,'managed','escape'),'dir');
+    await expect(removeManagedPaths(dataDir,['managed/escape/keep.txt'])).rejects.toThrow(/symbolic link|escapes/);expect(await readFile(victim,'utf8')).toBe('must survive');
+  });
   it('rejects a second API for the same database and fences a stale lease owner',async()=>{
     const first=await setup();const headers={...auth,'content-type':'application/json'};
     await expect(buildServer({dataDir:first.dataDir,token:'second-api-token',backgroundResources:false})).rejects.toThrow(/single-instance|lease/i);
@@ -59,7 +64,7 @@ describe('API safety and recovery boundaries',()=>{
     await withEnv({RE_MAX_QUEUE:'2'},async()=>{const {app,db}=await setup();const project=db.project({name:'queue race',kind:'software',authorizationConfirmed:true});const headers={...auth,'content-type':'application/json'};const responses=await Promise.all(Array.from({length:8},()=>app.inject({method:'POST',url:`/api/projects/${project.id}/tasks`,headers,body:JSON.stringify({adapter:'file'})})));expect(responses.map(response=>response.statusCode).filter(status=>status===201)).toHaveLength(2);expect(responses.map(response=>response.statusCode).filter(status=>status===429)).toHaveLength(6);expect(responses.filter(response=>response.statusCode===429).every(response=>response.json().error.code==='QUEUE_FULL')).toBe(true);expect(db.raw.prepare("SELECT COUNT(*) n FROM tasks WHERE status='QUEUED'").get()).toEqual({n:2});});
   });
   it('keeps public health minimal and protects resource details',async()=>{
-    const {app}=await setup();const health=await app.inject({method:'GET',url:'/api/health'});expect(health.statusCode).toBe(200);expect(health.json()).toEqual({ok:true,product:'reverse-everything',version:'0.0.4',schemaVersion:3});
+    const {app}=await setup();const health=await app.inject({method:'GET',url:'/api/health'});expect(health.statusCode).toBe(200);expect(health.json()).toEqual({ok:true,product:'reverse-everything',version:'0.0.5',schemaVersion:4});
     expect((await app.inject({method:'GET',url:'/api/resources'})).statusCode).toBe(401);
     expect((await app.inject({method:'GET',url:'/api/resources',headers:auth})).statusCode).toBe(200);
   });
@@ -128,6 +133,13 @@ describe('API safety and recovery boundaries',()=>{
     expect(cache.list(project.id).total).toBe(0);expect(cache.list().items.map(item=>item.scope).sort()).toEqual(['global','project']);expect(cache.list().items.find(item=>item.projectId===other.id)).toBeDefined();
     expect(existsSync(projectPayload.payload_path)).toBe(false);expect(existsSync(globalPayload.payload_path)).toBe(true);expect(existsSync(otherPayload.payload_path)).toBe(true);expect(await readFile(outside,'utf8')).toBe('must survive');
     expect(db.raw.prepare('SELECT id FROM events WHERE task_id=?').all(task.id)).toEqual([]);expect(db.raw.prepare('SELECT id FROM events WHERE task_id=?').all(otherTask.id)).toHaveLength(1);expect(db.raw.prepare("SELECT id FROM events WHERE type='global.event'").all()).toHaveLength(1);
+  });
+  it('keeps project files and records when the deletion transaction fails',async()=>{
+    const {app,db,dataDir}=await setup();const project=db.project({name:'rollback delete',kind:'software',authorizationConfirmed:true});const task=db.createTask(project.id,'file',{adapter:'file'},'rollback-hash');db.updateTask(task.id,{status:'COMPLETED',current_stage:'COMPLETED'});
+    const taskDir=path.join(dataDir,'tasks',task.id),uploadDir=path.join(dataDir,'uploads',project.id);await mkdir(taskDir,{recursive:true});await mkdir(uploadDir,{recursive:true});await writeFile(path.join(taskDir,'marker.txt'),'keep');await writeFile(path.join(uploadDir,'upload.bin'),'keep');
+    db.raw.exec("CREATE TRIGGER fail_project_delete BEFORE DELETE ON projects BEGIN SELECT RAISE(ABORT,'injected project delete failure'); END;");
+    const failed=await app.inject({method:'DELETE',url:`/api/projects/${project.id}`,headers:{...auth,'content-type':'application/json'},body:JSON.stringify({confirm:project.name})});expect(failed.statusCode).toBe(500);expect(db.getProject(project.id)).toBeDefined();expect(existsSync(path.join(taskDir,'marker.txt'))).toBe(true);expect(existsSync(path.join(uploadDir,'upload.bin'))).toBe(true);expect(db.raw.prepare('SELECT COUNT(*) n FROM project_deletion_intents').get()).toEqual({n:0});
+    db.raw.exec('DROP TRIGGER fail_project_delete');const retried=await app.inject({method:'DELETE',url:`/api/projects/${project.id}`,headers:{...auth,'content-type':'application/json'},body:JSON.stringify({confirm:project.name})});expect(retried.statusCode).toBe(200);expect(db.getProject(project.id)).toBeUndefined();expect(existsSync(taskDir)).toBe(false);expect(existsSync(uploadDir)).toBe(false);
   });
   it('keeps SSE delivery live when other tasks flood the global event log',async()=>{
     const {app,db}=await setup();const project=db.project({name:'events',kind:'software',authorizationConfirmed:true});const target=db.createTask(project.id,'file',{adapter:'file'},'target');const other=db.createTask(project.id,'file',{adapter:'file'},'other');

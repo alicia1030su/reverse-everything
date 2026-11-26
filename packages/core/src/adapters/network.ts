@@ -1,4 +1,5 @@
 import { defineAdapter, limitedRead, noReconstruction, output, uploadPath } from './base.js';
+import { findHarEntriesStart, iterateHarEntries } from './har-stream.js';
 
 export interface NetworkConversation { endpoints:[string,string]; protocol:string; packets:number; bytes:number }
 export interface DnsSummary { packets:number; queries:number; responses:number; names:string[]; queryTypes:Record<string,number>; answerTypes:Record<string,number>; responseCodes:Record<string,number>; truncated:boolean }
@@ -21,7 +22,7 @@ export interface NetworkAnalysis {
   limitations:string[];
 }
 
-interface Limits { maxBytes:number; maxRecords:number; maxBodyBytes:number; maxSamples:number }
+interface Limits { maxBytes:number; maxRecords:number; maxBodyBytes:number; maxSamples:number; maxEntryBytes:number }
 interface TransportPacket { version:4|6; src:string; dst:string; protocol:number; payload:Buffer }
 interface ParsedPacket extends TransportPacket { srcPort?:number; dstPort?:number; transport?:'TCP'|'UDP' }
 interface PacketIndexes { endpoints:Set<string>; conversations:Map<string,NetworkConversation> }
@@ -42,7 +43,7 @@ const YIELD_EVERY=256;
 
 function positiveOption(value:unknown,fallback:number,max:number):number { return typeof value==='number'&&Number.isFinite(value)&&value>0?Math.min(Math.floor(value),max):fallback; }
 function limits(options:Record<string,unknown>):Limits {
-  return {maxBytes:positiveOption(options.networkMaxBytes,DEFAULT_MAX_BYTES,64_000_000),maxRecords:positiveOption(options.networkMaxPackets??options.networkMaxEntries,DEFAULT_MAX_RECORDS,100_000),maxBodyBytes:positiveOption(options.networkMaxBodyBytes,DEFAULT_MAX_BODY_BYTES,1_000_000),maxSamples:positiveOption(options.networkMaxSamples,DEFAULT_MAX_SAMPLES,20_000)};
+  return {maxBytes:positiveOption(options.networkMaxBytes,DEFAULT_MAX_BYTES,64_000_000),maxRecords:positiveOption(options.networkMaxPackets??options.networkMaxEntries,DEFAULT_MAX_RECORDS,100_000),maxBodyBytes:positiveOption(options.networkMaxBodyBytes,DEFAULT_MAX_BODY_BYTES,1_000_000),maxSamples:positiveOption(options.networkMaxSamples,DEFAULT_MAX_SAMPLES,20_000),maxEntryBytes:positiveOption(options.networkMaxEntryBytes,8_000_000,16_000_000)};
 }
 function increment(map:Record<string,number>,key:string):void { map[key]=(map[key]??0)+1; }
 function markTruncated(result:NetworkAnalysis,message:string):void { result.truncated=true;if(!result.limitations.includes(message))result.limitations.push(message); }
@@ -89,18 +90,18 @@ function detectCapture(name:string,head:Buffer):'HAR'|'PCAP'|'PCAPNG'|undefined 
   return undefined;
 }
 
-async function parseHar(buffer:Buffer,sourceBytes:number,max:Limits,signal?:AbortSignal):Promise<NetworkAnalysis> {
-  throwIfAborted(signal);let root:unknown; try { root=JSON.parse(buffer.toString('utf8')); } catch { throwIfAborted(signal);throw new Error('Malformed HAR: invalid JSON within the bounded input'); }
-  const log=(root as {log?:unknown})?.log;
-  if(!log||typeof log!=='object'||!Array.isArray((log as {entries?:unknown}).entries))throw new Error('Malformed HAR: log.entries must be an array');
-  const entries=(log as {entries:unknown[]}).entries;
-  const result:NetworkAnalysis={format:'HAR',sourceBytes,bytesRead:buffer.length,recordCount:Math.min(entries.length,max.maxRecords),totalRecords:entries.length,endpoints:[],conversations:[],protocolDistribution:{},dns:emptyDns(),tls:emptyTls(),http:emptyHttp(),truncated:entries.length>max.maxRecords,limitations:['HAR response bodies, request bodies, cookies and header values are not retained']};
-  if(result.truncated)result.limitations.push(`HAR entry limit ${max.maxRecords} reached; ${entries.length-result.recordCount} entries were not inspected`);
-  const endpointSet=new Set<string>();let headersTruncated=false;
-  for(let i=0;i<result.recordCount;i++){
-    if(i%YIELD_EVERY===0)await yieldControl(signal);
-    const entry=entries[i] as {request?:{method?:unknown;url?:unknown;headers?:unknown;bodySize?:unknown;postData?:{text?:unknown;mimeType?:unknown}};response?:{status?:unknown;headers?:unknown;bodySize?:unknown;content?:{size?:unknown;mimeType?:unknown};redirectURL?:unknown};timings?:unknown}|null;
-    if(!entry||typeof entry!=='object'||!entry.request||typeof entry.request!=='object')throw new Error(`Malformed HAR: entry ${i} has no request object`);
+export async function parseHarFile(file:string,sourceBytes:number,max:Limits,signal?:AbortSignal):Promise<NetworkAnalysis> {
+  throwIfAborted(signal);
+  const arrayStart=await findHarEntriesStart(file,signal);
+  const result:NetworkAnalysis={format:'HAR',sourceBytes,bytesRead:0,recordCount:0,totalRecords:0,endpoints:[],conversations:[],protocolDistribution:{},dns:emptyDns(),tls:emptyTls(),http:emptyHttp(),truncated:false,limitations:['HAR response bodies, request bodies, cookies and header values are not retained']};
+  const endpointSet=new Set<string>();let headersTruncated=false;let readBytes=0;
+  for await (const item of iterateHarEntries(file,arrayStart,max.maxEntryBytes,signal)) {
+    readBytes=item.readBytes;result.totalRecords=item.index+1;
+    if(result.recordCount>=max.maxRecords){result.truncated=true;result.limitations.push(`HAR entry limit ${max.maxRecords} reached; additional entries were not inspected`);break;}
+    if(item.skipped){result.truncated=true;result.limitations.push(`HAR entry ${item.index} exceeded the ${max.maxEntryBytes}-byte per-entry limit and was skipped`);continue;}
+    if(item.index%YIELD_EVERY===0)await yieldControl(signal);
+    const entry=item.entry as {request?:{method?:unknown;url?:unknown;headers?:unknown;bodySize?:unknown;postData?:{text?:unknown;mimeType?:unknown}};response?:{status?:unknown;headers?:unknown;bodySize?:unknown;content?:{size?:unknown;mimeType?:unknown};redirectURL?:unknown};timings?:unknown}|null;
+    if(!entry||typeof entry!=='object'||!entry.request||typeof entry.request!=='object')throw new Error(`Malformed HAR: entry ${item.index} has no request object`);
     const request=entry.request; const response=entry.response;
     const url=safeUrl(typeof request.url==='string'?request.url:'[missing-url]'); let host='[unknown-host]';
     try { host=new URL(url).host; } catch { /* invalid URLs are represented explicitly */ }
@@ -110,14 +111,16 @@ async function parseHar(buffer:Buffer,sourceBytes:number,max:Limits,signal?:Abor
     const mimeType=typeof response?.content?.mimeType==='string'?response.content.mimeType.slice(0,200):undefined;
     const requestText=typeof request.postData?.text==='string'?request.postData.text:undefined;
     const bodyBytes=Math.max(requestBodySize??0,responseBodySize??0,requestText===undefined?0:Buffer.byteLength(requestText));
-    if(bodyBytes>max.maxBodyBytes)result.limitations.push(`HAR entry ${i} declares or contains a body larger than ${max.maxBodyBytes} bytes; body content was not retained`);
+    if(bodyBytes>max.maxBodyBytes)result.limitations.push(`HAR entry ${item.index} declares or contains a body larger than ${max.maxBodyBytes} bytes; body content was not retained`);
     const status=typeof response?.status==='number'&&Number.isInteger(response.status)?response.status:undefined;
     if(method!=='UNKNOWN'){result.http.requests++;increment(result.http.methods,method);} if(status!==undefined){result.http.responses++;increment(result.http.statuses,String(status));}
     if(result.http.samples.length<max.maxSamples){
       const requestHeaders=headerNames(request.headers),responseHeaders=headerNames(response?.headers);headersTruncated ||= requestHeaders.truncated||responseHeaders.truncated;
       result.http.samples.push({method,url,host,status,requestBodySize,responseBodySize,mimeType,requestHeaders:requestHeaders.names,responseHeaders:responseHeaders.names,bodyOmitted:true});
     } else result.http.truncated=true;
+    result.recordCount++;
   }
+  result.bytesRead=result.truncated?Math.min(sourceBytes,arrayStart+1+readBytes):sourceBytes;
   result.endpoints=[...endpointSet].sort();
   if(headersTruncated){result.truncated=true;result.http.truncated=true;result.limitations.push(`HAR header inventory limited to ${MAX_HAR_HEADERS} names per request/response and ${MAX_HAR_HEADER_NAME} characters per name`);}
   if(result.recordCount>max.maxSamples){result.truncated=true;result.limitations.push(`HTTP sample limit ${max.maxSamples} reached`);}
@@ -259,8 +262,10 @@ export const networkAdapter=defineAdapter({
   prepare:async ctx=>{assertAuthorized(ctx.project.authorizationConfirmed);const head=await limitedRead(uploadPath(ctx),8);const format=detectCapture(ctx.upload?.name??'',head);if(!format)throw new Error('Unsupported capture format');return {format,limits:limits(ctx.options)};},
   analyze:async ctx=>{
     throwIfAborted(ctx.signal);assertAuthorized(ctx.project.authorizationConfirmed);const prep=output<{format:'HAR'|'PCAP'|'PCAPNG';limits:Limits}>(ctx,'PREPARE')??await networkAdapter.prepare(ctx) as {format:'HAR'|'PCAP'|'PCAPNG';limits:Limits};
-    const sourceBytes=ctx.upload?.size??0;const buffer=await limitedRead(uploadPath(ctx),prep.limits.maxBytes);throwIfAborted(ctx.signal);
-    const result=await(prep.format==='HAR'?parseHar(buffer,sourceBytes,prep.limits,ctx.signal):prep.format==='PCAP'?parsePcap(buffer,sourceBytes,prep.limits,ctx.signal):parsePcapng(buffer,sourceBytes,prep.limits,ctx.signal));finalizeNetwork(result,prep.limits);throwIfAborted(ctx.signal);
+    const sourceBytes=ctx.upload?.size??0;const file=uploadPath(ctx);let result:NetworkAnalysis;
+    if(prep.format==='HAR')result=await parseHarFile(file,sourceBytes,prep.limits,ctx.signal);
+    else{const buffer=await limitedRead(file,prep.limits.maxBytes);result=await(prep.format==='PCAP'?parsePcap(buffer,sourceBytes,prep.limits,ctx.signal):parsePcapng(buffer,sourceBytes,prep.limits,ctx.signal));}
+    finalizeNetwork(result,prep.limits);throwIfAborted(ctx.signal);
     result.limitations.push('Protocol labels are inferred from bounded packet signatures; no target was executed');await ctx.log('info',`Parsed ${result.format} with ${result.recordCount} records and ${result.endpoints.length} endpoints`,'capture-parser');throwIfAborted(ctx.signal);return result;
   },
   extractEvidence:async ctx=>{

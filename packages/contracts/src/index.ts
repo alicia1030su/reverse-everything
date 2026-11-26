@@ -1,5 +1,5 @@
-export const VERSION = '0.0.4' as const;
-export const SCHEMA_VERSION = 3 as const;
+export const VERSION = '0.0.5' as const;
+export const SCHEMA_VERSION = 4 as const;
 export const EVIDENCE_MODEL_VERSION = '3.0.0' as const;
 export const SECURITY_POLICY_VERSION = '3.0.0' as const;
 export const CACHE_POLICY_VERSION = '3.0.0' as const;
@@ -7,8 +7,8 @@ export const STAGES = ['INTAKE','CLASSIFY','AUTHORIZATION_CHECK','PLAN','PREPARE
 export type Stage = typeof STAGES[number];
 export type TaskStatus = 'CREATED' | 'QUEUED' | 'RUNNING' | 'PAUSED' | 'BLOCKED' | 'FAILED' | 'CANCELLED' | 'PARTIAL_SUCCESS' | 'COMPLETED';
 export type StageStatus = 'PENDING' | 'RUNNING' | 'SUCCEEDED' | 'FAILED' | 'SKIPPED';
-export type ProjectKind = 'website' | 'software' | 'game' | 'security' | 'protocol' | 'hardware' | 'firmware';
-export type AdapterName = 'website' | 'file' | 'security' | 'game' | 'network' | 'apk' | 'ghidra' | 'hardware' | 'firmware';
+export type ProjectKind = 'website' | 'software' | 'game' | 'security' | 'protocol' | 'hardware' | 'firmware' | 'console';
+export type AdapterName = 'website' | 'file' | 'security' | 'game' | 'network' | 'apk' | 'ghidra' | 'hardware' | 'firmware' | 'console';
 export type EvidenceKind = 'EVIDENCE' | 'INFERENCE' | 'UNKNOWN' | 'VERIFIED';
 export type Severity = 'info' | 'low' | 'medium' | 'high' | 'critical';
 export interface JsonObject { [key: string]: unknown }

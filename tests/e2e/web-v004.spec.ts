@@ -127,8 +127,10 @@ test('hardware lab uses real local enumeration and creates an offline USB task',
 test('first-run guide allows skipping AI without blocking basic analysis', async ({ page }) => {
   await page.goto('/new');
   await expect(page.getByRole('dialog', { name: '首次使用引导' })).toBeVisible();
+  await page.getByLabel('确认已阅读并理解安全提示').check();
+  await page.getByRole('button', { name: '下一步：选择场景' }).click();
   await page.getByRole('button', { name: '网页分析', exact: true }).click();
-  await page.getByRole('button', { name: '下一步：环境检测' }).click();
+  await page.getByRole('button', { name: '下一步', exact: true }).click();
   await expect(page.getByText('环境检测')).toBeVisible();
   await page.screenshot({ path: 'test-results/evidence/v004-onboarding.png', fullPage: true });
   await page.getByRole('button', { name: '下一步：可选 AI' }).click();

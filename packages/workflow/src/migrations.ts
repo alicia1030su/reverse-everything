@@ -104,6 +104,54 @@ const REQUIRED_INDEXES_3: Record<string, readonly string[]> = {
   idx_tasks_lease: ['status','lease_expires_at','created_at']
 };
 
+const SCHEMA_4 = `
+  CREATE TABLE IF NOT EXISTS console_profiles (
+    id TEXT PRIMARY KEY, project_id TEXT NOT NULL UNIQUE REFERENCES projects(id) ON DELETE CASCADE,
+    manufacturer TEXT NOT NULL, series TEXT NOT NULL, model TEXT NOT NULL,
+    hardware_version TEXT NOT NULL DEFAULT '', system_version TEXT NOT NULL DEFAULT '',
+    user_info_json TEXT NOT NULL, official_interfaces_json TEXT NOT NULL,
+    authorized_environments_json TEXT NOT NULL, firmware_samples_json TEXT NOT NULL,
+    known_capabilities_json TEXT NOT NULL, actual_access_json TEXT NOT NULL,
+    evidence_json TEXT NOT NULL, level INTEGER NOT NULL, limitations_json TEXT NOT NULL, profile_json TEXT NOT NULL,
+    created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+  CREATE TABLE IF NOT EXISTS analysis_plans (
+    id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    task_id TEXT REFERENCES tasks(id) ON DELETE SET NULL, mode TEXT NOT NULL,
+    target_json TEXT NOT NULL, detection_json TEXT NOT NULL, authorization_id TEXT,
+    upload_id TEXT, upload_sha256 TEXT,
+    steps_json TEXT NOT NULL, budget_json TEXT NOT NULL, status TEXT NOT NULL,
+    created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+  CREATE TABLE IF NOT EXISTS authorization_scopes (
+    id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    target TEXT NOT NULL, scope_json TEXT NOT NULL, allowed_interfaces_json TEXT NOT NULL,
+    allowed_operations_json TEXT NOT NULL, data_access_json TEXT NOT NULL,
+    remote_ai_allowed INTEGER NOT NULL DEFAULT 0, expires_at TEXT, created_at TEXT NOT NULL, revoked_at TEXT);
+  CREATE TABLE IF NOT EXISTS tool_installations (
+    id TEXT PRIMARY KEY, tool_name TEXT NOT NULL, version TEXT NOT NULL, source_url TEXT NOT NULL,
+    expected_sha256 TEXT NOT NULL, actual_sha256 TEXT, install_dir TEXT NOT NULL,
+    status TEXT NOT NULL, progress_json TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+  CREATE TABLE IF NOT EXISTS demo_runs (
+    id TEXT PRIMARY KEY, demo_name TEXT NOT NULL, status TEXT NOT NULL, steps_json TEXT NOT NULL,
+    result_json TEXT NOT NULL, started_at TEXT NOT NULL, ended_at TEXT);
+  CREATE TABLE IF NOT EXISTS project_deletion_intents (
+    id TEXT PRIMARY KEY, project_id TEXT NOT NULL, task_ids_json TEXT NOT NULL,
+    paths_json TEXT NOT NULL, status TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+  CREATE INDEX IF NOT EXISTS idx_plans_project ON analysis_plans(project_id,created_at);
+  CREATE INDEX IF NOT EXISTS idx_auth_project ON authorization_scopes(project_id,created_at);
+  CREATE INDEX IF NOT EXISTS idx_demo_status ON demo_runs(status,started_at);
+  CREATE INDEX IF NOT EXISTS idx_deletion_status ON project_deletion_intents(status,created_at);
+`;
+
+const REQUIRED_SCHEMA_4: Record<string, readonly string[]> = {
+  ...REQUIRED_SCHEMA_3,
+  console_profiles: ['id','project_id','manufacturer','series','model','hardware_version','system_version','user_info_json','official_interfaces_json','authorized_environments_json','firmware_samples_json','known_capabilities_json','actual_access_json','evidence_json','level','limitations_json','profile_json','created_at','updated_at'],
+  analysis_plans: ['id','project_id','task_id','mode','target_json','detection_json','authorization_id','upload_id','upload_sha256','steps_json','budget_json','status','created_at','updated_at'],
+  authorization_scopes: ['id','project_id','target','scope_json','allowed_interfaces_json','allowed_operations_json','data_access_json','remote_ai_allowed','expires_at','created_at','revoked_at'],
+  tool_installations: ['id','tool_name','version','source_url','expected_sha256','actual_sha256','install_dir','status','progress_json','created_at','updated_at'],
+  demo_runs: ['id','demo_name','status','steps_json','result_json','started_at','ended_at'],
+  project_deletion_intents: ['id','project_id','task_ids_json','paths_json','status','created_at','updated_at']
+};
+
 function addColumnIfMissing(raw: DatabaseSync, table: string, column: string, definition: string): void {
   const columns = raw.prepare(`PRAGMA table_info("${table}")`).all() as {name:string}[];
   if (!columns.some(item => item.name === column)) raw.exec(`ALTER TABLE "${table}" ADD COLUMN "${column}" ${definition}`);
@@ -125,6 +173,22 @@ export function assertSchema3(raw: DatabaseSync): void {
   }
 }
 
+export function assertSchema4(raw: DatabaseSync): void {
+  for (const [table, requiredColumns] of Object.entries(REQUIRED_SCHEMA_4)) {
+    const present = raw.prepare("SELECT type FROM sqlite_master WHERE name=?").get(table) as {type:string}|undefined;
+    if (!present || present.type !== 'table') throw new Error(`Database schema 4 integrity check failed: missing table ${table}`);
+    const columns = new Set((raw.prepare(`PRAGMA table_info("${table}")`).all() as {name:string}[]).map(column => column.name));
+    const missing = requiredColumns.filter(column => !columns.has(column));
+    if (missing.length) throw new Error(`Database schema 4 integrity check failed: missing column(s) ${table}.${missing.join(',')}`);
+  }
+  for (const [index, requiredColumns] of Object.entries(REQUIRED_INDEXES_3)) {
+    const present = raw.prepare("SELECT type FROM sqlite_master WHERE name=?").get(index) as {type:string}|undefined;
+    if (!present || present.type !== 'index') throw new Error(`Database schema 4 integrity check failed: missing index ${index}`);
+    const columns = (raw.prepare(`PRAGMA index_info("${index}")`).all() as {name:string|null}[]).map(column => column.name ?? '');
+    if (columns.join(',') !== requiredColumns.join(',')) throw new Error(`Database schema 4 integrity check failed: invalid index ${index}`);
+  }
+}
+
 export interface MigrationResult { previousVersion: number; version: number; backupPath?: string; applied: number[] }
 function migrationFailure(backupPath: string | undefined, error: unknown): Error {
   const code = typeof error === 'object' && error !== null && 'errcode' in error ? String(error.errcode) : '';
@@ -141,7 +205,9 @@ export function migrateDatabase(raw: DatabaseSync, file: string): MigrationResul
   const previousVersion = Number((raw.prepare('PRAGMA user_version').get() as {user_version:number}).user_version);
   if (previousVersion > SCHEMA_VERSION) throw new Error(`Database schema ${previousVersion} is newer than supported schema ${SCHEMA_VERSION}`);
   if (previousVersion === SCHEMA_VERSION) {
-    assertSchema3(raw);
+    addColumnIfMissing(raw, 'analysis_plans', 'upload_id', 'TEXT');
+    addColumnIfMissing(raw, 'analysis_plans', 'upload_sha256', 'TEXT');
+    assertSchema4(raw);
     return {previousVersion,version:SCHEMA_VERSION,applied:[]};
   }
   let backupPath: string | undefined;
@@ -156,7 +222,7 @@ export function migrateDatabase(raw: DatabaseSync, file: string): MigrationResul
     raw.exec('BEGIN IMMEDIATE');
     const actualVersion=Number((raw.prepare('PRAGMA user_version').get() as {user_version:number}).user_version);
     if(actualVersion>=SCHEMA_VERSION){
-      assertSchema3(raw);
+      assertSchema4(raw);
       raw.exec('COMMIT');return {previousVersion,version:SCHEMA_VERSION,...(backupPath?{backupPath}:{}),applied:[]};
     }
     raw.exec(BASE_SCHEMA);
@@ -194,7 +260,14 @@ export function migrateDatabase(raw: DatabaseSync, file: string): MigrationResul
       raw.prepare('INSERT OR REPLACE INTO schema_migrations (version,applied_at,backup_path) VALUES (?,?,?)').run(3,new Date().toISOString(),backupPath??null);
       applied.push(3);
     }
-    assertSchema3(raw);
+    if (actualVersion < 4) {
+      raw.exec(SCHEMA_4);
+      addColumnIfMissing(raw, 'analysis_plans', 'upload_id', 'TEXT');
+      addColumnIfMissing(raw, 'analysis_plans', 'upload_sha256', 'TEXT');
+      raw.prepare('INSERT OR REPLACE INTO schema_migrations (version,applied_at,backup_path) VALUES (?,?,?)').run(4,new Date().toISOString(),backupPath??null);
+      applied.push(4);
+    }
+    assertSchema4(raw);
     raw.exec(`PRAGMA user_version=${SCHEMA_VERSION}`);
     raw.exec('COMMIT');
   } catch (error) {

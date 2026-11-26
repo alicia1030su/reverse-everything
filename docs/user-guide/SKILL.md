@@ -1,6 +1,6 @@
-# Agent Skill（v0.0.4）
+# Agent Skill（v0.0.5）
 
-Skill 源目录为 `skills/reverse-everything`。可运行 `npm run package:skill` 生成 `dist/release/reverse-everything-skill-0.0.4.zip`，将包内 `reverse-everything` 目录整体放入客户端技能目录。
+Skill 源目录为 `skills/reverse-everything`。可运行 `npm run package:skill` 生成 `dist/release/reverse-everything-skill-0.0.5.zip`，将包内 `reverse-everything` 目录整体放入客户端技能目录。
 
 ```bash
 npm run validate:skill
@@ -14,7 +14,7 @@ node skills/reverse-everything/scripts/inspect-task.mjs <task-id>
 
 1. 检查环境、CLI/API/MCP 配置与版本。
 2. 确认用户拥有目标或获明确授权。
-3. 选择网页、软件、Android、游戏、网络、安全、硬件、固件或开发板场景。
+3. 选择网页、软件、Android、游戏、网络、安全、硬件、固件、开发板或主机研究场景；智能分析先创建授权范围和确定性计划。
 4. 创建真实任务并轮询终端状态；不得伪造进度。
 5. 读取证据、`UNKNOWN` 与报告，区分 `EVIDENCE` / `INFERENCE` / `VERIFIED`。
 6. 导出产物并核对 SHA-256。

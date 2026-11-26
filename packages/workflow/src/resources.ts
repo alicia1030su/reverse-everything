@@ -77,7 +77,7 @@ export function parseDarwinProcessOutput(stdout:string):ResourceProcess[] {
     const match=line.match(/^\s*(\d+)\s+(\d+)\s+(\d+)\s+((?:(\d+):)?(\d+):(\d+(?:\.\d+)?))\s+(.+)$/);
     if(!match)throw new Error('Malformed macOS process sampling row');
     const pid=Number(match[1]),ppid=Number(match[2]),rssKB=Number(match[3]);const hours=Number(match[5]??0),minutes=Number(match[6]),seconds=Number(match[7]);
-    if(![pid,ppid,rssKB,hours,minutes].every(Number.isSafeInteger)||!Number.isFinite(seconds))throw new Error('Invalid macOS process sampling values');
+    if(![pid,ppid,rssKB,hours,minutes].every(Number.isSafeInteger)||!Number.isFinite(seconds)||minutes<0||minutes>59||seconds<0||seconds>=60)throw new Error('Invalid macOS process sampling values');
     rows.push({pid,ppid,rssMB:rssKB/1024,cpuSeconds:hours*3600+minutes*60+seconds,name:match[8]!.trim()});
   }
   if(!rows.length)throw new Error('Process sampling returned no processes');
