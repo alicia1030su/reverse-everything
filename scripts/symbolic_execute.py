@@ -313,7 +313,7 @@ def analyze(request: dict, worker_sha256: str, started_at: str, started: float) 
     stdin_file = angr.SimFileStream(name="stdin", content=claripy.Concat(*symbolic_bytes), has_end=True)
     state = project.factory.call_state(entry, stdin=stdin_file)
     # argv contents are concrete, not symbolic; supply a valid argv[0] for amd64 main.
-    argv = state.regs.sp - 0x2000
+    argv = state.solver.eval(state.regs.sp) - 0x2000
     state.regs.rdi = 1
     state.regs.rsi = argv
     binary_string = str(binary).encode("utf-8") + b"\x00"
