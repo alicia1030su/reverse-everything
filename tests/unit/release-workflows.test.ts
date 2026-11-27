@@ -211,6 +211,7 @@ describe('release workflow identity gate', () => {
     expect(workflow.indexOf(packageDemosStep)).toBeGreaterThan(workflow.indexOf(gameEvidenceStep));
     expect(workflow).not.toContain('artifacts/v007-game-compat');
     expect(workflow).toContain('Validate real model without treating a missing Key as success');
+    expect(workflow).toContain('OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}');
     expect(workflow).toContain('continue-on-error: true');
     expect(workflow).toContain("status: 'BLOCKED'");
     expect(workflow).toContain("report.status === 'SKIPPED' && report.error?.code === 'MISSING_API_KEY'");

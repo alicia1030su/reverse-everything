@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createHash } from 'node:crypto';
-import { lstat, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises';
+import { lstat, mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 
@@ -129,7 +129,7 @@ describe('MCP download filesystem safety', () => {
     const destination = path.join(allowed, 'nested', 'artifact.bin');
     await mkdir(path.dirname(destination));
     const { value } = await invoke(destination);
-    expect(value.saved).toBe(destination);
+    expect(await realpath(String(value.saved))).toBe(await realpath(destination));
     expect(value.sha256).toBe(createHash('sha256').update(bytes).digest('hex'));
     expect(await readFile(destination)).toEqual(bytes);
     expect((await lstat(destination)).mode & 0o777).toBe(process.platform === 'win32' ? 0o666 : 0o600);
