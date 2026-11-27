@@ -89,7 +89,7 @@ test('demo entry creates a real task without simulated progress', async ({ page 
 test('report page switches between user and professional views and exports markdown', async ({ page }) => {
   const fixture = await createCompletedFileTask(page, `v005 报告 ${Date.now()}`);
   await openWorkspace(page, '/reports');
-  await expect(page.getByRole('heading', { name: '分析报告' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '分析报告', exact: true })).toBeVisible();
   await page.getByLabel('报告任务').selectOption(fixture.taskId);
   await expect(page.getByRole('tab', { name: '普通用户视图' })).toHaveAttribute('aria-selected', 'true');
   await expect(page.getByRole('heading', { name: '通俗分析报告' })).toBeVisible();
