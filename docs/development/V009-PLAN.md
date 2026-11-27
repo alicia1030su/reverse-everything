@@ -67,6 +67,16 @@
 - Wave 2 已实现：GDB/MI 动态执行时间线、线程/模块/寄存器/调用栈证据、Program IR 关联，以及 angr/Z3 路径探索、约束求解、测试输入生成与原生执行复现。
 - Wave 2 本地全量 Vitest 956 passed / 9 skipped；动态/符号/打包拓扑 31/31；真实 GDB 与 angr/Z3 由 Ubuntu CI 验证。真实模型、Binary Diff 与三个盲测仍未验收。
 
+## Wave 2 当前状态（2026-11-28，已合并）
+
+- PR #26 已合并，合并提交 `1d0ee1539ea9149b0d07eaab9e08a34589c95a4d`。
+- GDB/MI 动态引擎支持真实断点、线程、寄存器、调用栈、模块与时间线证据，并关联 Program IR；共享 MI/inferior 输出通道明确按 best-effort 分流。
+- angr/Z3 符号执行支持路径探索、约束求解、测试输入生成、原生执行复现及 partial 原因/截断契约；真实样本求解输入 `3713000000000000` 并复现目标路径。
+- Linux 进程清理使用 `/proc` 三态观测、PID+startTicks 身份、pidfd 单飞回收与 PGID 复用防护；观测失败、迟到 MI 事件和不完整快照均 fail-closed。
+- Desktop/Server 运行时均包含 `pidfd_cleanup.py` 与符号执行 worker，打包路径有回归测试。
+- 最终 CI：Ubuntu 993 passed / 7 skipped，Windows 983 passed / 17 skipped；真实 GDB Run `46074956253`、真实 angr/Z3 Run `46074956247`、全量 CI Run `46074956310` 全部通过。
+- 独立最终复审 P0=0/P1=0。真实模型八阶段、Binary Diff 与三个源码隔离盲测仍未验收。
+
 ## 当前外部阻塞
 
 - 本机未发现 `OPENAI_API_KEY`、`ANTHROPIC_API_KEY` 或 Ollama；真实模型验收保持 BLOCKED，直到配置真实提供方或本地模型。
