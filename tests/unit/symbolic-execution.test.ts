@@ -1,6 +1,6 @@
 import { afterAll, describe, expect, it } from 'vitest';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -60,6 +60,32 @@ describe('symbolic execution worker contract', () => {
     pending.target.function = marker;
     const result = await engine.analyze({ ...pending, timeoutMs: 500 });
     expect(result.status).toBe('timeout');
+    const pid = Number(readFileSync(marker, 'utf8'));
+    await new Promise(resolve => setTimeout(resolve, 100));
+    expect(pidAlive(pid)).toBe(false);
+  }, 10_000);
+
+  it.skipIf(process.platform === 'win32')('preserves executable permission on the private snapshot', async () => {
+    const pending = request('exec-check');
+    chmodSync(pending.binaryPath, 0o700);
+    const engine = new SymbolicExecutionEngine({ pythonExecutable: 'python3', workerPath });
+    const result = await engine.analyze(pending);
+    expect(result.status, result.error).toBe('completed');
+  });
+
+  it.skipIf(process.platform === 'win32')('kills a separate native process group when the worker is cancelled', async () => {
+    const marker = path.join(fixtureRoot, `native-child-${++sequence}.pid`);
+    const pending = request('native-tree');
+    pending.target.function = marker;
+    const controller = new AbortController();
+    const engine = new SymbolicExecutionEngine({ pythonExecutable: 'python3', workerPath });
+    const analysis = engine.analyze({ ...pending, timeoutMs: 10_000 }, controller.signal);
+    const deadline = Date.now() + 5_000;
+    while (!existsSync(marker) && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 20));
+    expect(existsSync(marker)).toBe(true);
+    controller.abort();
+    const result = await analysis;
+    expect(result.status).toBe('cancelled');
     const pid = Number(readFileSync(marker, 'utf8'));
     await new Promise(resolve => setTimeout(resolve, 100));
     expect(pidAlive(pid)).toBe(false);

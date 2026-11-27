@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { EventEmitter } from 'node:events';
 import { PassThrough } from 'node:stream';
 import type { ChildProcessWithoutNullStreams } from 'node:child_process';
-import { mkdtemp, mkdir, readFile, realpath, rm, writeFile } from 'node:fs/promises';
+import { chmod, mkdtemp, mkdir, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -184,6 +184,26 @@ describe('DynamicAnalysisEngine', () => {
     expect(result.events.filter((event) => event.type === 'breakpoint')).toHaveLength(1);
     expect(JSON.stringify(result.events.find((event) => event.type === 'output')?.data)).toContain('non-MI debugger diagnostic');
   });
+  it.skipIf(process.platform === 'win32')('preserves executable permission on the private snapshot', async () => {
+    const root = await temporaryRoot(); const child = path.join(root, 'child'); await mkdir(child);
+    const binary = path.join(root, 'sample'); await writeFile(binary, 'fake executable'); await chmod(binary, 0o700);
+    const engine = new DynamicAnalysisEngine({ isolationRoot: root, networkIsolation: 'none', clientFactory: (options) => fakeClient('exec-check', options) });
+    const result = await engine.analyze({ binaryPath: binary, cwd: child, authorized: true });
+    expect(result.status, result.error).toBe('completed');
+  });
+  it.skipIf(process.platform === 'win32')('cleans up an inferior left behind by a crashed GDB', async () => {
+    const root = await temporaryRoot();
+    const marker = path.join(root, 'crashed-child.pid');
+    const client = new GdbMiClient({ executable: process.execPath, timeoutMs: 5_000, spawnProcess: (_command, args, options) => spawn(process.execPath, [fakeGdb, ...args], { ...options, env: { ...options.env, FAKE_GDB_MODE: 'crash-with-child', FAKE_GDB_CHILD_PID_FILE: marker } }) });
+    await client.start();
+    await expect(client.execute('-file-exec-and-symbols', 'x')).rejects.toThrow(/退出/);
+    await client.close();
+    const pid = Number(await readFile(marker, 'utf8'));
+    await new Promise(resolve => setTimeout(resolve, 100));
+    let alive = true;
+    try { process.kill(pid, 0); } catch { alive = false; }
+    expect(alive).toBe(false);
+  }, 10_000);
   it('rejects oversized binaries before starting GDB', async () => {
     const root = await temporaryRoot(); const child = path.join(root, 'child'); await mkdir(child);
     const binary = path.join(root, 'sample'); await writeFile(binary, 'too large');

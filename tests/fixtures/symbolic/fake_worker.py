@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """Deterministic Python worker for TypeScript process-contract tests only."""
 import hashlib
+import importlib.util
 import json
+import os
 import signal
 import subprocess
 import sys
@@ -11,6 +13,17 @@ from pathlib import Path
 request = json.loads(sys.stdin.buffer.read())
 binary_bytes = Path(request["binaryPath"]).read_bytes()
 mode = binary_bytes.decode("utf-8")
+if mode == "exec-check" and not os.access(request["binaryPath"], os.X_OK):
+    raise SystemExit(3)
+if mode == "native-tree":
+    worker_path = Path(__file__).resolve().parents[3] / "scripts" / "symbolic_execute.py"
+    spec = importlib.util.spec_from_file_location("real_symbolic_worker", worker_path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    module.install_native_signal_handlers()
+    native_code = "import pathlib,subprocess,sys,time; p=subprocess.Popen([sys.executable,'-c','import time;time.sleep(60)']); pathlib.Path(sys.argv[1]).write_text(str(p.pid)); time.sleep(60)"
+    module.execute_binary(sys.executable, b"", None, 60, ["-c", native_code, request["target"]["function"]])
+    raise SystemExit(0)
 if mode == "tree":
     child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
     Path(request["target"]["function"]).write_text(str(child.pid), encoding="utf-8")
