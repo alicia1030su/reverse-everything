@@ -56,7 +56,7 @@ describe('GDB MI client', () => {
   it('correlates command tokens and asynchronous stop events', async () => {
     const client = fakeClient();
     await client.start();
-    await expect(client.execute('-file-exec-and-symbolic', 'C:/sample')).resolves.toEqual({ value: {} });
+    await expect(client.execute('-file-exec-and-symbols', 'C:/sample')).resolves.toEqual({ value: {} });
     expect(client.diagnostics).toContain('non-MI debugger diagnostic');
     expect(client.diagnosticBytes).toBeGreaterThan(0);
     const stopped = client.waitForStop();
@@ -93,7 +93,7 @@ describe('GDB MI client', () => {
   it('enforces command timeout and reaps the fake process', async () => {
     const client = fakeClient('hang', { timeoutMs: 1_000 });
     await client.start();
-    await expect(client.execute('-file-exec-and-symbolic', 'x')).rejects.toThrow(/超时/);
+    await expect(client.execute('-file-exec-and-symbols', 'x')).rejects.toThrow(/超时/);
     await client.close();
     expect(client.exited).toBe(true);
   });
@@ -102,13 +102,13 @@ describe('GDB MI client', () => {
     const client = fakeClient('hang', { signal: controller.signal });
     await client.start();
     controller.abort();
-    await expect(client.execute('-file-exec-and-symbolic', 'x')).rejects.toThrow(/取消|不可用|关闭/);
+    await expect(client.execute('-file-exec-and-symbols', 'x')).rejects.toThrow(/取消|不可用|关闭/);
     await client.close();
   });
   it('enforces output limit and terminates flooding output', async () => {
     const client = fakeClient('flood', { maxOutputBytes: 512 });
     await client.start();
-    await expect(client.execute('-file-exec-and-symbolic', 'x')).rejects.toThrow(/限额|不可用|关闭|退出/);
+    await expect(client.execute('-file-exec-and-symbols', 'x')).rejects.toThrow(/限额|不可用|关闭|退出/);
     await client.close();
     expect(client.truncated).toBe(true);
     expect(client.bytes).toBeLessThan(4096);
@@ -116,7 +116,7 @@ describe('GDB MI client', () => {
   it('fails closed on malformed MI output', async () => {
     const client = fakeClient('malformed');
     await client.start();
-    await expect(client.execute('-file-exec-and-symbolic', 'x')).rejects.toThrow(/解析/);
+    await expect(client.execute('-file-exec-and-symbols', 'x')).rejects.toThrow(/解析/);
     await client.close();
     expect(client.exited).toBe(true);
   });
