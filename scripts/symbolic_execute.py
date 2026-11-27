@@ -273,7 +273,7 @@ def analyze(request: dict, worker_sha256: str, started_at: str, started: float) 
     target_address = int(target["address"], 16) if target.get("address") else None
     target_function = None
     if target.get("function"):
-        matches = project.kb.functions.functions(name=target["function"])
+        matches = list(project.kb.functions.get_by_name(target["function"]))
         if len(matches) != 1:
             raise RequestError(f"target function must resolve uniquely: {target['function']}")
         target_function = matches[0]
