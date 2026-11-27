@@ -1,5 +1,6 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { EventEmitter } from 'node:events';
+import { readdir, readFile } from 'node:fs/promises';
 import { asRecord, MiLineDecoder, type MiRecord, type MiValue } from './mi-parser.js';
 
 export interface GdbMiClientOptions {
@@ -60,6 +61,7 @@ export class GdbMiClient extends EventEmitter {
   private closed = false;
   private closePromise?: Promise<void>;
   private cleanupPromise?: Promise<void>;
+  private cleanupComplete = true;
   private readonly inferiorPids = new Map<string, number>();
   private commandTimeoutMs: number;
   private readonly signal: AbortSignal | undefined;
@@ -78,6 +80,7 @@ export class GdbMiClient extends EventEmitter {
   get diagnosticBytes(): number { return this.stderrBytes; }
   get truncated(): boolean { return this.limitReached; }
   get exited(): boolean { return this.closed; }
+  get cleanupSucceeded(): boolean { return this.cleanupComplete; }
 
   async start(): Promise<void> {
     if (this.signal?.aborted) throw new GdbMiError('动态分析已取消', 'GDB_CANCELLED');
@@ -93,6 +96,14 @@ export class GdbMiClient extends EventEmitter {
     child.stderr.setEncoding('utf8');
     child.stdout.on('data', (chunk: string) => this.consume(chunk));
     child.stderr.on('data', (chunk: string) => this.consumeStderr(chunk));
+    child.stdin.on('error', (error) => {
+      const failure = new GdbMiError(`GDB stdin 写入失败: ${error.message}`, 'GDB_STDIN_ERROR');
+      rejectStartup(failure);
+      this.failAll(failure);
+      this.closed = true;
+      this.cleanupPromise = this.killTree();
+      this.emit('exit');
+    });
     child.on('error', (error) => {
       rejectStartup(new GdbMiError(`GDB 启动失败: ${error.message}`, 'GDB_SPAWN_FAILED'));
       this.failAll(new GdbMiError(`GDB 进程错误: ${error.message}`, 'GDB_PROCESS_ERROR'));
@@ -264,22 +275,56 @@ export class GdbMiClient extends EventEmitter {
     });
   }
 
+  private async posixTargetsAlive(groupId: number, inferiorPids: number[]): Promise<boolean> {
+    const inferior = new Set(inferiorPids);
+    if (process.platform === 'linux') {
+      try {
+        const entries = await readdir('/proc');
+        for (const entry of entries) {
+          if (!/^\d+$/.test(entry)) continue;
+          const pid = Number(entry);
+          try {
+            const stat = await readFile(`/proc/${entry}/stat`, 'utf8');
+            const end = stat.lastIndexOf(')');
+            if (end < 0) continue;
+            const fields = stat.slice(end + 2).trim().split(/\s+/);
+            const state = fields[0];
+            const group = Number(fields[2]);
+            if (state !== 'Z' && (group === groupId || inferior.has(pid))) return true;
+          } catch { /* process exited while being inspected */ }
+        }
+        return false;
+      } catch { /* fall back to signal probes when /proc is unavailable */ }
+    }
+    try { process.kill(-groupId, 0); return true; } catch { /* group is gone */ }
+    for (const pid of inferiorPids) { try { process.kill(pid, 0); return true; } catch { /* process is gone */ } }
+    return false;
+  }
+
   private async killTree(): Promise<void> {
     const child = this.child;
     if (!child?.pid) return;
     const inferiorPids = [...this.inferiorPids.values()];
     if (process.platform === 'win32') {
       const pids = [...new Set([child.pid, ...inferiorPids])];
+      this.cleanupComplete = true;
       for (const pid of pids) {
-        await new Promise<void>((resolve) => {
+        const killed = await new Promise<boolean>((resolve) => {
           const killer = spawn('taskkill', ['/pid', String(pid), '/T', '/F'], { stdio: 'ignore' });
-          killer.once('error', () => { try { child.kill('SIGKILL'); } catch { /* already reaped */ } resolve(); });
-          killer.once('close', resolve);
+          killer.once('error', () => { try { child.kill('SIGKILL'); } catch { /* already reaped */ } resolve(false); });
+          killer.once('close', code => resolve(code === 0));
         });
+        this.cleanupComplete = this.cleanupComplete && killed;
       }
       return;
     }
     try { process.kill(-child.pid, 'SIGKILL'); } catch { try { child.kill('SIGKILL'); } catch { /* already reaped */ } }
     for (const pid of inferiorPids) { try { process.kill(pid, 'SIGKILL'); } catch { /* already reaped */ } }
+    const deadline = Date.now() + 2_000;
+    do {
+      if (!await this.posixTargetsAlive(child.pid, inferiorPids)) { this.cleanupComplete = true; return; }
+      await new Promise(resolve => setTimeout(resolve, 20));
+    } while (Date.now() < deadline);
+    this.cleanupComplete = false;
   }
 }

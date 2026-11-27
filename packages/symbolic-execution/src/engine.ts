@@ -23,11 +23,13 @@ function localResult(request: SymbolicAnalysisRequest, status: SymbolicAnalysisR
   };
 }
 
-async function snapshotBinary(binaryPath: string, maxBytes: number): Promise<{ directory: string; snapshotPath: string; sha256: string }> {
+async function snapshotBinary(binaryPath: string, maxBytes: number, signal?: AbortSignal): Promise<{ directory: string; snapshotPath: string; sha256: string }> {
+  if (signal?.aborted) throw new Error('Symbolic analysis cancelled');
   const directory = await mkdtemp(path.join(tmpdir(), 'reverse-symbolic-'));
   await chmod(directory, 0o700).catch(() => undefined);
   const source = await open(binaryPath, 'r');
   try {
+    if (signal?.aborted) throw new Error('Symbolic analysis cancelled');
     const stat = await source.stat();
     if (!stat.isFile()) throw new Error('Symbolic binaryPath must identify a regular file');
     if (stat.size > maxBytes) throw new Error(`Symbolic binary exceeds ${maxBytes} bytes`);
@@ -42,7 +44,7 @@ async function snapshotBinary(binaryPath: string, maxBytes: number): Promise<{ d
         callback(null, chunk);
       },
     });
-    await pipeline(source.createReadStream({ autoClose: false }), meter, createWriteStream(snapshotPath, { flags: 'wx', mode: 0o600 | (stat.mode & 0o111) }));
+    await pipeline(source.createReadStream({ autoClose: false }), meter, createWriteStream(snapshotPath, { flags: 'wx', mode: 0o600 | (stat.mode & 0o111) }), { signal });
     return { directory, snapshotPath, sha256: hash.digest('hex') };
   } catch (error) {
     await rm(directory, { recursive: true, force: true }).catch(() => undefined);
@@ -79,7 +81,17 @@ export class SymbolicExecutionEngine {
       throw error;
     }
     if (signal?.aborted) return localResult(request, 'cancelled');
-    const snapshot = await snapshotBinary(request.binaryPath, this.maxBinaryBytes);
+    let snapshot: Awaited<ReturnType<typeof snapshotBinary>>;
+    try {
+      snapshot = await snapshotBinary(request.binaryPath, this.maxBinaryBytes, signal);
+    } catch (error) {
+      if (signal?.aborted) return localResult(request, 'cancelled');
+      throw error;
+    }
+    if (signal?.aborted) {
+      await rm(snapshot.directory, { recursive: true, force: true });
+      return localResult(request, 'cancelled');
+    }
     const workerRequest = { ...request, binaryPath: snapshot.snapshotPath, timeoutMs: request.timeoutMs ?? 30_000, maxPaths: request.maxPaths ?? 32, maxStates: request.maxStates ?? 10_000 };
     const payload = JSON.stringify(workerRequest);
     if (Buffer.byteLength(payload, 'utf8') > this.maxRequestBytes) {
@@ -173,7 +185,7 @@ export class SymbolicExecutionEngine {
           try {
             const result = validateSymbolicResult(JSON.parse(stdout) as unknown, this.maxOutputBytes);
             if (result.provenance.binaryPath !== snapshot.snapshotPath) throw new Error('Worker returned evidence for a different binary snapshot');
-            if (result.provenance.binarySha256 !== snapshot.sha256) throw new Error('Worker binary digest does not match the private snapshot');
+            if (result.provenance.binarySha256 !== snapshot.sha256) throw new Error(`Worker binary digest does not match the private snapshot (expected=${snapshot.sha256}, actual=${result.provenance.binarySha256}, path=${snapshot.snapshotPath})`);
             if (result.solvedInputs.some(input => input.inputHex.length !== request.input.sizeBytes * 2)) throw new Error('Solved input size does not match the request');
             result.stats.elapsedMs = Math.max(result.stats.elapsedMs, Date.now() - Date.parse(startedAt));
             finish(result);

@@ -25,6 +25,16 @@ function fakeClient(mode = 'normal', options: Pick<GdbMiClientOptions, 'timeoutM
 // Static import is avoided inside the factory to keep the injection seam explicit.
 import { spawn } from 'node:child_process';
 function requireChild(): { spawn: typeof spawn } { return { spawn }; }
+async function pidAlive(pid: number): Promise<boolean> {
+  try { process.kill(pid, 0); } catch { return false; }
+  if (process.platform === 'linux') {
+    try {
+      const stat = await readFile(`/proc/${pid}/stat`, 'utf8');
+      return stat.slice(stat.lastIndexOf(')') + 2).trim().startsWith('Z') === false;
+    } catch { return false; }
+  }
+  return true;
+}
 
 describe('GDB MI parser', () => {
   it('parses tokens, escaped strings, nested tuples and lists', () => {
@@ -39,6 +49,7 @@ describe('GDB MI parser', () => {
     expect(parseMiLine('*running,thread-id="all"')).toMatchObject({ kind: 'notify', status: 'running' });
     expect(parseMiLine('9^error,msg="No symbol table"')).toMatchObject({ kind: 'result', token: 9, status: 'error' });
     expect(parseMiLine('~"hello\\n"')).toEqual({ kind: 'stream', channel: 'console', value: 'hello\n' });
+    expect(parseMiLine('dynamic-v009-counter=43')).toEqual({ kind: 'raw', value: 'dynamic-v009-counter=43' });
   });
   it('handles chunk boundaries and rejects malformed or oversized records', () => {
     const decoder = new MiLineDecoder(256);
@@ -50,7 +61,7 @@ describe('GDB MI parser', () => {
     expect(() => new MiLineDecoder(8).push('123456789')).toThrow(/限额/);
     expect(() => parseMiLine('\u0000bad')).toThrow(MiProtocolError);
     expect(() => new MiLineDecoder().push('"unterminated\n')).toThrow(/record="\\"unterminated"/);
-    expect(() => new MiLineDecoder().push(`${'x'.repeat(600)}bad\n`)).toThrow(/\.\.\.\[truncated\]/);
+    expect(() => new MiLineDecoder().push(`1^done,value="${'x'.repeat(600)}\n`)).toThrow(/\.\.\.\[truncated\]/);
   });
 });
 
@@ -85,6 +96,17 @@ describe('GDB MI client', () => {
       ])).rejects.toThrow(/启动失败.*ENOENT deterministic/);
     } finally { if (timer) clearTimeout(timer); }
     await client.close();
+  });
+  it('settles pending commands on asynchronous stdin EPIPE', async () => {
+    const child = Object.assign(new EventEmitter(), { stdout: new PassThrough(), stderr: new PassThrough(), stdin: new PassThrough(), exitCode: null, signalCode: null }) as unknown as ChildProcessWithoutNullStreams;
+    const client = new GdbMiClient({ timeoutMs: 5_000, spawnProcess: () => { queueMicrotask(() => child.stdout.write('(gdb) ')); return child; } });
+    await client.start();
+    const pending = client.execute('-file-exec-and-symbols', 'x');
+    const rejected = expect(pending).rejects.toThrow(/stdin.*EPIPE/);
+    child.stdin.emit('error', new Error('EPIPE deterministic'));
+    await rejected;
+    await client.close();
+    expect(client.exited).toBe(true);
   });
   it('rejects ^error instead of treating it as success', async () => {
     const client = fakeClient();
@@ -136,10 +158,7 @@ describe('GDB MI client', () => {
     await rejected;
     expect(Date.now() - started).toBeLessThan(5_000);
     const pid = Number(await readFile(marker, 'utf8'));
-    await new Promise(resolve => setTimeout(resolve, 100));
-    let alive = true;
-    try { process.kill(pid, 0); } catch { alive = false; }
-    expect(alive).toBe(false);
+    expect(await pidAlive(pid)).toBe(false);
   }, 10_000);
 });
 
@@ -199,10 +218,7 @@ describe('DynamicAnalysisEngine', () => {
     await expect(client.execute('-file-exec-and-symbols', 'x')).rejects.toThrow(/退出/);
     await client.close();
     const pid = Number(await readFile(marker, 'utf8'));
-    await new Promise(resolve => setTimeout(resolve, 100));
-    let alive = true;
-    try { process.kill(pid, 0); } catch { alive = false; }
-    expect(alive).toBe(false);
+    expect(await pidAlive(pid)).toBe(false);
   }, 10_000);
   it('rejects oversized binaries before starting GDB', async () => {
     const root = await temporaryRoot(); const child = path.join(root, 'child'); await mkdir(child);

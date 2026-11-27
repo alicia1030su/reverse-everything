@@ -106,6 +106,10 @@ export function parseMiLine(line: string): MiRecord {
     return { kind: 'stream', channel: prefix === '~' ? 'console' : prefix === '@' ? 'target' : 'log', value };
   }
   const match = /^(\d*)([\^*=])([^,\s]+)(.*)$/.exec(line);
+  // GDB may forward inferior stdout/stderr as plain physical lines. Preserve
+  // bounded printable output as raw evidence; malformed MI-looking records
+  // still fail closed below.
+  if (!match && !/^[~@&"\d*^=]/.test(line)) return { kind: 'raw', value: line };
   if (!match) throw new MiProtocolError('无法识别的 MI 记录');
   const [, tokenText, prefix, status, rest] = match;
   if (prefix === undefined || status === undefined || rest === undefined) throw new MiProtocolError('MI 记录缺少前缀或状态');

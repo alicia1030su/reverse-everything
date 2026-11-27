@@ -29,6 +29,7 @@ if (!result.modules.some((module) => path.basename(module.name) === 'sample')) f
 if (!result.events.some((event) => event.type === 'register' && Object.keys(event.registers ?? {}).length > 0)) failures.push('missing registers');
 if (!result.events.some((event) => event.type === 'breakpoint')) failures.push('missing breakpoint event');
 if (!result.events.some((event) => event.type === 'stack' && Array.isArray(event.data?.frames) && event.data.frames.length > 0)) failures.push('missing call stack');
+if (!result.events.some((event) => event.type === 'output' && event.data?.channel === 'inferior-raw' && String(event.data?.text).includes('dynamic-v009-counter=43'))) failures.push('missing raw inferior output evidence');
 const breakpointIndex = result.timeline.findIndex((entry) => entry.type === 'breakpoint');
 const stackIndex = result.timeline.findIndex((entry) => entry.type === 'stack');
 if (breakpointIndex < 0 || stackIndex < 0 || breakpointIndex >= stackIndex) failures.push('invalid breakpoint/stack timeline order');
