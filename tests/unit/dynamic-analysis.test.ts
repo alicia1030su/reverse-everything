@@ -80,6 +80,14 @@ describe('inferior process identity planning', () => {
     expect(planInferiorCleanup(group, [{ pid: 101, pgid: 100, startTicks: 20 }, { pid: 200, pgid: 100, startTicks: 30 }])).toEqual({ killMemberPids: [101], unresolved: true });
   });
 
+  it('reaps recorded members even after they move to another process group', () => {
+    expect(planInferiorCleanup(group, [{ pid: 100, pgid: 100, startTicks: 10 }, { pid: 101, pgid: 200, startTicks: 20 }])).toEqual({ killMemberPids: [100, 101], unresolved: false });
+  });
+
+  it('does not report success while a recorded member is still alive under a new identity', () => {
+    expect(planInferiorCleanup(group, [{ pid: 100, pgid: 100, startTicks: 10 }, { pid: 101, pgid: 200, startTicks: 99 }])).toEqual({ killMemberPids: [100], unresolved: true });
+  });
+
   it('treats a fully exited group as resolved', () => {
     expect(planInferiorCleanup(group, [])).toEqual({ killMemberPids: [], unresolved: false });
   });
@@ -90,6 +98,76 @@ describe('inferior process identity planning', () => {
 });
 
 describe('GDB MI client', () => {
+  async function withLinuxPlatform(run: () => Promise<void>): Promise<void> {
+    const descriptor = Object.getOwnPropertyDescriptor(process, 'platform')!;
+    Object.defineProperty(process, 'platform', { value: 'linux' });
+    try { await run(); } finally { Object.defineProperty(process, 'platform', descriptor); }
+  }
+
+  it('persists unknown process observations as failed cleanup', async () => {
+    await withLinuxPlatform(async () => {
+      const client = new GdbMiClient();
+      const internals = client as unknown as {
+        child: { pid: number };
+        captureInferiorGroup(pid: number): Promise<boolean>;
+        readProcStat(pid: number): Promise<unknown>;
+      };
+      internals.child = { pid: 50 };
+      internals.readProcStat = async () => undefined;
+      await expect(internals.captureInferiorGroup(100)).resolves.toBe(false);
+      expect(client.cleanupSucceeded).toBe(false);
+    });
+  });
+
+  it('retains inferior identity and fails cleanup when it changes groups during capture', async () => {
+    await withLinuxPlatform(async () => {
+      const client = new GdbMiClient();
+      const internals = client as unknown as {
+        child: { pid: number };
+        inferiorGroups: Map<number, { members: Map<number, number>; membersComplete: boolean }>;
+        captureInferiorGroup(pid: number): Promise<boolean>;
+        readProcStat(pid: number): Promise<unknown>;
+      };
+      internals.child = { pid: 50 };
+      const observations = [
+        { ppid: 50, pgid: 100, startTicks: 20 },
+        { ppid: 50, pgid: 100, startTicks: 20 },
+        { ppid: 50, pgid: 200, startTicks: 20 },
+      ];
+      internals.readProcStat = async () => observations.shift();
+      await expect(internals.captureInferiorGroup(100)).resolves.toBe(false);
+      expect(client.cleanupSucceeded).toBe(false);
+      expect(internals.inferiorGroups.get(100)?.members.get(100)).toBe(20);
+    });
+  });
+
+  it('shares cleanup work and never upgrades an observation failure to success', async () => {
+    await withLinuxPlatform(async () => {
+      const client = new GdbMiClient();
+      const internals = client as unknown as {
+        child: { pid: number; exitCode: number; signalCode: null };
+        cleanupComplete: boolean;
+        ensureCleanup(): Promise<void>;
+        readProcAllProcesses(): Promise<unknown[] | undefined>;
+      };
+      internals.child = { pid: 50, exitCode: 0, signalCode: null };
+      let reads = 0;
+      internals.readProcAllProcesses = async () => ++reads === 1 ? undefined : [];
+      await Promise.all([internals.ensureCleanup(), internals.ensureCleanup()]);
+      expect(reads).toBe(1);
+      expect(client.cleanupSucceeded).toBe(false);
+      internals.cleanupComplete = false;
+      internals.readProcAllProcesses = async () => [];
+      const second = new GdbMiClient();
+      const secondInternals = second as unknown as typeof internals;
+      secondInternals.child = { pid: 50, exitCode: 0, signalCode: null };
+      secondInternals.cleanupComplete = false;
+      secondInternals.readProcAllProcesses = async () => [];
+      await secondInternals.ensureCleanup();
+      expect(second.cleanupSucceeded).toBe(false);
+    });
+  });
+
   it('correlates command tokens and asynchronous stop events', async () => {
     const client = fakeClient();
     await client.start();

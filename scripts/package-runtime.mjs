@@ -14,7 +14,7 @@ const out=path.join(root,'dist/desktop-runtime/node_modules');
 await resetGeneratedDirectory(path.dirname(out),path.join(root,'dist'),'desktop-runtime');
 await mkdir(out,{recursive:true});
 await mkdir(path.join(out,'scripts'),{recursive:true});
-await copyExclusive(path.join(root,'scripts/ghidra-analyze-headless.mjs'),path.join(out,'scripts/ghidra-analyze-headless.mjs'));await copyExclusive(path.join(root,'scripts/symbolic_execute.py'),path.join(out,'scripts/symbolic_execute.py'));
+await copyExclusive(path.join(root,'scripts/ghidra-analyze-headless.mjs'),path.join(out,'scripts/ghidra-analyze-headless.mjs'));await copyExclusive(path.join(root,'scripts/symbolic_execute.py'),path.join(out,'scripts/symbolic_execute.py'));await copyExclusive(path.join(root,'scripts/pidfd_cleanup.py'),path.join(out,'scripts/pidfd_cleanup.py'));
 await mkdir(path.join(path.dirname(out),'scripts'),{recursive:true});
 await copyExclusive(path.join(root,'scripts/ghidra-analyze-headless.mjs'),path.join(path.dirname(out),'scripts/ghidra-analyze-headless.mjs'));await copyExclusive(path.join(root,'scripts/symbolic_execute.py'),path.join(path.dirname(out),'scripts/symbolic_execute.py'));await copyExclusive(path.join(root,'scripts/pidfd_cleanup.py'),path.join(path.dirname(out),'scripts/pidfd_cleanup.py'));
 const rootPackage=JSON.parse(await readFile(path.join(root,'package.json'),'utf8'));

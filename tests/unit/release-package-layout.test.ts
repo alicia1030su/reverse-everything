@@ -50,6 +50,7 @@ describe('Ghidra release package layout', () => {
     expect(source).toContain("'packages/dynamic-analysis'");
     expect(source).toContain("'packages/symbolic-execution'");
     expect(source).toContain("scripts/symbolic_execute.py");
+    expect(source).toContain("scripts/pidfd_cleanup.py");
   });
 
   it('places the launcher at the path resolved by the desktop runtime adapter', async () => {
@@ -58,7 +59,11 @@ describe('Ghidra release package layout', () => {
     expect(adapterLauncher(desktopAdapter).href).toBe(pathToFileURL(path.resolve('dist/desktop-runtime/node_modules', launcher)).href);
     expect(source).toContain("path.join(out,'scripts')");
     expect(source).toContain("path.join(out,'scripts/ghidra-analyze-headless.mjs')");
+    expect(source).toContain("path.join(out,'scripts/pidfd_cleanup.py')");
     expect(source).toContain("path.join(path.dirname(out),'scripts')");
+    const dynamicAdapter = path.resolve('dist/desktop-runtime/node_modules/@reverse/dynamic-analysis/dist/mi-client.js');
+    expect(new URL('../../../scripts/pidfd_cleanup.py', pathToFileURL(dynamicAdapter)).href)
+      .toBe(pathToFileURL(path.resolve('dist/desktop-runtime/node_modules/scripts/pidfd_cleanup.py')).href);
   });
 
   it('copies both runtime launcher layouts into desktop extraResources', async () => {

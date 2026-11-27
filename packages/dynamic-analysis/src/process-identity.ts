@@ -24,9 +24,10 @@ export interface InferiorCleanupPlan {
 
 /**
  * Plans cleanup without trusting a recycled PGID. Only recorded inferior-side
- * members with matching start times are eligible for individual pidfd kills.
- * Unknown members make the cleanup unresolved; the debugger itself is never a
- * target merely because it shares the inferior process group.
+ * members with matching start times are eligible for individual pidfd kills,
+ * even if they changed groups. Unknown members in the original group make the
+ * cleanup unresolved; the debugger itself is never a target merely because it
+ * shares the inferior process group. currentMembers is a complete /proc snapshot.
  */
 export function planInferiorCleanup(
   group: InferiorGroupIdentity,
@@ -34,15 +35,20 @@ export function planInferiorCleanup(
 ): InferiorCleanupPlan {
   if (!group.membersComplete) return { killMemberPids: [], unresolved: true };
 
+  const observed = new Map(currentMembers.map(member => [member.pid, member]));
   const killMemberPids: number[] = [];
   let unresolved = false;
-  let candidateCount = 0;
-  for (const member of currentMembers) {
-    if (member.pid === group.gdbPid || member.pgid !== group.pgid) continue;
-    candidateCount += 1;
-    if (group.members.get(member.pid) === member.startTicks) killMemberPids.push(member.pid);
+  // Membership is tied to PID + start time, not to the original PGID: a live
+  // inferior may call setsid()/setpgid() after its identity was captured.
+  for (const [pid, startTicks] of group.members) {
+    if (pid === group.gdbPid) continue;
+    const member = observed.get(pid);
+    if (!member) continue;
+    if (member.startTicks === startTicks) killMemberPids.push(pid);
     else unresolved = true;
   }
-  if (candidateCount > 0 && killMemberPids.length === 0) unresolved = true;
+  for (const member of currentMembers) {
+    if (member.pid !== group.gdbPid && member.pgid === group.pgid && !group.members.has(member.pid)) unresolved = true;
+  }
   return { killMemberPids, unresolved };
 }

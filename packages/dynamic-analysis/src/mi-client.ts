@@ -72,6 +72,7 @@ export class GdbMiClient extends EventEmitter {
   private closePromise?: Promise<void>;
   private cleanupPromise?: Promise<void>;
   private cleanupComplete = true;
+  private captureObservationFailed = false;
   private readonly inferiorCandidates = new Map<string, number>();
   private readonly inferiorGroups = new Map<number, InferiorGroupIdentity>();
   private gdbGroup?: InferiorGroupIdentity;
@@ -116,14 +117,14 @@ export class GdbMiClient extends EventEmitter {
       rejectStartup(failure);
       this.failAll(failure);
       this.closed = true;
-      this.cleanupPromise = this.killTree();
+      this.ensureCleanup();
       this.emit('exit');
     });
     child.on('error', (error) => {
       rejectStartup(new GdbMiError(`GDB 启动失败: ${error.message}`, 'GDB_SPAWN_FAILED'));
       this.failAll(new GdbMiError(`GDB 进程错误: ${error.message}`, 'GDB_PROCESS_ERROR'));
       this.closed = true;
-      this.cleanupPromise = this.killTree();
+      this.ensureCleanup();
       this.emit('exit');
     });
     child.on('close', () => {
@@ -131,7 +132,7 @@ export class GdbMiClient extends EventEmitter {
       this.failAll(new GdbMiError('GDB 在命令完成前退出', 'GDB_EXITED'));
       this.closed = true;
       // The debugger may have crashed while its inferior is still running.
-      this.cleanupPromise = this.killTree();
+      this.ensureCleanup();
       this.emit('exit');
     });
     const prompt = new Promise<void>((resolve, reject) => {
@@ -143,7 +144,7 @@ export class GdbMiClient extends EventEmitter {
       startupFailure.finally(cleanup).catch(() => undefined);
     });
     await Promise.race([prompt, startupFailure]);
-    await this.captureGdbGroup();
+    if (!await this.captureGdbGroup()) throw new GdbMiError('无法验证 GDB 进程身份', 'GDB_PROCESS_OBSERVATION_FAILED');
   }
 
   /** Returns null only for ENOENT; undefined means the observation failed. */
@@ -164,12 +165,13 @@ export class GdbMiClient extends EventEmitter {
     }
   }
 
-  private async isDescendantOfGdb(pid: number): Promise<boolean> {
+  private async isDescendantOfGdb(pid: number): Promise<boolean | undefined> {
     const gdbPid = this.child?.pid;
     if (!gdbPid || pid === gdbPid) return false;
     let current = pid;
     for (let depth = 0; depth < 32; depth += 1) {
       const stat = await this.readProcStat(current);
+      if (stat === undefined) return undefined;
       if (!stat) return false;
       if (stat.ppid === gdbPid) return true;
       if (stat.ppid <= 1) return false;
@@ -178,7 +180,7 @@ export class GdbMiClient extends EventEmitter {
     return false;
   }
 
-  private async readProcGroupMembers(pgid: number): Promise<ProcessIdentity[] | undefined> {
+  private async readProcAllProcesses(): Promise<ProcessIdentity[] | undefined> {
     const members: ProcessIdentity[] = [];
     let entries: string[];
     try { entries = await readdir('/proc'); } catch { return undefined; }
@@ -187,40 +189,67 @@ export class GdbMiClient extends EventEmitter {
       const pid = Number(entry);
       const stat = await this.readProcStat(pid);
       if (stat === undefined) return undefined;
-      if (stat?.pgid === pgid) members.push({ pid, pgid: stat.pgid, startTicks: stat.startTicks });
+      if (stat) members.push({ pid, pgid: stat.pgid, startTicks: stat.startTicks });
     }
     return members;
   }
 
-  private async captureGdbGroup(): Promise<void> {
-    if (process.platform !== 'linux' || !this.child?.pid) return;
-    const leader = await this.readProcStat(this.child.pid);
-    if (!leader) return;
-    const members = new Map<number, number>();
-    const currentMembers = await this.readProcGroupMembers(this.child.pid);
-    if (currentMembers) {
-      for (const member of currentMembers) {
-        if (member.pid !== this.child.pid && await this.isDescendantOfGdb(member.pid)) members.set(member.pid, member.startTicks);
-      }
-    }
-    this.gdbGroup = { leaderPid: this.child.pid, leaderStartTicks: leader.startTicks, pgid: this.child.pid, gdbPid: this.child.pid, members, membersComplete: currentMembers !== undefined };
+  private markCaptureObservationFailed(): false {
+    this.captureObservationFailed = true;
+    this.cleanupComplete = false;
+    return false;
   }
 
-  private async captureInferiorGroup(pid: number): Promise<void> {
-    if (process.platform !== 'linux' || !this.child?.pid) return;
-    const initial = await this.readProcStat(pid);
-    if (!initial || !await this.isDescendantOfGdb(pid)) return;
-    const confirmed = await this.readProcStat(pid);
-    if (!confirmed || confirmed.startTicks !== initial.startTicks || confirmed.pgid !== initial.pgid) return;
+  private async captureGdbGroup(): Promise<boolean> {
+    if (process.platform !== 'linux' || !this.child?.pid) return true;
+    const leader = await this.readProcStat(this.child.pid);
+    if (leader === undefined) return this.markCaptureObservationFailed();
+    if (!leader) return false;
     const members = new Map<number, number>();
-    const currentMembers = await this.readProcGroupMembers(confirmed.pgid);
-    if (currentMembers) {
-      for (const member of currentMembers) {
-        if (member.pid !== this.child.pid && await this.isDescendantOfGdb(member.pid)) members.set(member.pid, member.startTicks);
-      }
+    const observed = await this.readProcAllProcesses();
+    if (!observed) return this.markCaptureObservationFailed();
+    this.gdbGroup = { leaderPid: this.child.pid, leaderStartTicks: leader.startTicks, pgid: this.child.pid, gdbPid: this.child.pid, members, membersComplete: false };
+    for (const member of observed) {
+      if (member.pgid !== this.child.pid || member.pid === this.child.pid) continue;
+      const descendant = await this.isDescendantOfGdb(member.pid);
+      if (descendant === undefined) return this.markCaptureObservationFailed();
+      if (descendant) members.set(member.pid, member.startTicks);
     }
-    if (!members.has(pid)) members.set(pid, confirmed.startTicks);
-    this.inferiorGroups.set(pid, { leaderPid: pid, leaderStartTicks: confirmed.startTicks, pgid: confirmed.pgid, gdbPid: this.child.pid, members, membersComplete: currentMembers !== undefined });
+    this.gdbGroup.membersComplete = true;
+    return true;
+  }
+
+  private async captureInferiorGroup(pid: number): Promise<boolean> {
+    if (process.platform !== 'linux' || !this.child?.pid) return false;
+    const initial = await this.readProcStat(pid);
+    if (initial === undefined) return this.markCaptureObservationFailed();
+    if (!initial) return false;
+    const descendant = await this.isDescendantOfGdb(pid);
+    if (descendant === undefined) return this.markCaptureObservationFailed();
+    if (!descendant) return false;
+    const confirmed = await this.readProcStat(pid);
+    if (confirmed === undefined) return this.markCaptureObservationFailed();
+    if (!confirmed) return false;
+    if (confirmed.startTicks !== initial.startTicks || confirmed.pgid !== initial.pgid) {
+      this.inferiorGroups.set(pid, { leaderPid: pid, leaderStartTicks: confirmed.startTicks, pgid: confirmed.pgid, gdbPid: this.child.pid, members: new Map([[pid, confirmed.startTicks]]), membersComplete: false });
+      return this.markCaptureObservationFailed();
+    }
+    const members = new Map<number, number>([[pid, confirmed.startTicks]]);
+    const observed = await this.readProcAllProcesses();
+    if (!observed) {
+      this.inferiorGroups.set(pid, { leaderPid: pid, leaderStartTicks: confirmed.startTicks, pgid: confirmed.pgid, gdbPid: this.child.pid, members, membersComplete: false });
+      return this.markCaptureObservationFailed();
+    }
+    const group: InferiorGroupIdentity = { leaderPid: pid, leaderStartTicks: confirmed.startTicks, pgid: confirmed.pgid, gdbPid: this.child.pid, members, membersComplete: false };
+    this.inferiorGroups.set(pid, group);
+    for (const member of observed) {
+      if (member.pgid !== confirmed.pgid || member.pid === this.child.pid || member.pid === pid) continue;
+      const memberDescendant = await this.isDescendantOfGdb(member.pid);
+      if (memberDescendant === undefined) return this.markCaptureObservationFailed();
+      if (memberDescendant) members.set(member.pid, member.startTicks);
+    }
+    group.membersComplete = true;
+    return true;
   }
 
   private async killVerifiedProcesses(targets: ProcessIdentity[]): Promise<{ killedPids: number[]; unresolved: boolean }> {
@@ -302,7 +331,7 @@ export class GdbMiClient extends EventEmitter {
       if (id && typeof value?.pid === 'string' && /^\d+$/.test(value.pid)) {
         const pid = Number(value.pid);
         this.inferiorCandidates.set(id, pid);
-        const validation = this.captureInferiorGroup(pid).catch(() => undefined);
+        const validation = this.captureInferiorGroup(pid).then(() => undefined).catch(() => { this.markCaptureObservationFailed(); });
         this.inferiorValidations.add(validation);
         void validation.finally(() => this.inferiorValidations.delete(validation));
       }
@@ -389,17 +418,17 @@ export class GdbMiClient extends EventEmitter {
   private async closeInternal(force: boolean): Promise<void> {
     const child = this.child;
     if (!child) return;
-    if (child.exitCode !== null || child.signalCode !== null) { await this.killTree(); return; }
+    if (child.exitCode !== null || child.signalCode !== null) { await this.ensureCleanup(); return; }
     if (force) {
       const closed = child.exitCode === null && child.signalCode === null
         ? new Promise<void>((resolve) => child.once('close', resolve))
         : Promise.resolve();
-      await this.killTree();
+      await this.ensureCleanup();
       await closed;
       return;
     }
     let killing: Promise<void> | undefined;
-    const ensureKill = (): Promise<void> => killing ??= this.killTree();
+    const ensureKill = (): Promise<void> => killing ??= this.ensureCleanup();
     await new Promise<void>((resolve) => {
       const timer = setTimeout(() => { void ensureKill().finally(resolve); }, 750);
       child.once('close', () => { clearTimeout(timer); if (killing) void killing.finally(resolve); else resolve(); });
@@ -438,6 +467,10 @@ export class GdbMiClient extends EventEmitter {
     return false;
   }
 
+  private ensureCleanup(): Promise<void> {
+    return this.cleanupPromise ??= this.killTree();
+  }
+
   private async killTree(): Promise<void> {
     const child = this.child;
     if (!child?.pid) return;
@@ -445,7 +478,6 @@ export class GdbMiClient extends EventEmitter {
     if (process.platform === 'win32') {
       // Individual inferior PID/PGID validation is currently Linux-only.
       const pids = [child.pid];
-      this.cleanupComplete = true;
       for (const pid of pids) {
         const killed = await new Promise<boolean>((resolve) => {
           const killer = spawn('taskkill', ['/pid', String(pid), '/T', '/F'], { stdio: 'ignore' });
@@ -457,22 +489,30 @@ export class GdbMiClient extends EventEmitter {
       return;
     }
     const groups = [...(this.gdbGroup ? [this.gdbGroup] : []), ...this.inferiorGroups.values()];
+    const observed = await this.readProcAllProcesses();
     const killedMemberPids: number[] = [];
-    let unresolved = false;
+    let unresolved = this.captureObservationFailed;
+    if (!observed) {
+      this.cleanupComplete = false;
+      if (child.exitCode === null && child.signalCode === null) { try { child.kill('SIGKILL'); } catch { /* already reaped */ } }
+      return;
+    }
+    const observedByPid = new Map(observed.map(member => [member.pid, member]));
     for (const group of groups) {
-      const currentMembers = await this.readProcGroupMembers(group.pgid);
-      if (currentMembers === undefined) { unresolved = true; continue; }
-      const currentLeader = await this.readProcStat(group.leaderPid);
-      if (currentLeader === undefined) { unresolved = true; continue; }
+      const currentLeader = observedByPid.get(group.leaderPid);
       if (currentLeader?.startTicks === group.leaderStartTicks && currentLeader.pgid === group.pgid) {
-        for (const member of currentMembers) {
-          if (member.pid === group.gdbPid || group.members.has(member.pid)) continue;
-          if (await this.isDescendantOfGdb(member.pid)) group.members.set(member.pid, member.startTicks);
+        for (const member of observed) {
+          if (member.pgid !== group.pgid || member.pid === group.gdbPid || group.members.has(member.pid)) continue;
+          const descendant = await this.isDescendantOfGdb(member.pid);
+          if (descendant === undefined) { unresolved = true; continue; }
+          if (descendant) group.members.set(member.pid, member.startTicks);
         }
-        group.membersComplete = true;
       }
-      const plan = planInferiorCleanup(group, currentMembers);
-      const targets = plan.killMemberPids.map(pid => ({ pid, pgid: group.pgid, startTicks: group.members.get(pid)! }));
+      const plan = planInferiorCleanup(group, observed);
+      const targets = plan.killMemberPids.map(pid => {
+        const member = observedByPid.get(pid)!;
+        return { pid, pgid: member.pgid, startTicks: member.startTicks };
+      });
       const killed = await this.killVerifiedProcesses(targets);
       killedMemberPids.push(...killed.killedPids);
       if (killed.unresolved || plan.unresolved) unresolved = true;
@@ -484,7 +524,10 @@ export class GdbMiClient extends EventEmitter {
     do {
       const alive = await this.posixTargetsAlive(killedMemberPids);
       if (alive === undefined) { this.cleanupComplete = false; return; }
-      if (!alive) { this.cleanupComplete = !unresolved; return; }
+      if (!alive) {
+        if (unresolved || this.captureObservationFailed) this.cleanupComplete = false;
+        return;
+      }
       await new Promise(resolve => setTimeout(resolve, 20));
     } while (Date.now() < deadline);
     this.cleanupComplete = false;
