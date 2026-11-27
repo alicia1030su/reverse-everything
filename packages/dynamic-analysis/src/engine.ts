@@ -1,7 +1,10 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { mkdir, mkdtemp, realpath, rm } from 'node:fs/promises';
+import { createWriteStream } from 'node:fs';
+import { mkdir, mkdtemp, open, realpath, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { Transform } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
 import type { ProgramIr } from '@reverse/program-ir';
 import { GdbMiClient, type GdbMiClientOptions } from './mi-client.js';
 import { asList, asRecord, asString, type MiRecord, type MiValue } from './mi-parser.js';
@@ -56,16 +59,41 @@ function parseRegisters(value: MiValue | undefined): Record<string, string> {
   return result;
 }
 
+async function snapshotBinary(sourcePath: string, destination: string, maxBytes: number): Promise<string> {
+  const source = await open(sourcePath, 'r');
+  try {
+    const stat = await source.stat();
+    if (!stat.isFile()) throw new Error('binaryPath 必须指向普通文件');
+    if (stat.size > maxBytes) throw new Error(`二进制超过 ${maxBytes} 字节限额`);
+    const hash = createHash('sha256');
+    let bytes = 0;
+    const meter = new Transform({
+      transform(chunk: Buffer, _encoding, callback) {
+        bytes += chunk.length;
+        if (bytes > maxBytes) { callback(new Error(`二进制超过 ${maxBytes} 字节限额`)); return; }
+        hash.update(chunk);
+        callback(null, chunk);
+      },
+    });
+    await pipeline(source.createReadStream({ autoClose: false }), meter, createWriteStream(destination, { flags: 'wx', mode: 0o600 }));
+    return hash.digest('hex');
+  } finally {
+    await source.close();
+  }
+}
+
 export class DynamicAnalysisEngine {
   private readonly isolationRoot: string;
   private readonly gdbPath: string;
   private readonly networkIsolation: 'external-required' | 'none';
+  private readonly maxBinaryBytes: number;
   private readonly clientFactory: (options: GdbMiClientOptions) => GdbMiClient;
 
   constructor(options: DynamicAnalysisEngineOptions = {}) {
     this.isolationRoot = path.resolve(options.isolationRoot ?? path.join(tmpdir(), 'reverse-dynamic-analysis'));
     this.gdbPath = options.gdbPath ?? 'gdb';
     this.networkIsolation = options.networkIsolation ?? 'external-required';
+    this.maxBinaryBytes = options.maxBinaryBytes ?? 256 * 1024 * 1024;
     this.clientFactory = options.clientFactory ?? ((clientOptions) => new GdbMiClient(clientOptions));
   }
 
@@ -104,11 +132,13 @@ export class DynamicAnalysisEngine {
       const requestedCwd = await realpath(request.cwd);
       if (!inside(isolationRoot, requestedCwd) || requestedCwd === isolationRoot) throw new Error('cwd 必须位于隔离根目录内且不能等于隔离根目录');
       workDir = await mkdtemp(path.join(isolationRoot, `run-${randomUUID()}-`));
-      const binaryPath = await realpath(request.binaryPath);
-      binaryHash = createHash('sha256').update(await (await import('node:fs/promises')).readFile(binaryPath)).digest('hex');
-      provenance = { engine: '@reverse/dynamic-analysis', engineVersion: DYNAMIC_ENGINE_VERSION, executable: this.gdbPath, binarySha256: binaryHash, platform: process.platform, cwd: workDir, networkIsolation: this.networkIsolation, startedAt: started.toISOString(), stoppedAt: '', durationMs: 0, environmentVariables: Object.keys(request.env ?? {}).sort() };
+      const originalBinaryPath = await realpath(request.binaryPath);
+      const binaryPath = path.join(workDir, 'sample');
+      binaryHash = await snapshotBinary(originalBinaryPath, binaryPath, this.maxBinaryBytes);
+      provenance = { engine: '@reverse/dynamic-analysis', engineVersion: DYNAMIC_ENGINE_VERSION, executable: this.gdbPath, binaryPath: originalBinaryPath, binarySnapshotPath: binaryPath, binarySha256: binaryHash, platform: process.platform, cwd: workDir, networkIsolation: this.networkIsolation, startedAt: started.toISOString(), stoppedAt: '', durationMs: 0, environmentVariables: Object.keys(request.env ?? {}).sort() };
       if (this.networkIsolation !== 'none') limitations.push('网络隔离由外层 network namespace 保障；引擎环境白名单本身不能阻止已授权样本访问网络。');
       else limitations.push('网络隔离未启用；不得在此模式执行不受信任样本。');
+      limitations.push('隔离根目录仅约束工作目录与私有二进制快照，不限制样本的文件系统、进程或系统调用；必须在可信授权样本或外层操作系统沙箱中运行。');
       if (process.platform !== 'linux') limitations.push('进程树强制回收在 Windows 使用 taskkill，在 POSIX 使用进程组；非 Linux 平台没有内核级禁网。');
       const env: NodeJS.ProcessEnv = {};
       for (const key of ENV_WHITELIST) if (request.env?.[key] !== undefined) env[key] = request.env[key]; else if (process.env[key] !== undefined) env[key] = process.env[key];
@@ -133,7 +163,7 @@ export class DynamicAnalysisEngine {
       };
       await client.start();
       await client.execute('-interpreter-exec', 'console', 'set auto-load off');
-      addEvent({ type: 'start', data: { binaryPath, binarySha256: binaryHash } });
+      addEvent({ type: 'start', data: { binaryPath: originalBinaryPath, binarySnapshotPath: binaryPath, binarySha256: binaryHash } });
       await client.execute('-file-exec-and-symbols', binaryPath);
       if ((request.args ?? []).length > 0) await client.execute('-exec-arguments', ...request.args!);
       for (const breakpoint of request.breakpoints ?? []) await client.execute('-break-insert', breakpoint);
@@ -212,7 +242,7 @@ export class DynamicAnalysisEngine {
       if (client?.truncated) truncated = true;
     }
     if (!provenance) {
-      provenance = { engine: '@reverse/dynamic-analysis', engineVersion: DYNAMIC_ENGINE_VERSION, executable: this.gdbPath, binarySha256: binaryHash, platform: process.platform, cwd: request.cwd, networkIsolation: this.networkIsolation, startedAt: started.toISOString(), stoppedAt: new Date().toISOString(), durationMs: Date.now() - started.getTime(), environmentVariables: [] };
+      provenance = { engine: '@reverse/dynamic-analysis', engineVersion: DYNAMIC_ENGINE_VERSION, executable: this.gdbPath, binaryPath: request.binaryPath, binarySha256: binaryHash, platform: process.platform, cwd: request.cwd, networkIsolation: this.networkIsolation, startedAt: started.toISOString(), stoppedAt: new Date().toISOString(), durationMs: Date.now() - started.getTime(), environmentVariables: [] };
     }
     return { status, events, threads: [...threads.values()], modules: [...modules.values()], timeline: events.map((event, index) => ({ index, timestamp: event.timestamp, type: event.type })), limitations, outputBytes, truncated, provenance, ...(options.programIr ? { programIr: options.programIr } : {}), ...(error ? { error } : {}) };
   }

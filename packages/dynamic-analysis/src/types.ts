@@ -51,6 +51,8 @@ export interface DynamicProvenance {
   engine: string;
   engineVersion: string;
   executable: string;
+  binaryPath: string;
+  binarySnapshotPath?: string;
   binarySha256: string;
   platform: NodeJS.Platform;
   cwd: string;
@@ -87,6 +89,8 @@ export interface DynamicAnalysisEngineOptions {
   /** Dedicated analysis root. The actual cwd is a fresh child directory below it. */
   isolationRoot?: string;
   gdbPath?: string;
+  /** Maximum binary size copied into the private analysis snapshot. */
+  maxBinaryBytes?: number;
   networkIsolation?: 'external-required' | 'none';
   clientFactory?: (options: import('./mi-client.js').GdbMiClientOptions) => import('./mi-client.js').GdbMiClient;
 }

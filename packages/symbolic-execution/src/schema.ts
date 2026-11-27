@@ -74,6 +74,8 @@ export function validateSymbolicResult(value: unknown, maxOutputBytes: number): 
     if (!record(input) || !text(input.pathId, 256) || !pathIds.has(input.pathId) || !value.paths.some(path => record(path) && path.id === input.pathId && path.reachedTarget === true) || !hex(input.inputHex) || !base64(input.inputBase64)) throw new Error('Invalid solved symbolic input');
     if (input.inputHex.length % 2 !== 0 || Buffer.from(input.inputHex, 'hex').toString('base64') !== input.inputBase64) throw new Error('Solved input encodings disagree');
     if (!record(input.execution) || !(input.execution.exitCode === null || integer(input.execution.exitCode, 0, 255)) || typeof input.execution.verified !== 'boolean' || typeof input.execution.timedOut !== 'boolean' || !optionalText(input.execution.stdout, 65_536) || !optionalText(input.execution.stderr, 65_536)) throw new Error('Invalid execution evidence');
+    for (const flag of ['stdoutTruncated', 'stderrTruncated', 'outputLimitExceeded']) if (input.execution[flag] !== undefined && typeof input.execution[flag] !== 'boolean') throw new Error('Invalid execution output limit evidence');
+    if (input.execution.verified === true && (input.execution.timedOut === true || input.execution.outputLimitExceeded === true || input.execution.stdoutTruncated === true)) throw new Error('Truncated or timed-out execution cannot be verified');
   }
   if (!record(value.solver) || !text(value.solver.name, 128) || !text(value.solver.version, 128)) throw new Error('Invalid solver provenance');
   if (!record(value.stats) || !integer(value.stats.statesExplored, 0, SYMBOLIC_LIMITS.maxStates) || !integer(value.stats.pathsFound, 0, SYMBOLIC_LIMITS.maxPaths) || !integer(value.stats.elapsedMs, 0, SYMBOLIC_LIMITS.maxTimeoutMs)) throw new Error('Invalid symbolic statistics');
@@ -84,6 +86,7 @@ export function validateSymbolicResult(value: unknown, maxOutputBytes: number): 
     if (!text(value.provenance[field], field === 'binaryPath' ? 4_096 : 512)) throw new Error(`Missing provenance.${field}`);
   }
   if (typeof value.provenance.binarySha256 !== 'string' || typeof value.provenance.workerSha256 !== 'string' || !/^[0-9a-f]{64}$/i.test(value.provenance.binarySha256) || !/^[0-9a-f]{64}$/i.test(value.provenance.workerSha256)) throw new Error('Invalid provenance digest');
+  if (!optionalText(value.provenance.binarySnapshotPath, 4_096)) throw new Error('Invalid binary snapshot provenance');
   if (optionalText(value.error, 16_384) === undefined) throw new Error('Invalid error field');
   if (JSON.stringify(value).length > maxOutputBytes) throw new Error('Symbolic result exceeds output budget');
   if (value.status === 'completed' && value.solvedInputs.some(input => !record(input.execution) || input.execution.verified !== true)) throw new Error('Completed analysis requires verified solved inputs');

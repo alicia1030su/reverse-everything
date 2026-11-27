@@ -2,13 +2,22 @@
 """Deterministic Python worker for TypeScript process-contract tests only."""
 import hashlib
 import json
+import signal
+import subprocess
 import sys
 import time
 from pathlib import Path
 
 request = json.loads(sys.stdin.buffer.read())
-mode = request["binaryPath"]
-if mode == "timeout" or mode == "cancel":
+binary_bytes = Path(request["binaryPath"]).read_bytes()
+mode = binary_bytes.decode("utf-8")
+if mode == "tree":
+    child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
+    Path(request["target"]["function"]).write_text(str(child.pid), encoding="utf-8")
+    time.sleep(60)
+if mode in ("timeout", "cancel", "ignore-term"):
+    if mode == "ignore-term":
+        signal.signal(signal.SIGTERM, signal.SIG_IGN)
     time.sleep(10)
 if mode == "large":
     sys.stdout.write("x" * 3_000_000)
@@ -45,8 +54,9 @@ result = {
     "stats": {"statesExplored": 2, "pathsFound": 1, "elapsedMs": 1},
     "limitations": ["Test-double worker output is not real symbolic execution evidence."],
     "provenance": {
-        "binaryPath": mode,
-        "binarySha256": "1" * 64,
+        "binaryPath": request["binaryPath"],
+        "binarySnapshotPath": request["binaryPath"],
+        "binarySha256": hashlib.sha256(binary_bytes).hexdigest(),
         "workerSha256": worker_sha,
         "pythonVersion": "test-double",
         "angrVersion": "test-double",
