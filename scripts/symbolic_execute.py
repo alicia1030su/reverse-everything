@@ -165,6 +165,10 @@ def history_evidence(addresses: list[int]) -> tuple[list[str], dict]:
     }
 
 
+def state_budget_allows(active_count: int, explored: int, maximum: int) -> bool:
+    return active_count <= maximum - explored
+
+
 def posix_group_alive(group_id: int) -> bool:
     if sys.platform.startswith("linux"):
         try:
@@ -250,10 +254,17 @@ def execute_binary(binary: str, data: bytes, expected: str | None, timeout: floa
         for reader in readers:
             reader.start()
         timed_out = False
+        terminated_by_signal = False
         try:
             proc.wait(timeout=max(0.01, timeout))
         except subprocess.TimeoutExpired:
             timed_out = True
+            kill_process_tree(proc)
+        except SystemExit:
+            # The worker SIGTERM handler kills the native process group and
+            # raises SystemExit. Convert that cancellation into bounded
+            # execution evidence instead of leaving the worker without JSON.
+            terminated_by_signal = True
             kill_process_tree(proc)
         if os.name == "posix":
             # The direct child may have exited while descendants still hold inherited pipes.
@@ -273,7 +284,8 @@ def execute_binary(binary: str, data: bytes, expected: str | None, timeout: floa
             "stdoutTruncated": truncated["stdout"],
             "stderrTruncated": truncated["stderr"],
             "outputLimitExceeded": output_exceeded,
-            "verified": not timed_out and not output_exceeded and proc.returncode == 0 and expected is not None and expected.encode("utf-8") in stdout,
+            "terminatedBySignal": terminated_by_signal or (proc.returncode is not None and proc.returncode < 0),
+            "verified": not timed_out and not terminated_by_signal and not output_exceeded and proc.returncode == 0 and expected is not None and expected.encode("utf-8") in stdout,
             "timedOut": timed_out,
         }
     finally:
@@ -363,11 +375,12 @@ def analyze(request: dict, worker_sha256: str, started_at: str, started: float) 
     states_explored = 0
     truncated = False
     evidence_truncated = False
+    native_cancelled = False
     max_paths = request["maxPaths"]
     max_states = request["maxStates"]
 
     def record(found_state, reached: bool, path_id: str) -> None:
-        nonlocal evidence_truncated
+        nonlocal evidence_truncated, native_cancelled
         constraints, constraint_meta = constraint_evidence([str(item) for item in found_state.solver.constraints])
         history, history_meta = history_evidence(list(found_state.history.bbl_addrs))
         if constraint_meta["constraintsTruncated"] or history_meta["historyTruncated"]:
@@ -396,14 +409,16 @@ def analyze(request: dict, worker_sha256: str, started_at: str, started: float) 
                 "inputBase64": __import__("base64").b64encode(model).decode("ascii"),
                 "execution": execution,
             })
+            if execution.get("terminatedBySignal"):
+                native_cancelled = True
 
     while manager.active:
         if time.monotonic() >= deadline:
             raise TimeoutError("symbolic analysis deadline exceeded")
-        if states_explored >= max_states:
+        stepping = len(manager.active)
+        if not state_budget_allows(stepping, states_explored, max_states):
             truncated = True
             break
-        stepping = len(manager.active)
         manager.step()
         newly_found = [state for state in manager.active if reached_target(state)]
         if newly_found:
@@ -425,7 +440,7 @@ def analyze(request: dict, worker_sha256: str, started_at: str, started: float) 
                 break
             reached = reached_target(dead_state)
             record(dead_state, reached, f"path-{'target' if reached else 'deadend'}-{len(paths) + 1}")
-        if truncated:
+        if truncated or native_cancelled:
             break
     limitations = [
         "Only stdin-backed symbolic input is supported; filesystem, network, environment and argv contents are not symbolic.",
@@ -435,19 +450,28 @@ def analyze(request: dict, worker_sha256: str, started_at: str, started: float) 
     ]
     if len(concrete) < size:
         limitations.append("Unspecified input bytes are unconstrained and may produce arbitrary models.")
-    if truncated or len(paths) >= max_paths:
+    active_states = len(manager.active)
+    partial_reasons: list[str] = []
+    if truncated and (states_explored >= max_states or active_states > max_states - states_explored):
+        partial_reasons.append("state-budget")
+    if len(paths) >= max_paths:
+        partial_reasons.append("path-budget")
+    if partial_reasons:
         limitations.append("Path/state budget was reached; exploration is not exhaustive.")
     if evidence_truncated:
+        partial_reasons.append("evidence-truncated")
         limitations.append("Constraint or address-history evidence was truncated; see per-path truncation metadata.")
     if any(not item["execution"]["verified"] for item in solved_inputs):
+        partial_reasons.append("native-verification")
         limitations.append("One or more solved inputs did not reproduce the expected output during native execution.")
     return {
         "schemaVersion": 1,
-        "status": "partial" if truncated or evidence_truncated or len(paths) >= max_paths or any(not item["execution"]["verified"] for item in solved_inputs) else "completed",
+        "status": "partial" if partial_reasons else "completed",
+        "partialReasons": partial_reasons,
         "paths": paths,
         "solvedInputs": solved_inputs,
         "solver": {"name": "angr/claripy/Z3", "version": z3.get_version_string()},
-        "stats": {"statesExplored": states_explored, "pathsFound": len(paths), "elapsedMs": round((time.monotonic() - started) * 1000)},
+        "stats": {"statesExplored": states_explored, "pathsFound": len(paths), "elapsedMs": round((time.monotonic() - started) * 1000), "maxStates": max_states, "maxPaths": max_paths, "activeStates": active_states},
         "limitations": limitations,
         "provenance": {
             "binaryPath": request["binaryPath"],

@@ -39,6 +39,7 @@ export interface SymbolicExecution {
   stdoutTruncated?: boolean;
   stderrTruncated?: boolean;
   outputLimitExceeded?: boolean;
+  terminatedBySignal?: boolean;
 }
 
 export interface SymbolicPath {
@@ -70,13 +71,16 @@ export interface SolvedSymbolicInput {
   execution: SymbolicExecution;
 }
 
+export type SymbolicPartialReason = 'state-budget' | 'path-budget' | 'evidence-truncated' | 'native-verification';
+
 export interface SymbolicAnalysisResult {
   schemaVersion: 1;
   status: 'completed' | 'partial' | 'timeout' | 'cancelled' | 'error' | 'unauthorized';
+  partialReasons?: SymbolicPartialReason[];
   paths: SymbolicPath[];
   solvedInputs: SolvedSymbolicInput[];
   solver: { name: string; version: string };
-  stats: { statesExplored: number; pathsFound: number; elapsedMs: number };
+  stats: { statesExplored: number; pathsFound: number; elapsedMs: number; maxStates?: number; maxPaths?: number; activeStates?: number };
   limitations: string[];
   provenance: {
     binaryPath: string;

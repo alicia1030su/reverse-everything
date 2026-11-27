@@ -35,7 +35,16 @@ const result = await engine.analyze({
 });
 writeFileSync(join(outputDir, 'result.json'), `${JSON.stringify(result, null, 2)}\n`, 'utf8');
 assert.ok(result.status === 'completed' || result.status === 'partial', `symbolic analysis failed: ${result.status} ${result.error ?? ''}`);
-if (result.status === 'partial') assert.ok(result.limitations.some(item => /budget|exhaustive/i.test(item)), 'partial symbolic result must disclose its exploration budget');
+if (result.status === 'partial') {
+  assert.ok(Array.isArray(result.partialReasons) && result.partialReasons.length > 0, 'partial symbolic result requires explicit partialReasons');
+  const limitationByReason = {
+    'state-budget': /path\/state budget|exploration is not exhaustive/i,
+    'path-budget': /path\/state budget|exploration is not exhaustive/i,
+    'evidence-truncated': /constraint or address-history evidence was truncated/i,
+    'native-verification': /one or more solved inputs did not reproduce/i,
+  };
+  for (const reason of result.partialReasons) assert.ok(result.limitations.some(item => limitationByReason[reason]?.test(item)), `partial reason lacks matching limitation: ${reason}`);
+}
 assert.match(result.solver.name, /Z3/);
 assert.ok(result.provenance.binarySha256 === sha256(binaryPath), 'binary provenance digest must match the compiled fixture');
 assert.ok(result.provenance.workerSha256 === sha256(join(root, 'scripts/symbolic_execute.py')), 'worker digest must match source');
@@ -56,6 +65,7 @@ const evidence = {
   status: 'PASSED',
   verified: true,
   explorationStatus: result.status,
+  partialReasons: result.partialReasons,
   timestamp: new Date().toISOString(),
   source: { path: 'tests/fixtures/symbolic/sample.c', sha256: sha256(sourcePath) },
   binary: { path: binaryPath, sha256: result.provenance.binarySha256, targetAddress },
@@ -64,7 +74,7 @@ const evidence = {
   stats: result.stats,
   pathsExplored: result.paths.length,
   pathCount: result.paths.length,
-  results: result.paths.map(path => ({ id: path.id, targetAddress: path.targetAddress, reachedTarget: path.reachedTarget, satisfiable: path.satisfiable, addressHistory: path.addressHistory, constraints: path.constraints })),
+  results: result.paths,
   solvedInputs: result.solvedInputs.map(input => ({ pathId: input.pathId, inputHex: input.inputHex, execution: input.execution })),
   limitations: result.limitations,
   commands: [
