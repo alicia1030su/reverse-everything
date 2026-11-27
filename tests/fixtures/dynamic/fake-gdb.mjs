@@ -43,6 +43,9 @@ readline.createInterface({ input: process.stdin }).on('line', async (line) => {
     if (payload || (mode === 'with-args' && !argumentsReceived)) { process.stdout.write(`${id}^error,msg="expected -exec-arguments before argument-free -exec-run"\n(gdb) `); return; }
     running = true;
     process.stdout.write(`${id}^running\n*running,thread-id="all"\n(gdb) `);
+    if (mode === 'ambiguous-output') {
+      process.stdout.write('~not-mi\n@not-mi\n123\n^done\n*hello\n=unknown\n@"worker stderr\\n"\n(gdb) ');
+    }
     setTimeout(() => {
       process.stdout.write('*stopped,reason="breakpoint-hit",disp="keep",bkptno="1",thread-id="1",stopped-threads="all",core="1"\n' +
         '=thread-group-started,id="i1",pid="4242"\n(gdb) ');

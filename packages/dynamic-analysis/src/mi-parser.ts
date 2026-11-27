@@ -9,6 +9,17 @@ export class MiProtocolError extends Error {
   constructor(message: string) { super(message); this.name = 'MiProtocolError'; }
 }
 
+const RESULT_STATUSES = new Set(['done', 'running', 'connected', 'error', 'exit']);
+const NOTIFY_STATUSES = new Set([
+  'stopped', 'running', 'thread-group-added', 'thread-group-started', 'thread-group-exited',
+  'thread-created', 'thread-exited', 'thread-selected', 'library-loaded', 'library-unloaded',
+  'breakpoint-created', 'breakpoint-modified', 'breakpoint-deleted', 'cmd-param-changed',
+  'memory-changed', 'data-evaluate-expression', 'register-changed', 'traceframe-changed',
+  'ts-created', 'ts-deleted', 'inferior-added', 'inferior-removed',
+]);
+
+function raw(line: string): MiRecord { return { kind: 'raw', value: line }; }
+
 class Cursor {
   position = 0;
   constructor(readonly input: string) {}
@@ -88,54 +99,61 @@ function parseValue(cursor: Cursor): MiValue {
   return atom;
 }
 
-/** Parses one complete physical MI line. Malformed records fail closed. */
+/** Parses one physical line from the shared GDB/inferior output channel.
+ *
+ * MI commands always carry a numeric token, and only known result/notification
+ * statuses are accepted. Everything else is preserved as raw inferior output;
+ * this is an explicit best-effort demux because GDB and the inferior share
+ * stdout. A malformed command response therefore closes by command timeout,
+ * not by crashing the host parser.
+ */
 export function parseMiLine(line: string): MiRecord {
-  if (!line || /[\u0000-\u0008\u000b\u000c\u000e-\u001f]/.test(line)) throw new MiProtocolError('MI 记录包含非法控制字符');
+  if (!line) return raw(line);
   let cursor: Cursor;
   if (line.startsWith('"') || line.startsWith('{') || line.startsWith('[')) {
-    cursor = new Cursor(line);
-    parseValue(cursor);
-    if (!cursor.done) throw new MiProtocolError('MI 裸值后存在多余内容');
-    return { kind: 'raw', value: line };
+    try { cursor = new Cursor(line); parseValue(cursor); if (cursor.done) return raw(line); } catch { /* inferior text */ }
+    return raw(line);
   }
   if (/^[~@&]/.test(line)) {
     const prefix = line[0]!;
-    const cursor = new Cursor(line.slice(1));
-    const value = parseString(cursor);
-    if (!cursor.done) throw new MiProtocolError('MI stream 记录存在多余内容');
-    return { kind: 'stream', channel: prefix === '~' ? 'console' : prefix === '@' ? 'target' : 'log', value };
+    try {
+      const streamCursor = new Cursor(line.slice(1));
+      const value = parseString(streamCursor);
+      if (streamCursor.done) return { kind: 'stream', channel: prefix === '~' ? 'console' : prefix === '@' ? 'target' : 'log', value };
+    } catch { /* inferior text that happens to start with a stream prefix */ }
+    return raw(line);
   }
   const match = /^(\d*)([\^*=])([^,\s]+)(.*)$/.exec(line);
-  // GDB may forward inferior stdout/stderr as plain physical lines. Preserve
-  // bounded printable output as raw evidence; malformed MI-looking records
-  // still fail closed below.
-  if (!match && !/^[~@&"\d*^=]/.test(line)) return { kind: 'raw', value: line };
-  if (!match) throw new MiProtocolError('无法识别的 MI 记录');
+  if (!match) return raw(line);
   const [, tokenText, prefix, status, rest] = match;
-  if (prefix === undefined || status === undefined || rest === undefined) throw new MiProtocolError('MI 记录缺少前缀或状态');
-  if (tokenText && tokenText.length > 12) throw new MiProtocolError('MI token 过长');
+  if (!prefix || !status || rest === undefined) return raw(line);
+  if (prefix === '^' && !tokenText) return raw(line);
+  if (tokenText && tokenText.length > 12) return raw(line);
   const token = tokenText ? Number(tokenText) : undefined;
-  if (tokenText && (!Number.isSafeInteger(token) || String(token) !== tokenText)) throw new MiProtocolError('MI token 无效');
-  const kind = prefix === '^' ? 'result' : 'notify';
-  let payload = rest.trimStart().replace(/^,+/, '');
-  if (payload.startsWith('class=')) { const comma = payload.indexOf(','); payload = comma < 0 ? '' : payload.slice(comma + 1); }
-  if (!payload) return { kind, ...(token === undefined ? {} : { token }), status };
-  cursor = new Cursor(payload);
-  let value: MiValue;
-  if (cursor.peek() === '{' || cursor.peek() === '[' || cursor.peek() === '"') value = parseValue(cursor);
-  else {
-    const tuple: { [key: string]: MiValue } = {};
-    while (!cursor.done) {
-      const key = parseKey(cursor);
-      cursor.expect('=');
-      tuple[key] = parseValue(cursor);
-      if (cursor.peek() === ',') cursor.take();
-      else if (!cursor.done) throw new MiProtocolError('MI 键值对缺少分隔符');
+  if (tokenText && (!Number.isSafeInteger(token) || String(token) !== tokenText)) return raw(line);
+  if (prefix === '^' && !RESULT_STATUSES.has(status)) return raw(line);
+  if (prefix !== '^' && !NOTIFY_STATUSES.has(status)) return raw(line);
+  try {
+    let payload = rest.trimStart().replace(/^,+/, '');
+    if (payload.startsWith('class=')) { const comma = payload.indexOf(','); payload = comma < 0 ? '' : payload.slice(comma + 1); }
+    if (!payload) return prefix === '^' ? { kind: 'result', token: token!, status } : { kind: 'notify', status };
+    cursor = new Cursor(payload);
+    let value: MiValue;
+    if (cursor.peek() === '{' || cursor.peek() === '[' || cursor.peek() === '"') value = parseValue(cursor);
+    else {
+      const tuple: { [key: string]: MiValue } = {};
+      while (!cursor.done) {
+        const key = parseKey(cursor);
+        cursor.expect('=');
+        tuple[key] = parseValue(cursor);
+        if (cursor.peek() === ',') cursor.take();
+        else if (!cursor.done) return raw(line);
+      }
+      value = tuple;
     }
-    value = tuple;
-  }
-  if (!cursor.done) throw new MiProtocolError('MI 记录存在多余内容');
-  return { kind, ...(token === undefined ? {} : { token }), status, value };
+    if (!cursor.done) return raw(line);
+    return prefix === '^' ? { kind: 'result', token: token!, status, value } : { kind: 'notify', status, value };
+  } catch { return raw(line); }
 }
 
 function parsePhysicalLine(line: string): MiRecord {

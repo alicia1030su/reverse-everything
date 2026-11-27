@@ -148,6 +148,7 @@ export class DynamicAnalysisEngine {
       if (this.networkIsolation !== 'none') limitations.push('网络隔离由外层 network namespace 保障；引擎环境白名单本身不能阻止已授权样本访问网络。');
       else limitations.push('网络隔离未启用；不得在此模式执行不受信任样本。');
       limitations.push('隔离根目录仅约束工作目录与私有二进制快照，不限制样本的文件系统、进程或系统调用；必须在可信授权样本或外层操作系统沙箱中运行。');
+      limitations.push('GDB/MI 与 inferior 共享输出通道，文本/MI 归属为 best-effort 分流，不能证明协议完整性；严格隔离场景应使用外层 PTY 或操作系统沙箱。');
       if (process.platform !== 'linux') limitations.push('进程树强制回收在 Windows 使用 taskkill，在 POSIX 使用进程组；非 Linux 平台没有内核级禁网。');
       const env: NodeJS.ProcessEnv = {};
       for (const key of ENV_WHITELIST) if (request.env?.[key] !== undefined) env[key] = request.env[key]; else if (process.env[key] !== undefined) env[key] = process.env[key];
@@ -157,6 +158,7 @@ export class DynamicAnalysisEngine {
       client = this.clientFactory({ executable: this.gdbPath, cwd: workDir, env, timeoutMs, maxOutputBytes, signal: combined.signal,
         onRecord: (record) => {
           if (record.kind === 'raw') { addEvent({ type: 'output', data: { channel: 'inferior-raw', text: record.value } }); return; }
+          if (record.kind === 'stream' && record.channel === 'target') { addEvent({ type: 'output', data: { channel: 'inferior-stderr', text: record.value } }); return; }
           if (record.kind !== 'stream' || record.channel !== 'console') return;
           const match = /^\s*(0x[0-9a-f]+)\s+(0x[0-9a-f]+)\s+(0x[0-9a-f]+)\s+(.+)$/i.exec(record.value.trim());
           if (!match) return;
