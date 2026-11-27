@@ -270,13 +270,17 @@ export class GdbMiClient extends EventEmitter {
       await closed;
       return;
     }
+    let killing: Promise<void> | undefined;
+    const ensureKill = (): Promise<void> => killing ??= this.killTree();
     await new Promise<void>((resolve) => {
-      let killing: Promise<void> | undefined;
-      const timer = setTimeout(() => { killing = this.killTree(); void killing.finally(resolve); }, 750);
+      const timer = setTimeout(() => { void ensureKill().finally(resolve); }, 750);
       child.once('close', () => { clearTimeout(timer); if (killing) void killing.finally(resolve); else resolve(); });
       // Try graceful MI exit, then force kill if the process does not cooperate.
-      try { child.stdin.write('0-gdb-exit\n'); } catch { clearTimeout(timer); killing = this.killTree(); void killing.finally(resolve); }
+      try { child.stdin.write('0-gdb-exit\n'); } catch { clearTimeout(timer); void ensureKill().finally(resolve); }
     });
+    // The debugger may exit cleanly while an inferior descendant remains in a
+    // separate process group. Always reap retained inferior PGIDs before returning.
+    await ensureKill();
   }
 
   private async posixTargetsAlive(groupIds: number[], inferiorPids: number[]): Promise<boolean> {

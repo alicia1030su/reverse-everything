@@ -92,8 +92,10 @@ export function validateSymbolicResult(value: unknown, maxOutputBytes: number): 
   for (const input of value.solvedInputs) {
     if (!record(input) || !text(input.pathId, 256) || !pathIds.has(input.pathId) || !value.paths.some(path => record(path) && path.id === input.pathId && path.reachedTarget === true) || !hex(input.inputHex) || !base64(input.inputBase64)) throw new Error('Invalid solved symbolic input');
     if (input.inputHex.length % 2 !== 0 || Buffer.from(input.inputHex, 'hex').toString('base64') !== input.inputBase64) throw new Error('Solved input encodings disagree');
-    if (!record(input.execution) || !(input.execution.exitCode === null || integer(input.execution.exitCode, 0, 255)) || typeof input.execution.verified !== 'boolean' || typeof input.execution.timedOut !== 'boolean' || !optionalText(input.execution.stdout, 65_536) || !optionalText(input.execution.stderr, 65_536)) throw new Error('Invalid execution evidence');
+    if (!record(input.execution) || !(input.execution.exitCode === null || integer(input.execution.exitCode, -255, 255)) || typeof input.execution.verified !== 'boolean' || typeof input.execution.timedOut !== 'boolean' || !optionalText(input.execution.stdout, 65_536) || !optionalText(input.execution.stderr, 65_536)) throw new Error('Invalid execution evidence');
     for (const flag of ['stdoutTruncated', 'stderrTruncated', 'outputLimitExceeded', 'terminatedBySignal']) if (input.execution[flag] !== undefined && typeof input.execution[flag] !== 'boolean') throw new Error('Invalid execution output limit evidence');
+    if (typeof input.execution.exitCode === 'number' && input.execution.exitCode < 0 && input.execution.terminatedBySignal !== true) throw new Error('Negative native exit codes require terminatedBySignal evidence');
+    if (input.execution.terminatedBySignal === true && input.execution.exitCode !== null && (typeof input.execution.exitCode !== 'number' || input.execution.exitCode >= 0)) throw new Error('Signalled native execution requires a null or negative exit code');
     if (input.execution.verified === true && (input.execution.timedOut === true || input.execution.outputLimitExceeded === true || input.execution.stdoutTruncated === true || input.execution.terminatedBySignal === true)) throw new Error('Truncated, signalled or timed-out execution cannot be verified');
   }
   if (!record(value.solver) || !text(value.solver.name, 128) || !text(value.solver.version, 128)) throw new Error('Invalid solver provenance');
@@ -110,7 +112,7 @@ export function validateSymbolicResult(value: unknown, maxOutputBytes: number): 
   if (value.status !== 'partial' && Array.isArray(partialReasons) && partialReasons.length > 0) throw new Error('Only partial symbolic results may include partialReasons');
   const evidenceTruncated = value.paths.some(path => record(path) && (path.constraintsTruncated === true || path.historyTruncated === true || (Array.isArray(path.constraints) && path.constraints.some(constraint => record(constraint) && constraint.truncated === true))));
   const nativeUnverified = value.solvedInputs.some(input => record(input.execution) && input.execution.verified !== true);
-  const stateBudget = typeof value.stats.maxStates === 'number' && typeof value.stats.activeStates === 'number' && (value.stats.statesExplored >= value.stats.maxStates || value.stats.activeStates > value.stats.maxStates - value.stats.statesExplored);
+  const stateBudget = typeof value.stats.maxStates === 'number' && typeof value.stats.activeStates === 'number' && value.stats.activeStates > 0 && (value.stats.statesExplored >= value.stats.maxStates || value.stats.activeStates > value.stats.maxStates - value.stats.statesExplored);
   const pathBudget = typeof value.stats.maxPaths === 'number' && value.paths.length >= value.stats.maxPaths;
   const outputBudget = value.outputBudgetExceeded === true;
   if (value.status === 'completed' && (evidenceTruncated || nativeUnverified || stateBudget || pathBudget || outputBudget)) throw new Error('Completed analysis cannot contain partial conditions');

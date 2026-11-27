@@ -273,10 +273,25 @@ print("ok")`;
     expect(() => validateSymbolicResult({ ...result, status: 'partial', partialReasons: ['evidence-truncated'], paths: [{ ...path, constraintsOmitted: 1 }], limitations }, 10_000)).toThrow('omission count');
   });
 
-  it('rejects verified native evidence terminated by signal', async () => {
+  it('validates negative native signal exit codes as partial evidence', async () => {
     const engine = new SymbolicExecutionEngine({ pythonExecutable: 'python3', workerPath });
     const result = await engine.analyze(request('schema-source'));
-    const execution = { ...result.solvedInputs[0]!.execution, terminatedBySignal: true };
-    expect(() => validateSymbolicResult({ ...result, solvedInputs: [{ ...result.solvedInputs[0]!, execution }] }, 10_000)).toThrow('signalled');
+    const execution = { ...result.solvedInputs[0]!.execution, exitCode: -9, terminatedBySignal: true, verified: false };
+    const partial = { ...result, status: 'partial', partialReasons: ['native-verification'], limitations: [...result.limitations, 'One or more solved inputs did not reproduce the expected output during native execution.'], solvedInputs: [{ ...result.solvedInputs[0]!, execution }] };
+    expect(() => validateSymbolicResult(partial, 10_000)).not.toThrow();
+    expect(() => validateSymbolicResult({ ...partial, solvedInputs: [{ ...result.solvedInputs[0]!, execution: { ...execution, terminatedBySignal: undefined } }] }, 10_000)).toThrow('Negative native exit codes');
+    expect(() => validateSymbolicResult({ ...result, solvedInputs: [{ ...result.solvedInputs[0]!, execution: { ...execution, verified: true } }] }, 10_000)).toThrow('signalled');
+  });
+
+  it('distinguishes exact state-budget exhaustion from a remaining active batch', async () => {
+    const engine = new SymbolicExecutionEngine({ pythonExecutable: 'python3', workerPath });
+    const result = await engine.analyze(request('schema-source'));
+    const exhausted = { ...result, stats: { ...result.stats, statesExplored: 10, maxStates: 10, activeStates: 0 } };
+    expect(() => validateSymbolicResult(exhausted, 10_000)).not.toThrow();
+    const remaining = { ...exhausted, stats: { ...exhausted.stats, activeStates: 1 } };
+    expect(() => validateSymbolicResult(remaining, 10_000)).toThrow('partial conditions');
+    const partial = { ...remaining, status: 'partial', partialReasons: ['state-budget'], limitations: [...result.limitations, 'Path/state budget was reached; exploration is not exhaustive.'] };
+    expect(() => validateSymbolicResult(partial, 10_000)).not.toThrow();
+    expect(() => validateSymbolicResult({ ...partial, stats: { ...partial.stats, activeStates: 0 } }, 10_000)).toThrow('does not match');
   });
 });
