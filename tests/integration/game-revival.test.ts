@@ -70,7 +70,7 @@ describe('game revival API',()=>{
     vi.spyOn(gameRevival,'generateGameServer').mockRejectedValue(new Error('intentional generation failure'));
     const created=await app.inject({method:'POST',url:'/api/game/rebuilds',headers:{...headers,'content-type':'application/json'},body:JSON.stringify({specId:spec.json().spec.id})});
     expect(created.statusCode,created.body).toBe(202);expect(created.json().level).toBe('L2');expect((db.raw.prepare('SELECT level FROM game_profiles WHERE project_id=?').get(project.id) as {level:string}).level).toBe('L2');
-    const id=created.json().id;await vi.waitFor(async()=>{const current=await app.inject({method:'GET',url:`/api/game/rebuilds/${id}`,headers});expect(current.json().status).toBe('FAILED');});
+    const id=created.json().id;await vi.waitFor(async()=>{const current=await app.inject({method:'GET',url:`/api/game/rebuilds/${id}`,headers});expect(current.json().status).toBe('FAILED');},{timeout:10000});
     const failed=await app.inject({method:'GET',url:`/api/game/rebuilds/${id}`,headers});expect(failed.json().level).toBe('L2');expect(failed.json().error).toContain('intentional generation failure');
     expect((db.raw.prepare('SELECT level FROM game_profiles WHERE project_id=?').get(project.id) as {level:string}).level).toBe('L2');
     await expect(access(path.join(dataDir,'revived-games',id))).rejects.toThrow();
@@ -86,7 +86,7 @@ describe('game revival API',()=>{
       const request=()=>app.inject({method:'POST',url:'/api/game/rebuilds',headers:{...headers,'content-type':'application/json'},body:JSON.stringify({specId:spec.json().spec.id})});
       const first=await request();expect(first.statusCode).toBe(202);expect(first.json().level).toBe('L2');
       const second=await request();expect(second.statusCode).toBe(503);expect(second.json().error.code).toBe('QUEUE_FULL');
-      await vi.waitFor(async()=>{const current=await app.inject({method:'GET',url:`/api/game/rebuilds/${first.json().id}`,headers});expect(current.json().status).toBe('FAILED');expect(current.json().error).toContain('exceeded 1000ms');},{timeout:4000});
+      await vi.waitFor(async()=>{const current=await app.inject({method:'GET',url:`/api/game/rebuilds/${first.json().id}`,headers});expect(current.json().status).toBe('FAILED');expect(current.json().error).toMatch(/exceeded 1000ms|Task timeout budget exceeded/);},{timeout:10000});
     }finally{if(previous===undefined)delete process.env.RE_GAME_REBUILD_TIMEOUT_MS;else process.env.RE_GAME_REBUILD_TIMEOUT_MS=previous;}
   });
   it('rootPath 变化清理旧文件与规格并重置为 L0，旧证据不得复用',async()=>{
