@@ -5,5 +5,6 @@ export * from './planner.js';
 export * from './tools.js';
 export * from './delivery.js';
 export * from './engine.js';
+export * from './semantics.js';
 export { MODEL_ROLES, ModelProviderError, ModelProviderService, parseStructuredContent, validateJsonSchema as validateModelJsonSchema } from './providers.js';
 export type { FetchLike, JsonSchema, ModelProviderSettings, ModelProviderSettingsStore, ModelRequest, ModelResult, ModelRole, ModelUsage, ProviderCapabilities, ProviderCapability, ProviderKind, ProviderLimits, ProviderProfile, ProviderPublicView, RoleAssignments, SecretStore } from './providers.js';

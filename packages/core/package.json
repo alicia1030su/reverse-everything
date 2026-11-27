@@ -16,6 +16,7 @@
     "@reverse/contracts": "0.0.8",
     "@reverse/console": "0.0.8",
     "@reverse/planner": "0.0.8",
+    "@reverse/program-ir": "0.0.8",
     "@reverse/evidence": "0.0.8",
     "@reverse/hardware": "0.0.8",
     "@reverse/legacy-revival": "0.0.8",

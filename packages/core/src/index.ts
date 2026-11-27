@@ -15,4 +15,4 @@ export { inferProtocol } from './adapters/game.js';
 export { fileAdapter, websiteAdapter, securityAdapter, gameAdapter, networkAdapter, apkAdapter, ghidraAdapter, hardwareAdapter, firmwareAdapter, consoleAdapter, legacyAdapter };
 export type { NetworkAnalysis, NetworkConversation, DnsSummary, TlsSummary, HttpSummary, HttpSample } from './adapters/network.js';
 export type { ApkAnalysis, DexAnalysis, ManifestAnalysis, NativeLibrary } from './adapters/apk.js';
-export type { GhidraAnalysis, GhidraMetadata, GhidraFunction, GhidraDecompiledFunction, GhidraCall, GhidraStringReference } from './adapters/ghidra.js';
+export type { GhidraAnalysis, GhidraMetadata, GhidraFunction, GhidraDecompiledFunction, GhidraCall, GhidraStringReference, GhidraVariable, GhidraInstruction, GhidraBlock, GhidraXref } from './adapters/ghidra.js';

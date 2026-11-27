@@ -4,6 +4,7 @@ import { copyFile, mkdir, mkdtemp, open, readFile, readdir, rm, writeFile } from
 import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { assertProgramIr, programStats } from '@reverse/program-ir';
 
 const ROOT = process.cwd();
 const ARCHIVE_NAME = 'ghidra_12.2_PUBLIC_20261016.zip';
@@ -184,6 +185,10 @@ async function analyzeFixture(format, binary, binarySha256, work, adapter) {
   await writeFile(path.join(OUTPUT_DIR, `${format}-headless.stderr.log`), result.stderr, 'utf8');
   const metadata = result.metadata;
   await writeFile(path.join(OUTPUT_DIR, `${format}-metadata.json`), `${JSON.stringify(metadata, null, 2)}\n`, 'utf8');
+  await writeFile(path.join(OUTPUT_DIR, `${format}-program-ir.json`), `${JSON.stringify(result.programIr, null, 2)}\n`, 'utf8');
+  let irValid = false;
+  try { assertProgramIr(result.programIr); irValid = JSON.stringify(programStats(result.programIr)) === JSON.stringify(result.programIrStats); } catch {}
+  const structuredFunctions = expected.functions.map(name => metadata.functions.find(item => item.name === name)).filter(Boolean);
   const checks = [
     { name: 'headless process completed', passed: result.status === 'completed' && result.exitCode === 0 },
     { name: 'adapter validation passed', passed: validation.passed },
@@ -194,9 +199,15 @@ async function analyzeFixture(format, binary, binarySha256, work, adapter) {
     { name: 'known direct call edges recovered', passed: expected.calls.every(edge => metadata.calls.some(item => item.caller === edge.caller && item.callee === edge.callee)), expected: expected.calls, observed: metadata.calls },
     { name: 'known string recovered', passed: expected.stringReferences.every(reference => metadata.strings.includes(reference.value)), expected: expected.stringReferences },
     { name: 'known string address/function references recovered', passed: expected.stringReferences.every(reference => metadata.stringReferences.some(item => item.value === reference.value && item.function === reference.function && item.address.length > 0)), expected: expected.stringReferences, observed: metadata.stringReferences },
+    { name: 'function signatures and calling conventions recovered', passed: structuredFunctions.length === expected.functions.length && structuredFunctions.every(item => typeof item.signature === 'string' && item.signature.length > 0 && typeof item.callingConvention === 'string' && item.callingConvention.length > 0), observed: structuredFunctions.map(item => ({ name: item.name, signature: item.signature, callingConvention: item.callingConvention })) },
+    { name: 'fixture parameters and locals recovered', passed: metadata.parameterCount > 0 && metadata.localCount > 0, observed: { parameters: metadata.parameterCount, locals: metadata.localCount } },
+    { name: 'real basic-block CFG recovered for fixture functions', passed: structuredFunctions.every(item => Array.isArray(item.blocks) && item.blocks.length > 0 && item.blocks.some(block => block.instructions.length > 0)), observed: structuredFunctions.map(item => ({ name: item.name, blocks: item.blocks?.length ?? 0 })) },
+    { name: 'instruction bytes and P-Code recovered', passed: metadata.instructionCount > 0 && structuredFunctions.every(item => item.blocks?.some(block => block.instructions.some(instruction => Boolean(instruction.bytes) && Array.isArray(instruction.pcode) && instruction.pcode.length > 0))), observed: metadata.instructionCount },
+    { name: 'cross references recovered', passed: metadata.xrefCount > 0, observed: metadata.xrefCount },
+    { name: 'Program IR references and stats validated', passed: irValid, observed: result.programIrStats },
     { name: 'inventories and process output were not truncated', passed: !metadata.truncated && !result.outputTruncated },
   ];
-  return { format, binary: name, sha256: binarySha256, passed: checks.every(check => check.passed), checks, observed: { format: metadata.format, architecture: metadata.architecture, functions: metadata.functions.map(item => item.name), decompiledFunctions: metadata.decompiledFunctions, calls: metadata.calls, strings: metadata.strings, stringReferences: metadata.stringReferences, decompileFailureCount: metadata.decompileFailureCount, truncated: metadata.truncated, limitations: result.limitations } };
+  return { format, binary: name, sha256: binarySha256, passed: checks.every(check => check.passed), checks, observed: { format: metadata.format, architecture: metadata.architecture, functions: metadata.functions.map(item => item.name), decompiledFunctions: metadata.decompiledFunctions, calls: metadata.calls, strings: metadata.strings, stringReferences: metadata.stringReferences, globals: metadata.globals, xrefs: metadata.xrefs, blockCount: metadata.blockCount, instructionCount: metadata.instructionCount, parameterCount: metadata.parameterCount, localCount: metadata.localCount, programIrStats: result.programIrStats, decompileFailureCount: metadata.decompileFailureCount, truncated: metadata.truncated, limitations: result.limitations } };
 }
 
 let work;

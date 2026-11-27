@@ -1,0 +1,33 @@
+{
+  "format": "ELF",
+  "architecture": "x86:LE:64:default",
+  "compilerSpec": "gcc",
+  "imageBase": "0x00100000",
+  "functions": [
+    {
+      "name": "sum_bytes", "entry": "0x00101000", "body": "0x00101000", "thunk": false, "external": false,
+      "signature": "uint8_t sum_bytes(uint8_t *data, uint32_t length)", "callingConvention": "__stdcall", "returnType": "uint8_t",
+      "parameters": [{ "name": "data", "dataType": "uint8_t *", "kind": "parameter", "storage": "RDI", "parameterIndex": 0 }, { "name": "length", "dataType": "uint32_t", "kind": "parameter", "storage": "ESI", "parameterIndex": 1 }],
+      "locals": [{ "name": "sum", "dataType": "uint8_t", "kind": "local", "storage": "AL" }],
+      "blocks": [
+        { "start": "0x00101000", "end": "0x00101010", "successors": ["0x00101010", "0x00101020"], "instructions": [{ "address": "0x00101000", "mnemonic": "CMP", "bytes": "83fe00", "pcode": ["INT_ZEXT flag", "INT_EQUAL length,0"] }, { "address": "0x00101004", "mnemonic": "JE", "bytes": "7408", "pcode": ["CBRANCH *[ram] length,0,0x00101020"] }] },
+        { "start": "0x00101010", "end": "0x00101020", "successors": ["0x00101010", "0x00101030"], "instructions": [{ "address": "0x00101010", "mnemonic": "ADD", "bytes": "0007", "pcode": ["INT_ADD sum,sum,*:8 data"] }, { "address": "0x00101014", "mnemonic": "JMP", "bytes": "ebee", "pcode": ["BRANCH 0x00101010"] }] },
+        { "start": "0x00101020", "end": "0x00101028", "successors": ["0x00101030"], "instructions": [{ "address": "0x00101020", "mnemonic": "MOVZX", "bytes": "0fb6c0", "pcode": ["INT_ZEXT sum,sum"] }] },
+        { "start": "0x00101030", "end": "0x00101038", "successors": [], "instructions": [{ "address": "0x00101030", "mnemonic": "RET", "bytes": "c3", "pcode": ["RETURN sum"] }] }
+      ]
+    },
+    { "name": "main", "entry": "0x00102000", "body": "0x00102000", "thunk": false, "external": false, "signature": "int main()", "callingConvention": "__stdcall", "returnType": "int", "parameters": [], "locals": [], "blocks": [{ "start": "0x00102000", "end": "0x00102008", "successors": [], "instructions": [{ "address": "0x00102000", "mnemonic": "CALL", "bytes": "e8fbef00ff", "pcode": ["CALL 0x00101000"] }] }] },
+    { "name": "memcpy", "entry": "external:memcpy", "body": "external:memcpy", "thunk": false, "external": true }
+  ],
+  "decompiledFunctions": [
+    { "name": "sum_bytes", "entry": "0x00101000", "pseudocode": "uint8_t sum_bytes(uint8_t *data,uint32_t length) { uint8_t sum = 0; for (uint32_t i = 0; i < length; i++) { sum += data[i]; } return sum; }" },
+    { "name": "main", "entry": "0x00102000", "pseudocode": "int main() { return sum_bytes(\"abc\",3); }" }
+  ],
+  "calls": [{ "caller": "main", "callee": "sum_bytes", "callerEntry": "0x00102000", "calleeEntry": "0x00101000", "address": "0x00102000" }],
+  "strings": ["abc"],
+  "stringReferences": [{ "address": "0x00103000", "function": "main", "value": "abc" }],
+  "globals": [{ "name": "errno", "dataType": "int", "kind": "global", "storage": "0x00104000" }],
+  "xrefs": [{ "from": "0x00102004", "to": "0x00103000", "type": "DATA", "function": "main" }],
+  "truncated": false,
+  "limitations": []
+}

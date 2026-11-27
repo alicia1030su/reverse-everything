@@ -1,0 +1,63 @@
+import { readFile } from 'node:fs/promises';
+import { describe, expect, it } from 'vitest';
+import { assertProgramIr, ghidraMetadataToProgram, inferSemanticHypotheses, ProgramQuery, programStats, type GhidraProgramInput } from '@reverse/program-ir';
+
+async function fixture(): Promise<GhidraProgramInput> {
+  return JSON.parse(await readFile('tests/fixtures/program-ir/ghidra-metadata.json', 'utf8')) as GhidraProgramInput;
+}
+
+describe('Program IR', () => {
+  it('converts structured Ghidra output without inventing missing facts', async () => {
+    const program = ghidraMetadataToProgram(await fixture(), 'fixture');
+    assertProgramIr(program);
+    expect(program.functions).toHaveLength(3);
+    expect(program.blocks).toHaveLength(5);
+    expect(program.instructions).toHaveLength(7);
+    expect(program.variables).toHaveLength(4);
+    expect(programStats(program)).toMatchObject({ functions: 3, internalFunctions: 2, externalFunctions: 1, calls: 1, xrefs: 2 });
+    expect(program.functions.find(fn => fn.name === 'sum_bytes')).toMatchObject({ signature: 'uint8_t sum_bytes(uint8_t *data, uint32_t length)', callingConvention: '__stdcall', returnType: 'uint8_t' });
+    expect(program.instructions[0]?.pcode).toContain('INT_EQUAL length,0');
+  });
+
+  it('queries function context, call path, data references and CFG loops', async () => {
+    const program = ghidraMetadataToProgram(await fixture(), 'fixture');
+    const query = new ProgramQuery(program);
+    const context = query.context('sum_bytes');
+    expect(context.fn.id).toBe('fn:0x101000');
+    expect(context.variables.map(variable => variable.name)).toEqual(['data', 'length', 'sum']);
+    expect(context.callees).toHaveLength(0);
+    expect(context.callers.map(fn => fn.name)).toEqual(['main']);
+    expect(query.context('main').data.map(item => item.value)).toContain('abc');
+    expect(query.callPath('main', 'sum_bytes')?.map(fn => fn.name)).toEqual(['main', 'sum_bytes']);
+    expect(query.reachableBlocks('sum_bytes')).toHaveLength(4);
+    expect(query.backEdges()).toHaveLength(1);
+    expect(query.instructionPcode('sum_bytes', 2)).toHaveLength(2);
+    expect(query.searchData('ABC')[0]?.address).toBe('0x103000');
+  });
+
+  it('marks rule-based semantics as inference and supplies a falsification test', async () => {
+    const base = ghidraMetadataToProgram(await fixture(), 'fixture');
+    const program = { ...base, hypotheses: inferSemanticHypotheses(base) };
+    assertProgramIr(program);
+    expect(program.hypotheses.map(item => item.kind)).toContain('iteration');
+    expect(program.hypotheses.every(item => item.kindEvidence === 'INFERENCE' && item.falsification.length > 10)).toBe(true);
+  });
+
+  it('keeps legacy flat metadata compatible and reports absent structure', async () => {
+    const metadata = await fixture();
+    const program = ghidraMetadataToProgram({ ...metadata, functions: metadata.functions.map(({ blocks: _blocks, parameters: _parameters, locals: _locals, ...fn }) => fn), globals: [], xrefs: [] }, 'legacy');
+    assertProgramIr(program);
+    expect(program.blocks).toHaveLength(0);
+    expect(program.instructions).toHaveLength(0);
+    expect(program.limitations).toContain('Ghidra export did not contain control-flow blocks');
+    expect(program.limitations).toContain('Ghidra export did not contain instruction or P-Code records');
+  });
+
+  it('rejects ambiguous names rather than attaching evidence to the wrong function', async () => {
+    const metadata = await fixture();
+    const program = ghidraMetadataToProgram({ ...metadata, functions: [...metadata.functions, { name: 'sum_bytes', entry: '0x00999999', body: '0x00999999', thunk: false, external: false }] });
+    const query = new ProgramQuery(program);
+    expect(() => query.context('sum_bytes')).toThrow(/Ambiguous function name/);
+    expect(query.context('fn:0x999999').fn.entry).toBe('0x999999');
+  });
+});

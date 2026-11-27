@@ -387,6 +387,7 @@ export class AutopilotEngine {
       const uploadId = task.intent.inputs.uploadIds[0] ?? (Array.isArray(task.answers.materials) ? task.answers.materials.find((item): item is string => typeof item === 'string' && this.db.uploads(task.projectId).some(upload => upload.id === item)) : undefined);
       const directPath = task.intent.inputs.paths[0] ?? (Array.isArray(task.answers.materials) ? task.answers.materials.find((item): item is string => typeof item === 'string' && path.isAbsolute(item)) : undefined);
       if (uploadId) options.uploadId = uploadId; else if (directPath) options.path = directPath;
+      if (adapter === 'apk') options.apkDecompile = true;
       if (task.intent.inputs.urls[0] && !this.db.getProject(task.projectId)?.target) this.db.raw.prepare("UPDATE projects SET target=? WHERE id=? AND target=''").run(task.intent.inputs.urls[0], task.projectId);
       child = await workflow.create(task.projectId, { adapter, options });
       if (!this.owned(task.id, token)) { this.workflow?.cancel?.(child.id); throw new AutopilotError('子任务创建后 Autopilot 租约已失效', 'AUTOPILOT_LEASE_LOST', 409); }
