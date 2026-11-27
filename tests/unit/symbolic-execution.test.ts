@@ -17,7 +17,14 @@ function request(mode: string): SymbolicAnalysisRequest {
   return { binaryPath, target: { function: 'target', expectedOutput: 'TARGET\n' }, input: { source: 'stdin', sizeBytes: 1 }, authorized: true };
 }
 function pidAlive(pid: number): boolean {
-  try { process.kill(pid, 0); return true; } catch { return false; }
+  try { process.kill(pid, 0); } catch { return false; }
+  if (process.platform === 'linux') {
+    try {
+      const stat = readFileSync(`/proc/${pid}/stat`, 'utf8');
+      return !stat.slice(stat.lastIndexOf(')') + 2).trim().startsWith('Z');
+    } catch { return false; }
+  }
+  return true;
 }
 
 describe('symbolic execution worker contract', () => {
@@ -61,7 +68,6 @@ describe('symbolic execution worker contract', () => {
     const result = await engine.analyze({ ...pending, timeoutMs: 500 });
     expect(result.status).toBe('timeout');
     const pid = Number(readFileSync(marker, 'utf8'));
-    await new Promise(resolve => setTimeout(resolve, 100));
     expect(pidAlive(pid)).toBe(false);
   }, 10_000);
 
@@ -87,9 +93,19 @@ describe('symbolic execution worker contract', () => {
     const result = await analysis;
     expect(result.status).toBe('cancelled');
     const pid = Number(readFileSync(marker, 'utf8'));
-    await new Promise(resolve => setTimeout(resolve, 100));
     expect(pidAlive(pid)).toBe(false);
   }, 10_000);
+
+  it('returns cancelled when aborted during the private snapshot copy', async () => {
+    const pending = request('completed');
+    writeFileSync(pending.binaryPath, Buffer.alloc(8 * 1024 * 1024, 0x41));
+    const controller = new AbortController();
+    const engine = new SymbolicExecutionEngine({ pythonExecutable: 'definitely-not-a-python', workerPath });
+    const analysis = engine.analyze(pending, controller.signal);
+    controller.abort();
+    const result = await analysis;
+    expect(result.status).toBe('cancelled');
+  });
 
   it('rejects oversized binaries before spawning a worker', async () => {
     const engine = new SymbolicExecutionEngine({ pythonExecutable: 'definitely-not-a-python', workerPath, maxBinaryBytes: 4 });
@@ -144,6 +160,24 @@ print(json.dumps(result))`;
     expect(result.stdout).toHaveLength(65_536);
     expect(result.outputLimitExceeded).toBe(true);
     expect(result.verified).toBe(false);
+  });
+
+  it('handles partial concrete input and bounds constraint evidence', () => {
+    const worker = fileURLToPath(new URL('../../scripts/symbolic_execute.py', import.meta.url));
+    const script = `import importlib.util,sys
+spec=importlib.util.spec_from_file_location("symbolic_worker", sys.argv[1])
+module=importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
+class Solver:
+    def __init__(self): self.items=[]
+    def add(self, item): self.items.append(item)
+class State:
+    def __init__(self): self.solver=Solver()
+state=State(); module.constrain_concrete(state, [1,2,3], b"\\x09")
+assert state.solver.items == [False]
+value=module.bounded_constraint("x"*5000)
+assert len(value) == 4000 and value.endswith("...[truncated]")
+print("ok")`;
+    expect(execFileSync('python3', ['-c', script, worker], { encoding: 'utf8' }).trim()).toBe('ok');
   });
 
   it('validates request bounds and authorization', () => {

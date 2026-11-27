@@ -112,6 +112,42 @@ def digest(path: Path) -> str:
     return sha.hexdigest()
 
 
+def constrain_concrete(state, symbolic_bytes: list, concrete: bytes) -> None:
+    for index, byte in enumerate(symbolic_bytes):
+        if index < len(concrete):
+            state.solver.add(byte == concrete[index])
+
+
+def bounded_constraint(expression: str) -> str:
+    if len(expression) <= MAX_CONSTRAINT_CHARS:
+        return expression
+    marker = "...[truncated]"
+    return expression[:MAX_CONSTRAINT_CHARS - len(marker)] + marker
+
+
+def posix_group_alive(group_id: int) -> bool:
+    if sys.platform.startswith("linux"):
+        try:
+            for entry in os.listdir("/proc"):
+                if not entry.isdigit():
+                    continue
+                try:
+                    stat = Path(f"/proc/{entry}/stat").read_text(encoding="utf-8")
+                    fields = stat[stat.rfind(")") + 2:].split()
+                    if fields and fields[0] != "Z" and int(fields[2]) == group_id:
+                        return True
+                except (OSError, ValueError, IndexError):
+                    continue
+            return False
+        except OSError:
+            pass
+    try:
+        os.killpg(group_id, 0)
+        return True
+    except ProcessLookupError:
+        return False
+
+
 def kill_process_tree(proc: subprocess.Popen) -> None:
     """Kill the native sample and its descendants, then reap the direct child."""
     if os.name == "posix":
@@ -132,6 +168,10 @@ def kill_process_tree(proc: subprocess.Popen) -> None:
     except subprocess.TimeoutExpired:
         proc.kill()
         proc.wait(timeout=3)
+    if os.name == "posix":
+        deadline = time.monotonic() + 2
+        while posix_group_alive(proc.pid) and time.monotonic() < deadline:
+            time.sleep(0.02)
 
 
 def execute_binary(binary: str, data: bytes, expected: str | None, timeout: float, args: list[str] | None = None) -> dict:
@@ -263,8 +303,7 @@ def analyze(request: dict, worker_sha256: str, started_at: str, started: float) 
     state.memory.store(argv, claripy.BVV(string_address, project.arch.bits), endness=project.arch.memory_endness)
     state.memory.store(argv + project.arch.bytes, claripy.BVV(0, project.arch.bits), endness=project.arch.memory_endness)
     state.memory.store(string_address, claripy.BVV(binary_string), endness=project.arch.memory_endness)
-    for index, byte in enumerate(symbolic_bytes):
-        state.solver.add(byte == concrete[index])
+    constrain_concrete(state, symbolic_bytes, concrete)
     manager = project.factory.simulation_manager(state)
     paths: list[dict] = []
     solved_inputs: list[dict] = []
@@ -277,9 +316,7 @@ def analyze(request: dict, worker_sha256: str, started_at: str, started: float) 
         constraints = []
         constraint_chars = 0
         for constraint in list(found_state.solver.constraints)[:MAX_CONSTRAINTS]:
-            expression = str(constraint)
-            if len(expression) > MAX_CONSTRAINT_CHARS:
-                expression = expression[:MAX_CONSTRAINT_CHARS] + "...[truncated]"
+            expression = bounded_constraint(str(constraint))
             if constraint_chars + len(expression) > 65_536:
                 break
             constraint_chars += len(expression)

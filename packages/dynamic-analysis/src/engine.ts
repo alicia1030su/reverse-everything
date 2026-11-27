@@ -147,6 +147,7 @@ export class DynamicAnalysisEngine {
       const consoleModules: DynamicModule[] = [];
       client = this.clientFactory({ executable: this.gdbPath, cwd: workDir, env, timeoutMs, maxOutputBytes, signal: combined.signal,
         onRecord: (record) => {
+          if (record.kind === 'raw') { addEvent({ type: 'output', data: { channel: 'inferior-raw', text: record.value } }); return; }
           if (record.kind !== 'stream' || record.channel !== 'console') return;
           const match = /^\s*(0x[0-9a-f]+)\s+(0x[0-9a-f]+)(?:\s+(0x[0-9a-f]+))?\s+(\S.*)$/i.exec(record.value.trim());
           if (!match) return;
@@ -233,6 +234,7 @@ export class DynamicAnalysisEngine {
       clearTimeout(timer);
       signal?.removeEventListener('abort', onAbort);
       await client?.close().catch(() => undefined);
+      if (client && !client.cleanupSucceeded) limitations.push('GDB 进程组或已记录 inferior 未在清理期限内确认消失；需要人工核查或外层沙箱强制回收。');
       if (workDir) await rm(workDir, { recursive: true, force: true }).catch(() => limitations.push('隔离工作目录清理失败，请人工核查。'));
       if (provenance) {
         provenance.stoppedAt = new Date().toISOString();
