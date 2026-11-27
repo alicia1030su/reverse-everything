@@ -25,5 +25,6 @@
 | V008-019 | P1 | Legacy API 响应泄露本机绝对路径 | 任务 options、直接路径证据 source/content、Legacy profile sourcePath 与重建工件包含绝对路径；Linux JSON 正斜杠使现有断言失败 | API 统一递归脱敏绝对路径并覆盖 SSE/事件/证据检索；Legacy 公开分析仅保留 basename，恢复执行从受控输入重新解析；强化跨平台回归 | VERIFIED |
 | V008-020 | P1 | Linux 候选演示包使用 GNU tar 解包 ZIP，导致冻结验收失败 | Release Run `45967220100` 的 `package:demos` 在首个干净解包步骤报 `tar: This does not look like a tar archive`；Windows tar 支持 ZIP 掩盖了缺陷 | Linux/macOS 使用系统 `unzip`、Windows 使用系统 `tar`；使用纯 JavaScript ZIP 写入器新增真实解包回归；完整演示包默认安装/测试/启动验收通过 | VERIFIED |
 | V008-021 | P2 | 报告页 E2E 标题选择器在 Windows 可访问性树中匹配两个标题 | PR #21 CI Run `45970023110` 的 `web-v005.spec.ts:92` strict mode violation：`分析报告` 同时匹配 `通俗分析报告` | 页面主标题断言增加 `exact: true`，保留原可见性与后续视图切换/导出断言；目标用例单独重跑 1/1 | VERIFIED |
+| V008-022 | P2 | Windows 慢速 runner 上重建取消测试的 mock 信号等待仍为默认 1 秒 | 主线 CI Run `45974788337` 的 `game-revival.test.ts:134` 在文件写入后尚未进入 mock 即超时 | 等待上限统一为 10 秒；保留取消、输出清理、数据库可用与关闭后禁写断言；目标用例重跑 1/1 | VERIFIED |
 
 > 本表在 Phase 0 独立审计后追加全部可复现缺陷；不得用删除测试或降低断言关闭缺陷。V008-003 为外部凭证阻塞的 OPEN P2，不影响 P0/P1 清零判定，但不得宣称真实远程模型已验证。
