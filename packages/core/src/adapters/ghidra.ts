@@ -145,7 +145,7 @@ public class ExportMetadata extends GhidraScript {
     if (variable == null) return "null";
     return "{\"name\":" + q(variable.getName()) + ",\"dataType\":" + q(variable.getDataType() == null ? "UNKNOWN" : variable.getDataType().getName()) + ",\"kind\":" + q(kind) + ",\"storage\":" + q(variable.getVariableStorage() == null ? "UNKNOWN" : variable.getVariableStorage().toString()) + (parameterIndex >= 0 ? ",\"parameterIndex\":" + parameterIndex : "") + "}";
   }
-  private String instruction(Instruction instruction) {
+  private String instruction(Instruction instruction) throws Exception {
     StringBuilder pcode = new StringBuilder("[");
     PcodeOp[] operations = instruction.getPcode();
     if (operations != null) {
@@ -172,12 +172,12 @@ public class ExportMetadata extends GhidraScript {
     }
     return out.append(']').toString();
   }
-  private String destinationAddresses(CodeBlockReferenceIterator references, int cap) {
+  private String destinationAddresses(CodeBlockReferenceIterator references, int cap) throws Exception {
     List<Address> addresses = new ArrayList<Address>();
     while (references.hasNext() && addresses.size() < cap) addresses.add(references.next().getDestinationAddress());
     return addressList(addresses.toArray(new Address[0]), cap);
   }
-  private String sourceAddresses(CodeBlockReferenceIterator references, int cap) {
+  private String sourceAddresses(CodeBlockReferenceIterator references, int cap) throws Exception {
     List<Address> addresses = new ArrayList<Address>();
     while (references.hasNext() && addresses.size() < cap) addresses.add(references.next().getSourceAddress());
     return addressList(addresses.toArray(new Address[0]), cap);
