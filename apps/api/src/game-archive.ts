@@ -53,7 +53,8 @@ export async function zipDirectory(root: string, limits: ArchiveLimits = {}): Pr
     throw new Error('归档根路径必须是普通目录，不能是符号链接');
   }
   const parts: Buffer[] = [];
-  const records: Array<{ name: string; crc: number; size: number; offset: number }> = [];
+  const records: Array<{ name: string; crc: number; size: number; offset: number; sha256: string }> = [];
+  let manifestBytes: Buffer | undefined;
   let offset = 0;
   let totalBytes = 0;
   const reserve = (bytes: number): void => {
@@ -90,6 +91,8 @@ export async function zipDirectory(root: string, limits: ArchiveLimits = {}): Pr
       if (length !== info.size) throw new Error(`归档文件读取后大小不一致: ${name}`);
       reserve(30 + nameBytes.length + length + 46 + nameBytes.length + 22);
       const checksum = crc32(content);
+      const sha256 = createHash('sha256').update(content).digest('hex');
+      if (name === 'ARTIFACT-MANIFEST.json') manifestBytes = content;
       const header = Buffer.alloc(30);
       header.writeUInt32LE(0x04034b50, 0);
       header.writeUInt16LE(20, 4);
@@ -98,12 +101,31 @@ export async function zipDirectory(root: string, limits: ArchiveLimits = {}): Pr
       header.writeUInt32LE(content.length, 18);
       header.writeUInt32LE(content.length, 22);
       header.writeUInt16LE(nameBytes.length, 26);
-      records.push({ name, crc: checksum, size: content.length, offset });
+      records.push({ name, crc: checksum, size: content.length, offset, sha256 });
       parts.push(header, nameBytes, content);
       offset += 30 + nameBytes.length + content.length;
     }
   };
   await walk(canonical);
+  if (manifestBytes) {
+    let manifest: unknown;
+    try { manifest = JSON.parse(manifestBytes.toString('utf8')); } catch { throw new Error('ARTIFACT-MANIFEST.json 不是有效 JSON'); }
+    if (!manifest || typeof manifest !== 'object' || Array.isArray(manifest)) throw new Error('ARTIFACT-MANIFEST.json 必须是 JSON 对象');
+    const value = manifest as Record<string, unknown>;
+    const references: Array<{ path: unknown; sha256: unknown }> = Array.isArray(value.artifacts)
+      ? value.artifacts.map(item => item && typeof item === 'object' ? { path: (item as Record<string, unknown>).path, sha256: (item as Record<string, unknown>).sha256 } : { path: undefined, sha256: undefined })
+      : value.files && typeof value.files === 'object' && !Array.isArray(value.files)
+        ? Object.entries(value.files as Record<string, unknown>).map(([path, sha256]) => ({ path, sha256 }))
+        : [];
+    for (const reference of references) {
+      if (typeof reference.path !== 'string' || typeof reference.sha256 !== 'string' || !/^[a-f0-9]{64}$/.test(reference.sha256)) throw new Error('ARTIFACT-MANIFEST.json 工件路径或 SHA-256 无效');
+      const name = reference.path.replace(/^\.?\//, '');
+      if (name === 'ARTIFACT-MANIFEST.json') continue;
+      const record = records.find(item => item.name === name);
+      if (!record) throw new Error(`ARTIFACT-MANIFEST.json 引用了归档外文件: ${name}`);
+      if (record.sha256 !== reference.sha256) throw new Error(`ARTIFACT-MANIFEST.json 校验和不匹配: ${name}`);
+    }
+  }
   const centralOffset = offset;
   const central: Buffer[] = [];
   for (const record of records) {

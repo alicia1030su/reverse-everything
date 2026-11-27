@@ -4,7 +4,7 @@ import path from 'node:path';
 import type { ResourceProcess } from '@reverse/contracts';
 import { AnalysisCache } from '../../packages/workflow/src/cache.js';
 import { Database } from '../../packages/workflow/src/database.js';
-import { DEFAULT_RESOURCE_SAMPLE_RETENTION, DEFAULT_RESOURCE_THRESHOLDS, ResourceMonitor } from '../../packages/workflow/src/resources.js';
+import { DEFAULT_RESOURCE_SAMPLE_RETENTION, DEFAULT_RESOURCE_THRESHOLDS, ResourceMonitor, effectiveResourceThresholds } from '../../packages/workflow/src/resources.js';
 import { RetentionService } from '../../packages/workflow/src/retention.js';
 import { afterEach, describe, expect, it } from 'vitest';
 
@@ -184,16 +184,17 @@ describe('ResourceMonitor reliability',()=>{
     db.close();
   });
 
-  it('fails closed on process-tree errors without caching the failure as healthy',async()=>{
+  it('fails closed only for task workers on process-tree errors without caching background failures as healthy',async()=>{
     const dir=await temp();const db=new Database(':memory:');let calls=0;let fail=true;
     const monitor=new ResourceMonitor(db,dir,undefined,{now:()=>0,processSampler:async()=>{calls++;if(fail)throw new Error('denied');return processSample(100);},diskSampler:async()=>diskSample});
-    await expect(monitor.sampleOrThrow('api')).rejects.toThrow('failed closed');
+    await expect(monitor.sampleOrThrow('worker')).rejects.toThrow('failed closed');
+    const background=await monitor.sampleOrThrow('api');expect(background.samplingStatus).toBe('unavailable');
     const fallback=monitor.stored('api');
     expect(fallback?.limitations.join(' ')).toContain('Process-tree sampling unavailable');
     expect(monitor.samplingHealthy(fallback)).toBe(false);
     fail=false;
-    const healthy=await monitor.sampleOrThrow('api');
-    expect(calls).toBe(4); // three bounded attempts for the failure, then one healthy sample
+    const healthy=await monitor.sampleOrThrow('worker');
+    expect(calls).toBe(7); // two three-attempt failures, then one healthy sample
     expect(monitor.samplingHealthy(healthy)).toBe(true);
     db.close();
   });
@@ -221,6 +222,15 @@ describe('ResourceMonitor reliability',()=>{
 
   it('uses conservative system defaults',()=>{
     expect(DEFAULT_RESOURCE_THRESHOLDS).toMatchObject({minSystemFreeMemoryMB:1024,minDiskFreeBytes:1024*1024*1024,maxCpuPercent:90});
+  });
+
+  it('adapts default memory thresholds to constrained containers without killing normal processes',async()=>{
+    const dir=await temp();const db=new Database(':memory:');const systemSampler=()=>({systemFreeMemoryMB:16,systemTotalMemoryMB:64});
+    const monitor=new ResourceMonitor(db,dir,undefined,{processSampler:async()=>processSample(100),diskSampler:async()=>({...diskSample,diskAvailableBytes:4*1024*1024*1024}),systemSampler,sampleTtlMs:0});
+    expect((await monitor.sampleOrThrow('worker',{fresh:true})).pressure).toBe('normal');
+    const adapted=effectiveResourceThresholds(DEFAULT_RESOURCE_THRESHOLDS,64);expect(adapted.softRssMb).toBeGreaterThanOrEqual(256);expect(adapted.hardRssMb).toBeGreaterThan(adapted.softRssMb);expect(adapted.minSystemFreeMemoryMB).toBe(0);
+    expect(effectiveResourceThresholds(DEFAULT_RESOURCE_THRESHOLDS,8192)).toMatchObject({softRssMb:700,hardRssMb:950,minSystemFreeMemoryMB:819.2});
+    db.close();
   });
 
   it('escalates low system memory to danger and applies danger recovery hysteresis',async()=>{

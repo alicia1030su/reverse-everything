@@ -111,8 +111,11 @@ describe('游戏 Docker 验证', () => {
     expect(report.deployment?.docker.tested).toBe(true);
     expect(report.checks.find(check => check.id === 'docker-cleanup')?.passed).toBe(false);
     expect(report.checks.find(check => check.id === 'docker-cleanup')?.detail, JSON.stringify(dockerCalls)).toContain('Docker 清理失败');
-    const evidence = JSON.parse(report.deployment?.docker.evidence ?? '{}') as { cleanedUp: boolean };
+    const evidence = JSON.parse(report.deployment?.docker.evidence ?? '{}') as { cleanedUp: boolean; dockerAvailable: boolean; composed: boolean; cleanupError?: string };
     expect(evidence.cleanedUp).toBe(false);
+    expect(evidence.dockerAvailable).toBe(true);
+    expect(evidence.composed).toBe(false);
+    expect(evidence.cleanupError).toContain('Docker 清理失败');
     expect(dockerCalls.filter(args => args.includes('down'))).toHaveLength(2);
     expect(dockerCalls.some(args => args.some(arg => arg.startsWith('label=com.docker.compose.project='))), JSON.stringify(dockerCalls)).toBe(true);
     expect(dockerCalls.some(args => args.includes('rm') && args.includes('residual-container')), JSON.stringify(dockerCalls)).toBe(true);
@@ -126,8 +129,11 @@ describe('游戏 Docker 验证', () => {
     const report = await validateGeneratedServer(output, { docker: true, dockerTimeoutMs: 60_000 });
     expect(report.valid).toBe(false);
     expect(report.checks.find(check => check.id === 'docker-cleanup')?.passed).toBe(true);
-    const evidence = JSON.parse(report.deployment?.docker.evidence ?? '{}') as { cleanedUp: boolean };
+    const evidence = JSON.parse(report.deployment?.docker.evidence ?? '{}') as { cleanedUp: boolean; dockerAvailable: boolean; composed: boolean; cleanupError?: string };
     expect(evidence.cleanedUp).toBe(true);
+    expect(evidence.dockerAvailable).toBe(true);
+    expect(evidence.composed).toBe(false);
+    expect(evidence.cleanupError).toBeUndefined();
   }, 180_000);
 
   it('配置 RE_NPM_CLI 时使用当前 Node 执行 npm CLI', async () => {
@@ -156,6 +162,10 @@ describe('游戏 Docker 验证', () => {
       expect(report.deployment?.docker.tested).toBe(true);
       expect(report.checks.find(check => check.id === 'docker-available')?.passed).toBe(false);
       expect(report.errors.join('\n')).toContain('Docker');
+      const evidence = JSON.parse(report.deployment?.docker.evidence ?? '{}') as { dockerAvailable: boolean; composed: boolean; cleanedUp: boolean };
+      expect(evidence.dockerAvailable).toBe(false);
+      expect(evidence.composed).toBe(false);
+      expect(evidence.cleanedUp).toBe(false);
     } finally {
       dockerUnavailable = false;
       process.env.PATH = previousPath;

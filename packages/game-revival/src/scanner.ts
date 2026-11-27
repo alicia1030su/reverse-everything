@@ -43,6 +43,20 @@ async function hashFile(file: string, expected: Stats, root: string, signal?: Ab
     await verifiedRealpath(file, root, expected);
     let bytesRead = 0;
     if (reusableHash) {
+      if (captureLimit !== undefined) {
+        if (opened.size > captureLimit) throw new Error(`行为规格超过 ${captureLimit} 字节上限`);
+        const content = Buffer.alloc(opened.size);
+        let offset = 0;
+        while (offset < content.length) {
+          const { bytesRead: count } = await handle.read(content, offset, content.length - offset, offset);
+          if (!count) throw new Error(`扫描期间文件被修改：${file}`);
+          offset += count;
+        }
+        if (createHash('sha256').update(content).digest('hex') !== reusableHash) throw new Error(`行为规格内容摘要不一致：${file}`);
+        const after = await handle.stat();
+        if (!sameFingerprint(after, expected)) throw new Error(`扫描期间文件被修改：${file}`);
+        return { sha256: reusableHash, bytesRead: 0, exhausted: false, content };
+      }
       const after = await handle.stat();
       if (!sameFingerprint(after, expected)) throw new Error(`扫描期间文件被修改：${file}`);
       return { sha256: reusableHash, bytesRead, exhausted: false };

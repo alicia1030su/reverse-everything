@@ -667,7 +667,7 @@ export async function validateGeneratedServer(projectDir: string, options: Valid
       const compose = ['compose', '-p', project, '-f', 'docker-compose.yml'];
       const dockerEnv = minimalProcessEnv({ ADMIN_TOKEN: token, ADMIN_HOST: '0.0.0.0', GAME_PUBLISH_PORT: String(gamePort), ADMIN_PUBLISH_PORT: String(adminPort) });
       const commands: Array<{ command: string; output: string }> = [];
-      const evidence: Record<string, unknown> = { project, timeoutMs, commands, healthcheck: null, websocket: null, admin: null, cleanedUp: false };
+      const evidence: Record<string, unknown> = { project, timeoutMs, commands, dockerAvailable: false, composed: false, healthcheck: null, websocket: null, admin: null, cleanedUp: false };
       let upAttempted = false;
       const docker = (args: string[], commandTimeout = 60_000): Promise<string> => runValidationCommand('docker', [...compose, ...args], root, { signal: controller.signal, maxOutput: 64 * 1024, timeoutMs: Math.max(1, Math.min(commandTimeout, timeoutMs)), env: dockerEnv });
       deployment = { docker: { tested: true, command: `docker ${compose.join(' ')} up --build -d; docker ${compose.join(' ')} down -v` } };
@@ -675,6 +675,7 @@ export async function validateGeneratedServer(projectDir: string, options: Valid
         const available = await check('docker-available', 'Docker Compose 可用', async () => {
           const version = await runValidationCommand('docker', ['compose', 'version'], root, { signal: controller.signal, maxOutput: 4_096, timeoutMs: Math.min(15_000, timeoutMs) });
           commands.push({ command: 'docker compose version', output: version.trim() });
+          evidence.dockerAvailable = true;
           return version.trim();
         });
         if (available) {
@@ -682,6 +683,7 @@ export async function validateGeneratedServer(projectDir: string, options: Valid
             upAttempted = true;
             const output = await docker(['up', '--build', '-d'], Math.max(1, timeoutMs - 30_000));
             commands.push({ command: `docker ${compose.join(' ')} up --build -d`, output: output.trim().slice(-4_096) });
+            evidence.composed = true;
             return output.trim().slice(-1_024) || '容器已启动';
           });
           if (passed('docker-up')) await check('docker-health', '轮询容器健康检查与管理健康端点', async () => {
@@ -770,6 +772,10 @@ export async function validateGeneratedServer(projectDir: string, options: Valid
             commands.push({ command: `docker ${compose.join(' ')} down -v --remove-orphans（含重试与项目 label 兜底）`, output: output.trim().slice(-4_096) });
             evidence.cleanedUp = true;
             return output.trim().slice(-1_024) || '容器与卷已删除';
+          } catch (error) {
+            evidence.cleanedUp = false;
+            evidence.cleanupError = error instanceof Error ? error.message : String(error);
+            throw error;
           } finally { clearTimeout(cleanupTimer); }
         });
         deployment!.docker.evidence = JSON.stringify(evidence);

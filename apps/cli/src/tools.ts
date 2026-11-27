@@ -1,9 +1,10 @@
-import { readFile, realpath, stat } from 'node:fs/promises';
+import { lstat, open, readFile, realpath, stat, unlink } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { McpServer } from '@modelcontextprotocol/server';
 import { VERSION } from './version.js';
 import { z } from 'zod';
-import { api } from './client.js';
+import { api, apiBytes } from './client.js';
 
 const text = (value: unknown) => ({ content: [{ type: 'text' as const, text: JSON.stringify(value, null, 2) }] });
 const defaultMaxUploadBytes = 100 * 1024 * 1024;
@@ -22,6 +23,80 @@ function decodeBase64(value: string): Uint8Array {
   const bytes = Buffer.from(value, 'base64');
   if (bytes.length > limit) throw new Error('Upload exceeds configured size limit');
   return new Uint8Array(bytes);
+}
+
+const maxMcpDownloadBytes = 100 * 1024 * 1024;
+const defaultMcpDownloadBytes = 5 * 1024 * 1024;
+
+function mcpDownloadLimit(): number {
+  const configured = Number(process.env.RE_MCP_DOWNLOAD_MAX_MB ?? defaultMcpDownloadBytes / (1024 * 1024));
+  if (!Number.isInteger(configured) || configured <= 0 || configured * 1024 * 1024 > maxMcpDownloadBytes) {
+    throw new Error('RE_MCP_DOWNLOAD_MAX_MB must be an integer from 1 to 100');
+  }
+  return configured * 1024 * 1024;
+}
+
+async function readBoundedDownload(response: Response): Promise<Buffer> {
+  const limit = mcpDownloadLimit();
+  const contentLength = Number(response.headers.get('content-length'));
+  if (response.headers.has('content-length') && (!Number.isSafeInteger(contentLength) || contentLength < 0 || contentLength > limit)) {
+    throw new Error('Artifact exceeds the configured MCP download size limit');
+  }
+  if (!response.body) return Buffer.alloc(0);
+  const reader = response.body.getReader();
+  const chunks: Buffer[] = [];
+  let size = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      size += value.byteLength;
+      if (size > limit) throw new Error('Artifact exceeds the configured MCP download size limit');
+      chunks.push(Buffer.from(value));
+    }
+  } finally {
+    await reader.cancel().catch(() => undefined);
+    reader.releaseLock();
+  }
+  return Buffer.concat(chunks, size);
+}
+
+async function saveDownload(destination: string, bytes: Buffer): Promise<string> {
+  if (!process.env.RE_MCP_DOWNLOAD_ROOTS?.split(path.delimiter).some(root => root.trim())) {
+    throw new Error('RE_MCP_DOWNLOAD_ROOTS is not configured');
+  }
+  const roots = process.env.RE_MCP_DOWNLOAD_ROOTS.split(path.delimiter).map(root => root.trim()).filter(Boolean).map(root => path.resolve(root));
+  const resolvedRoots = await Promise.all(roots.map(async root => {
+    try {
+      return await realpath(root);
+    } catch {
+      throw new Error('RE_MCP_DOWNLOAD_ROOTS contains an inaccessible path');
+    }
+  }));
+  const requested = path.resolve(destination);
+  const parent = await realpath(path.dirname(requested));
+  if (!resolvedRoots.some(root => parent === root || parent.startsWith(root + path.sep))) {
+    throw new Error('Download destination is outside allowed roots');
+  }
+  const target = path.join(parent, path.basename(requested));
+  if (target === parent || resolvedRoots.includes(target)) throw new Error('Download destination must name a new file');
+  try {
+    const info = await lstat(target);
+    if (info.isSymbolicLink()) throw new Error('Download destination must not be a symbolic link');
+    throw new Error('Download destination already exists');
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+  }
+  const file = await open(target, 'wx', 0o600);
+  try {
+    await file.writeFile(bytes);
+  } catch (error) {
+    await unlink(target).catch(() => undefined);
+    throw error;
+  } finally {
+    await file.close();
+  }
+  return target;
 }
 
 async function readAllowedFile(filePath: string): Promise<Uint8Array> {
@@ -48,6 +123,36 @@ export function createMcpServer(localFileRead = false): McpServer {
   });
   const register = (name: string, description: string, shape: Record<string, z.ZodTypeAny>, handler: (args: Record<string, unknown>) => Promise<unknown>) =>
     server.registerTool(name, { description, inputSchema: shape }, async args => text(await handler(args as Record<string, unknown>)));
+  register('autopilot_create', 'Create an evidence-first Autopilot task from a natural-language goal. Returns discovery questions and contract/plan approval state; never assume permission.', {
+    projectId: z.string(), prompt: z.string().max(16000), idempotencyKey: z.string().max(128).optional(),
+    uploadIds: z.array(z.string()).max(64).optional(), paths: z.array(z.string()).max(64).optional(), urls: z.array(z.string()).max(64).optional(),
+  }, args => api('/api/autopilot/tasks', { method: 'POST', body: JSON.stringify({ projectId: args.projectId, prompt: args.prompt, idempotencyKey: args.idempotencyKey, uploadIds: args.uploadIds, paths: args.paths, urls: args.urls }) }));
+  register('autopilot_list', 'List Autopilot tasks for one project', { projectId: z.string(), limit: z.number().int().min(1).max(500).optional(), offset: z.number().int().min(0).optional() }, args => api(`/api/autopilot/tasks?projectId=${encodeURIComponent(String(args.projectId))}&limit=${Number(args.limit ?? 100)}&offset=${Number(args.offset ?? 0)}`));
+  register('autopilot_get', 'Get Autopilot intent questions contract plan status and progress', { taskId: z.string() }, args => api(`/api/autopilot/tasks/${encodeURIComponent(String(args.taskId))}`));
+  register('autopilot_answer', 'Answer discovery questions; explicit approval flags are required to accept the goal contract or execution plan', { taskId: z.string(), answers: z.record(z.string(), z.unknown()), approveContract: z.boolean().optional(), approvePlan: z.boolean().optional() }, args => api(`/api/autopilot/tasks/${encodeURIComponent(String(args.taskId))}/answers`, { method: 'POST', body: JSON.stringify({ answers: args.answers, approveContract: args.approveContract, approvePlan: args.approvePlan }) }));
+  register('autopilot_confirm', 'Explicitly confirm the current goal contract or execution plan', { taskId: z.string(), kind: z.enum(['contract', 'plan']) }, args => api(`/api/autopilot/tasks/${encodeURIComponent(String(args.taskId))}/answers`, { method: 'POST', body: JSON.stringify({ answers: {}, ...(args.kind === 'contract' ? { approveContract: true } : { approveContract: true, approvePlan: true }) }) }));
+  register('autopilot_action', 'Pause resume or cancel an Autopilot task at a safe checkpoint', { taskId: z.string(), action: z.enum(['pause', 'resume', 'cancel']) }, args => api(`/api/autopilot/tasks/${encodeURIComponent(String(args.taskId))}/${String(args.action)}`, { method: 'POST' }));
+  register('autopilot_messages', 'Read persisted user assistant and system messages for an Autopilot task', { taskId: z.string() }, args => api(`/api/autopilot/tasks/${encodeURIComponent(String(args.taskId))}/messages`));
+  register('autopilot_artifacts', 'List verified Autopilot delivery artifacts with size and SHA-256', { taskId: z.string() }, args => api(`/api/autopilot/tasks/${encodeURIComponent(String(args.taskId))}/artifacts`));
+  register('autopilot_tutorial', 'Read the verified Autopilot tutorial artifact as UTF-8 text', { taskId: z.string() }, async args => {
+    const artifacts = await api<Array<{ name: string }>>(`/api/autopilot/tasks/${encodeURIComponent(String(args.taskId))}/artifacts`);
+    const tutorial = artifacts.find(item => /^(tutorial|getting-started|使用教程)\.md$/i.test(item.name)) ?? artifacts.find(item => item.name === '____.md') ?? artifacts.find(item => /tutorial/i.test(item.name));
+    if (!tutorial) throw new Error('Tutorial artifact is not ready');
+    const response = await apiBytes(`/api/autopilot/tasks/${encodeURIComponent(String(args.taskId))}/artifacts/${encodeURIComponent(tutorial.name)}`);
+    return { name: tutorial.name, sha256: response.headers.get('x-artifact-sha256'), content: await response.text() };
+  });
+  register('autopilot_download', 'Download a verified Autopilot artifact. Returns bounded base64 without writing files by default. Saving requires an explicit destination in stdio mode and RE_MCP_DOWNLOAD_ROOTS; the parent must resolve inside an allowed root and the target must be a new non-symlink file. Size is bounded by RE_MCP_DOWNLOAD_MAX_MB (1-100, default 5).', {
+    taskId: z.string(), name: z.string(), destination: z.string().optional(),
+  }, async args => {
+    const response = await apiBytes(`/api/autopilot/tasks/${encodeURIComponent(String(args.taskId))}/artifacts/${encodeURIComponent(String(args.name))}`);
+    const bytes = await readBoundedDownload(response);
+    const sha256 = createHash('sha256').update(bytes).digest('hex');
+    if (args.destination !== undefined) {
+      if (!localFileRead) throw new Error('Saving downloads is disabled for HTTP MCP');
+      return { saved: await saveDownload(String(args.destination), bytes), sha256 };
+    }
+    return { name: args.name, sha256, contentBase64: bytes.toString('base64') };
+  });
   register('list_projects', 'List local projects', {}, () => api('/api/projects'));
   register('create_project', 'Create an authorized project', {
     name: z.string(),

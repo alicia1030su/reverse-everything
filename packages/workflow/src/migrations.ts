@@ -190,6 +190,16 @@ const REQUIRED_SCHEMA_6: Record<string, readonly string[]> = {
   game_profiles: [...REQUIRED_SCHEMA_5.game_profiles!, 'behavior_json'],
 };
 
+const AUTOPILOT_ARTIFACTS_SCHEMA = `CREATE TABLE IF NOT EXISTS autopilot_artifacts (
+  id TEXT PRIMARY KEY, task_id TEXT NOT NULL REFERENCES autopilot_tasks(id) ON DELETE CASCADE,
+  name TEXT NOT NULL, stored_path TEXT NOT NULL, size INTEGER NOT NULL, sha256 TEXT NOT NULL,
+  mime TEXT NOT NULL, created_at TEXT NOT NULL, UNIQUE(task_id,name));`;
+
+function ensureAutopilotArtifacts(raw: DatabaseSync): void {
+  raw.exec(AUTOPILOT_ARTIFACTS_SCHEMA);
+  raw.exec('CREATE INDEX IF NOT EXISTS idx_autopilot_artifacts_task ON autopilot_artifacts(task_id,name)');
+}
+
 function addColumnIfMissing(raw: DatabaseSync, table: string, column: string, definition: string): void {
   const columns = raw.prepare(`PRAGMA table_info("${table}")`).all() as {name:string}[];
   if (!columns.some(item => item.name === column)) raw.exec(`ALTER TABLE "${table}" ADD COLUMN "${column}" ${definition}`);
@@ -275,6 +285,7 @@ export function migrateDatabase(raw: DatabaseSync, file: string): MigrationResul
   const previousVersion = Number((raw.prepare('PRAGMA user_version').get() as {user_version:number}).user_version);
   if (previousVersion > SCHEMA_VERSION) throw new Error(`Database schema ${previousVersion} is newer than supported schema ${SCHEMA_VERSION}`);
   if (previousVersion === SCHEMA_VERSION) {
+    ensureAutopilotArtifacts(raw);
     addColumnIfMissing(raw, 'game_files', 'ctime_ms', 'REAL');
     addColumnIfMissing(raw, 'game_files', 'dev', 'TEXT');
     addColumnIfMissing(raw, 'game_files', 'ino', 'TEXT');
@@ -353,6 +364,29 @@ export function migrateDatabase(raw: DatabaseSync, file: string): MigrationResul
       addColumnIfMissing(raw, 'game_profiles', 'behavior_json', 'TEXT');
       raw.prepare('INSERT OR REPLACE INTO schema_migrations (version,applied_at,backup_path) VALUES (?,?,?)').run(6,new Date().toISOString(),backupPath??null);
       applied.push(6);
+    }
+    if (actualVersion < 7) {
+      raw.exec(`CREATE TABLE IF NOT EXISTS autopilot_tasks (
+          id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+          conversation_id TEXT NOT NULL, prompt TEXT NOT NULL, idempotency_key TEXT NOT NULL UNIQUE,
+          intent_json TEXT NOT NULL, questions_json TEXT NOT NULL, answers_json TEXT NOT NULL,
+          contract_json TEXT, plan_json TEXT, status TEXT NOT NULL, plan_version INTEGER NOT NULL DEFAULT 0,
+          state_version INTEGER NOT NULL DEFAULT 0, checkpoint TEXT NOT NULL DEFAULT '{}',
+          metrics_json TEXT NOT NULL, error TEXT, lease_owner TEXT, lease_expires_at TEXT,
+          created_at TEXT NOT NULL, updated_at TEXT NOT NULL, started_at TEXT, ended_at TEXT);
+        CREATE INDEX IF NOT EXISTS idx_autopilot_project ON autopilot_tasks(project_id,created_at);
+        CREATE INDEX IF NOT EXISTS idx_autopilot_status ON autopilot_tasks(status,lease_expires_at);
+        CREATE TABLE IF NOT EXISTS autopilot_messages (
+          id INTEGER PRIMARY KEY AUTOINCREMENT, task_id TEXT NOT NULL REFERENCES autopilot_tasks(id) ON DELETE CASCADE,
+          role TEXT NOT NULL, content TEXT NOT NULL, metadata_json TEXT NOT NULL, created_at TEXT NOT NULL);
+        CREATE INDEX IF NOT EXISTS idx_autopilot_messages ON autopilot_messages(task_id,id);
+        CREATE TABLE IF NOT EXISTS autopilot_step_results (
+          task_id TEXT NOT NULL REFERENCES autopilot_tasks(id) ON DELETE CASCADE,
+          step_id TEXT NOT NULL, idempotency_key TEXT NOT NULL UNIQUE, status TEXT NOT NULL,
+          output_json TEXT NOT NULL, created_at TEXT NOT NULL, PRIMARY KEY(task_id,step_id));`);
+      ensureAutopilotArtifacts(raw);
+      raw.prepare('INSERT OR REPLACE INTO schema_migrations (version,applied_at,backup_path) VALUES (?,?,?)').run(7,new Date().toISOString(),backupPath??null);
+      applied.push(7);
     }
     assertSchema6(raw);
     raw.exec(`PRAGMA user_version=${SCHEMA_VERSION}`);

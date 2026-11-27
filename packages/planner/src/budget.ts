@@ -20,6 +20,9 @@ export class BudgetManager {
     for (const [key, value] of Object.entries(this.budget)) {
       if (!Number.isFinite(value) || value <= 0) throw new PlannerError(`Budget ${key} must be positive and finite`, 'INVALID_BUDGET');
     }
+    for (const key of ['maxToolCalls', 'maxModelIterations', 'maxTokens', 'maxMemoryBytes', 'maxDiskBytes', 'maxNoProgressSteps'] as const) {
+      if (!Number.isInteger(this.budget[key])) throw new PlannerError(`Budget ${key} must be an integer`, 'INVALID_BUDGET');
+    }
   }
 
   private requireActive(): void {
@@ -45,17 +48,17 @@ export class BudgetManager {
     this.requireActive();
     this.syncTime();
     if (this.usage.elapsedMs > this.budget.timeoutMs) this.exceed('timeoutMs', 'Analysis timeout exceeded');
-    if (this.usage.toolCalls >= this.budget.maxToolCalls) this.exceed('maxToolCalls', 'Tool call budget exhausted');
-    if (this.usage.modelIterations >= this.budget.maxModelIterations) this.exceed('maxModelIterations', 'Model iteration budget exhausted');
-    if (this.usage.tokens >= this.budget.maxTokens) this.exceed('maxTokens', 'Token budget exhausted');
-    if (this.usage.costUsd >= this.budget.maxCostUsd) this.exceed('maxCostUsd', 'Cost budget exhausted');
-    if (this.usage.memoryBytes >= this.budget.maxMemoryBytes) this.exceed('maxMemoryBytes', 'Memory budget exhausted');
-    if (this.usage.diskBytes >= this.budget.maxDiskBytes) this.exceed('maxDiskBytes', 'Disk budget exhausted');
-    if (this.usage.noProgressSteps >= this.budget.maxNoProgressSteps) this.exceed('maxNoProgressSteps', 'No-progress budget exhausted');
+    if (this.usage.toolCalls > this.budget.maxToolCalls) this.exceed('maxToolCalls', 'Tool call budget exhausted');
+    if (this.usage.modelIterations > this.budget.maxModelIterations) this.exceed('maxModelIterations', 'Model iteration budget exhausted');
+    if (this.usage.tokens > this.budget.maxTokens) this.exceed('maxTokens', 'Token budget exhausted');
+    if (this.usage.costUsd > this.budget.maxCostUsd) this.exceed('maxCostUsd', 'Cost budget exhausted');
+    if (this.usage.memoryBytes > this.budget.maxMemoryBytes) this.exceed('maxMemoryBytes', 'Memory budget exhausted');
+    if (this.usage.diskBytes > this.budget.maxDiskBytes) this.exceed('maxDiskBytes', 'Disk budget exhausted');
+    if (this.usage.noProgressSteps > this.budget.maxNoProgressSteps) this.exceed('maxNoProgressSteps', 'No-progress budget exhausted');
   }
 
-  consumeToolCall(): void { this.check(); this.usage.toolCalls += 1; }
-  consumeModelIteration(): void { this.check(); this.usage.modelIterations += 1; }
+  consumeToolCall(): void { this.check(); if (this.usage.toolCalls + 1 > this.budget.maxToolCalls) this.exceed('maxToolCalls', 'Tool call budget exhausted'); this.usage.toolCalls += 1; }
+  consumeModelIteration(): void { this.check(); if (this.usage.modelIterations + 1 > this.budget.maxModelIterations) this.exceed('maxModelIterations', 'Model iteration budget exhausted'); this.usage.modelIterations += 1; }
   addTokens(tokens: number): void {
     this.check();
     if (!Number.isFinite(tokens) || tokens < 0) throw new PlannerError('Tokens must be a non-negative finite number', 'INVALID_USAGE');
@@ -72,7 +75,7 @@ export class BudgetManager {
     this.check();
     if (!Number.isFinite(bytes) || bytes < 0) throw new PlannerError('Memory must be a non-negative finite number', 'INVALID_USAGE');
     this.usage.memoryBytes = bytes;
-    if (bytes >= this.budget.maxMemoryBytes) this.exceed('maxMemoryBytes', 'Memory budget exceeded');
+    if (bytes > this.budget.maxMemoryBytes) this.exceed('maxMemoryBytes', 'Memory budget exceeded');
   }
   addDisk(bytes: number): void {
     this.check();
@@ -80,7 +83,7 @@ export class BudgetManager {
     this.usage.diskBytes += bytes;
     if (this.usage.diskBytes > this.budget.maxDiskBytes) this.exceed('maxDiskBytes', 'Disk budget exceeded');
   }
-  noProgress(): void { this.check(); this.usage.noProgressSteps += 1; if (this.usage.noProgressSteps > this.budget.maxNoProgressSteps) this.exceed('maxNoProgressSteps', 'No-progress budget exceeded'); }
+  noProgress(): void { this.check(); if (this.usage.noProgressSteps + 1 > this.budget.maxNoProgressSteps) this.exceed('maxNoProgressSteps', 'No-progress budget exceeded'); this.usage.noProgressSteps += 1; }
   progress(): void { this.check(); this.usage.noProgressSteps = 0; }
 
   cancel(): void {

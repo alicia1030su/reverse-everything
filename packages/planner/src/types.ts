@@ -1,7 +1,7 @@
 export type EvidenceLevel = 'EVIDENCE' | 'INFERENCE' | 'UNKNOWN';
 export type TargetKind = 'HAR' | 'PCAP' | 'PCAPNG' | 'APK' | 'DEX' | 'PE' | 'ELF' | 'UF2' | 'INTEL_HEX' | 'ZIP' | 'FIRMWARE' | 'UNKNOWN';
 export type AnalyzerId = 'ghidra' | 'jadx' | 'firmware' | 'usb' | 'network' | 'website' | 'android' | 'game' | 'security' | 'file';
-export type PlanStepKind = 'target-identification' | 'environment-detection' | 'authorization-check' | 'capability-match' | 'planning' | 'execution' | 'evidence-summary' | 'conclusion-validation' | 'report';
+export type PlanStepKind = 'target-identification' | 'environment-detection' | 'authorization-check' | 'capability-match' | 'planning' | 'execution' | 'build' | 'test' | 'package' | 'document' | 'restore' | 'evidence-summary' | 'conclusion-validation' | 'report';
 export type StepStatus = 'PENDING' | 'READY' | 'BLOCKED' | 'RUNNING' | 'SUCCEEDED' | 'FAILED' | 'SKIPPED';
 
 export interface DetectionSignal {
@@ -89,6 +89,13 @@ export interface PlanStep {
   reason?: string;
 }
 
+export interface PlanFailure {
+  stepId: string;
+  kind: 'FAILED' | 'BLOCKED' | 'MISSING_TOOL';
+  reason: string;
+  recordedAt: string;
+}
+
 export interface AnalysisPlan {
   id: string;
   deterministic: true;
@@ -101,6 +108,9 @@ export interface AnalysisPlan {
   maxDepth: number;
   limitations: string[];
   aiSuggestions: string[];
+  /** 可选字段；旧计划及旧调用方无需迁移。 */
+  version?: number;
+  failures?: PlanFailure[];
 }
 
 export interface ReplanInput {
@@ -109,6 +119,7 @@ export interface ReplanInput {
   reason: string;
   capabilities: AnalyzerCapability[];
   alternativePath?: string;
+  failureKind?: 'FAILED' | 'BLOCKED' | 'MISSING_TOOL';
 }
 
 export interface ReplanResult {

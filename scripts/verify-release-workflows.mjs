@@ -1,25 +1,31 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-export const REQUIRED_RELEASE_WORKFLOWS = Object.freeze([
+export const REQUIRED_PUSH_WORKFLOWS = Object.freeze([
   'CI',
   'Android v0.0.4 real JADX',
   'Ghidra V004 Real Verification',
-  'Release v007',
 ]);
 
-const WORKFLOW_DISPATCH_RELEASES = new Set(['Release v007']);
+export const WORKFLOW_DISPATCH_RELEASES = Object.freeze(['Release v007', 'Release v008']);
+const workflowDispatchReleases = new Set(WORKFLOW_DISPATCH_RELEASES);
+
+export function requiredReleaseWorkflows(currentWorkflow) {
+  return [...REQUIRED_PUSH_WORKFLOWS, currentWorkflow];
+}
 
 export function verifyReleaseWorkflowRuns(runs, { commit, branch = 'main', currentWorkflow, currentRunId } = {}) {
   if (!/^[0-9a-f]{40}$/i.test(String(commit ?? ''))) return ['A full frozen commit SHA is required'];
   if (!Array.isArray(runs)) return ['Workflow runs response is invalid'];
+  if (!workflowDispatchReleases.has(currentWorkflow)) return [`Current workflow is not a supported release workflow: ${String(currentWorkflow)}`];
+  const required = requiredReleaseWorkflows(currentWorkflow);
   const matching = runs.filter(run => run?.head_sha === commit && run?.head_branch === branch);
   const errors = [];
-  for (const workflow of REQUIRED_RELEASE_WORKFLOWS) {
-    const event = WORKFLOW_DISPATCH_RELEASES.has(workflow) ? 'workflow_dispatch' : 'push';
+  for (const workflow of required) {
+    const event = WORKFLOW_DISPATCH_RELEASES.includes(workflow) ? 'workflow_dispatch' : 'push';
     const candidates = matching.filter(run => run?.name === workflow && run?.event === event).sort((left, right) => String(right.created_at ?? '').localeCompare(String(left.created_at ?? '')));
     const latest = candidates[0];
-    const current = WORKFLOW_DISPATCH_RELEASES.has(workflow) && workflow === currentWorkflow && currentRunId !== undefined
+    const current = WORKFLOW_DISPATCH_RELEASES.includes(workflow) && workflow === currentWorkflow && currentRunId !== undefined
       ? candidates.find(run => String(run?.id) === String(currentRunId))
       : undefined;
     if (current && current === latest && (current.status === 'queued' || current.status === 'in_progress')) continue;
@@ -55,7 +61,7 @@ async function main() {
   const body = await response.json();
   const errors = verifyReleaseWorkflowRuns(body.workflow_runs, { commit, branch, currentWorkflow, currentRunId });
   if (errors.length) throw new Error(errors.join('\n'));
-  console.log(`Required release workflows passed for ${commit}: ${REQUIRED_RELEASE_WORKFLOWS.join(', ')}`);
+  console.log(`Required release workflows passed for ${commit}: ${requiredReleaseWorkflows(currentWorkflow).join(', ')}`);
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

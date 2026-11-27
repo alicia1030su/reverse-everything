@@ -2,9 +2,9 @@ import { useEffect, useState } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import {
-  Activity, Boxes, ChevronRight, CirclePlus, Database, DatabaseBackup, FileSearch,
+  Activity, Bot, Boxes, ChevronRight, CirclePlus, Cpu, Database, DatabaseBackup, FileSearch,
   FileText, FlaskConical, FolderKanban, Gamepad2, Gauge, KeyRound, LayoutDashboard, Menu, Moon, Network,
-  PackageSearch, Rocket, Settings, ShieldCheck, Sparkles, Sun, Usb, Wrench, X,
+  PackageCheck, PackageSearch, Rocket, Settings, ShieldCheck, Sparkles, Sun, Usb, Wrench, X,
 } from 'lucide-react';
 import { api } from '../api';
 import Onboarding from './Onboarding';
@@ -16,7 +16,9 @@ const navigation = [
   {
     label: '分析工作区',
     items: [
-      { to: '/', label: '总览', icon: LayoutDashboard, end: true },
+      { to: '/autopilot', label: 'Autopilot', icon: Bot, end: true },
+      { to: '/dashboard', label: '总览', icon: LayoutDashboard, end: true },
+      { to: '/delivery', label: '交付中心', icon: PackageCheck },
       { to: '/wizard', label: '智能分析向导', icon: Sparkles },
       { to: '/new', label: '创建项目', icon: CirclePlus },
       { to: '/tasks', label: '任务工作台', icon: Activity },
@@ -46,6 +48,7 @@ const navigation = [
       { to: '/authorizations', label: '授权管理', icon: KeyRound },
       { to: '/operations/system', label: '系统运维', icon: Gauge },
       { to: '/operations/backups', label: '备份中心', icon: DatabaseBackup },
+      { to: '/models', label: '模型管理', icon: Cpu },
       { to: '/settings', label: '设置中心', icon: Settings },
     ],
   },
@@ -85,7 +88,7 @@ export default function Layout() {
     catch { return 'dark'; }
   });
   const versionLabel = version.data ? `v${version.data.version}` : version.isLoading ? '版本读取中…' : '版本不可用';
-  const currentItem = navigation.flatMap(group => group.items).find(item => item.to !== '/' && location.pathname.startsWith(item.to));
+  const currentItem = navigation.flatMap(group => group.items).find(item => item.to !== '/' && location.pathname.startsWith(item.to)) ?? (location.pathname === '/' ? navigation[0]!.items[0] : undefined);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -120,7 +123,7 @@ export default function Layout() {
           <Button variant="ghost" aria-label={theme === 'dark' ? '切换到浅色主题' : '切换到深色主题'} title={theme === 'dark' ? '切换到浅色主题' : '切换到深色主题'} onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>
             {theme === 'dark' ? <Sun className="h-4 w-4"/> : <Moon className="h-4 w-4"/>}
           </Button>
-          <NavLink to="/wizard" className="inline-flex min-h-10 items-center gap-2 rounded-lg bg-accent px-3 text-xs font-semibold text-ink"><Sparkles className="h-3.5 w-3.5"/>开始智能分析</NavLink>
+          <NavLink to="/autopilot" className="inline-flex min-h-10 items-center gap-2 rounded-lg bg-accent px-3 text-xs font-semibold text-ink"><Sparkles className="h-3.5 w-3.5"/>开始 Autopilot</NavLink>
         </div>
       </header>
       <main className="mx-auto max-w-[1500px] p-4 sm:p-7"><Outlet/></main>

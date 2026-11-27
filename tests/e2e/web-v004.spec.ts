@@ -171,7 +171,7 @@ test('theme switch persists a light theme and can restore dark', async ({ page }
 });
 
 test('dashboard labels all adapters and operations remains reachable', async ({ page }) => {
-  await openWorkspace(page, '/');
+  await openWorkspace(page, '/dashboard');
   for (const label of ['网络协议', 'Android APK', 'Ghidra', 'USB 硬件', '固件']) {
     await expect(page.getByText(label, { exact: true }).first()).toBeVisible();
   }

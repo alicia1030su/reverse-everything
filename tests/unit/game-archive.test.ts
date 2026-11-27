@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import * as fsPromises from 'node:fs/promises';
 import { mkdtemp, mkdir, symlink, writeFile, rm } from 'node:fs/promises';
 import os from 'node:os';
@@ -11,6 +12,21 @@ vi.mock('node:fs/promises', async importOriginal => {
 });
 
 const temporary: string[] = [];
+function storedEntries(bytes: Buffer): Map<string, Buffer> {
+  const entries = new Map<string, Buffer>();
+  let offset = 0;
+  while (offset + 30 <= bytes.length && bytes.readUInt32LE(offset) === 0x04034b50) {
+    expect(bytes.readUInt16LE(offset + 8)).toBe(0);
+    const size = bytes.readUInt32LE(offset + 18);
+    const nameLength = bytes.readUInt16LE(offset + 26);
+    const extraLength = bytes.readUInt16LE(offset + 28);
+    const name = bytes.subarray(offset + 30, offset + 30 + nameLength).toString('utf8');
+    const start = offset + 30 + nameLength + extraLength;
+    entries.set(name, bytes.subarray(start, start + size));
+    offset = start + size;
+  }
+  return entries;
+}
 async function fixture(): Promise<string> {
   const dir = await mkdtemp(path.join(os.tmpdir(), 're-v006-zip-'));
   temporary.push(dir);
@@ -37,6 +53,25 @@ describe('生成游戏服务归档', () => {
     expect(bytes.readUInt32LE(eocd + 16)).toBe(firstEntrySize + 30 + bytes.readUInt32LE(firstEntrySize + 18) + bytes.readUInt16LE(firstEntrySize + 26));
     expect(archiveDigest(bytes)).toMatch(/^[a-f0-9]{64}$/);
     expect(archiveDigest(await zipDirectory(dir))).toBe(archiveDigest(bytes));
+  });
+
+  it('将 ARTIFACT-MANIFEST.json 按外部清单原始字节纳入 ZIP', async () => {
+    const dir = await fixture();
+    const serverSource = 'console.log(1)';
+    const manifest = Buffer.from(`${JSON.stringify({ schemaVersion: 1, artifacts: [{ path: 'server/index.mjs', sha256: createHash('sha256').update(serverSource).digest('hex') }] }, null, 2)}\n`);
+    await mkdir(path.join(dir, 'server'));
+    await writeFile(path.join(dir, 'server', 'index.mjs'), serverSource);
+    await writeFile(path.join(dir, 'ARTIFACT-MANIFEST.json'), manifest);
+    const entries = storedEntries(await zipDirectory(dir));
+    expect(entries.get('ARTIFACT-MANIFEST.json')).toEqual(manifest);
+    expect(JSON.parse(entries.get('ARTIFACT-MANIFEST.json')!.toString('utf8'))).toMatchObject({ schemaVersion: 1 });
+  });
+
+  it('拒绝与 ZIP 内工件不一致的 ARTIFACT-MANIFEST.json', async () => {
+    const dir = await fixture();
+    await writeFile(path.join(dir, 'server.mjs'), 'console.log(1)');
+    await writeFile(path.join(dir, 'ARTIFACT-MANIFEST.json'), JSON.stringify({ artifacts: [{ path: 'server.mjs', sha256: 'a'.repeat(64) }] }));
+    await expect(zipDirectory(dir)).rejects.toThrow('校验和不匹配');
   });
 
   it('不把内容中的伪造 PK 中央目录元数据当作真实条目', async () => {

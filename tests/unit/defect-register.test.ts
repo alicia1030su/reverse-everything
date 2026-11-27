@@ -27,10 +27,12 @@ describe('defect register release gate', () => {
     const script = path.join(root, 'scripts/check-defect-register.mjs');
     await writeFile(script, await readFile(path.resolve('scripts/check-defect-register.mjs'), 'utf8'));
     await mkdir(path.join(root, 'docs/development'), { recursive: true });
-    const register = path.join(root, 'docs/development/V007-DEFECT-REGISTER.md');
-    await writeFile(register, '| V007-999 | P1 | blocker | evidence | fix | IN_PROGRESS |\n');
+    const v007 = path.join(root, 'docs/development/V007-DEFECT-REGISTER.md');
+    const v008 = path.join(root, 'docs/development/V008-DEFECT-REGISTER.md');
+    await writeFile(v007, '| V007-999 | P1 | blocker | evidence | fix | FIXED |\n');
+    await writeFile(v008, '| V008-999 | P1 | blocker | evidence | fix | IN_PROGRESS |\n');
     await expect(run(process.execPath, [script], { cwd: root })).rejects.toThrow(/Uncleared P0\/P1/);
-    await writeFile(register, '| V007-999 | P1 | blocker | evidence | fix | FIXED |\n');
+    await writeFile(v008, '| V008-999 | P1 | blocker | evidence | fix | VERIFIED |\n');
     await expect(run(process.execPath, [script], { cwd: root })).resolves.toMatchObject({ stdout: expect.stringContaining('gate passed') });
   });
 });

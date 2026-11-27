@@ -25,6 +25,14 @@ export type MonitoredResourceSnapshot=ResourceSnapshot&{samplingStatus:ResourceS
 export interface DiskSample { dataDirBytes:number; diskAvailableBytes:number; limitations:string[] }
 export interface SystemSample { systemFreeMemoryMB:number; systemTotalMemoryMB:number }
 export const DEFAULT_RESOURCE_THRESHOLDS:ResourceThresholds={softRssMb:700,hardRssMb:950,minSystemFreeMemoryMB:1024,minDiskFreeBytes:1024*1024*1024,maxCpuPercent:90};
+export function effectiveResourceThresholds(configured:ResourceThresholds,systemTotalMemoryMB:number):ResourceThresholds {
+  if(!Number.isFinite(systemTotalMemoryMB)||systemTotalMemoryMB<=0)return configured;
+  const defaults=configured.softRssMb===DEFAULT_RESOURCE_THRESHOLDS.softRssMb&&configured.hardRssMb===DEFAULT_RESOURCE_THRESHOLDS.hardRssMb&&configured.minSystemFreeMemoryMB===DEFAULT_RESOURCE_THRESHOLDS.minSystemFreeMemoryMB;
+  if(!defaults)return configured;
+  if(systemTotalMemoryMB<1024)return {...configured,softRssMb:Math.max(256,systemTotalMemoryMB),hardRssMb:Math.max(384,systemTotalMemoryMB*1.5),minSystemFreeMemoryMB:0};
+  const softRssMb=Math.max(256,Math.min(configured.softRssMb,systemTotalMemoryMB*0.15));
+  return {...configured,softRssMb,hardRssMb:Math.max(softRssMb+128,Math.min(configured.hardRssMb,systemTotalMemoryMB*0.25)),minSystemFreeMemoryMB:Math.max(128,Math.min(configured.minSystemFreeMemoryMB??1024,systemTotalMemoryMB*0.1))};
+}
 export const PROCESS_SAMPLING_LIMITATION = 'Process-tree sampling unavailable; reporting Node self RSS only';
 export const DEFAULT_RESOURCE_SAMPLE_RETENTION = { days:7, maxRows:10000 } as const;
 
@@ -33,7 +41,7 @@ type IdentifiedResourceProcess=ResourceProcess&{startedAt?:number|string};
 export class ProcessSamplingError extends Error { constructor(message:string,readonly kind:'transient'|'unavailable'|'process-exited'='transient'){super(message);this.name='ProcessSamplingError';} }
 export interface ResourceSampleOptions { fresh?:boolean; rootPids?:number[] }
 interface PressureState { level:ResourceSnapshot['pressure']; normalSamples:number }
-interface PressureMetrics { treeRssMB:number; systemFreeMemoryMB:number|undefined; diskAvailableBytes:number|undefined; cpuPercent:number }
+interface PressureMetrics { treeRssMB:number; systemFreeMemoryMB:number|undefined; systemTotalMemoryMB:number|undefined; diskAvailableBytes:number|undefined; cpuPercent:number }
 interface PeakMetrics { treeRssMB:number; cpuPercent:number; dataDirBytes:number }
 
 async function windowsProcesses():Promise<IdentifiedResourceProcess[]> {
@@ -221,7 +229,7 @@ export class ResourceMonitor {
 
   async sampleOrThrow(source:'api'|'worker'|'desktop', options:ResourceSampleOptions={}): Promise<MonitoredResourceSnapshot> {
     const snapshot=await this.sample(source,options);
-    if (!this.samplingHealthy(snapshot)) throw new Error(`Resource sampling failed closed: ${snapshot.limitations.join('; ')}`);
+    if(source==='worker'&&!this.samplingHealthy(snapshot)) throw new Error(`Resource sampling failed closed: ${snapshot.limitations.join('; ')}`);
     return snapshot;
   }
 
@@ -273,11 +281,11 @@ export class ResourceMonitor {
     const cpuPercent=elapsed>0?Math.max(0,Math.min(100*cores,cpuDelta/elapsed/cores*100)):0;
     let disk:DiskSample={dataDirBytes:0,diskAvailableBytes:0,limitations:['Disk usage sampling unavailable']};
     try{disk=await this.measureDisk();}catch{/* unavailable disk metrics must not fabricate a low-disk danger */}
-    let system:SystemSample|undefined;try{system=this.systemSampler();}catch{limitations.push('System memory sampling unavailable');}
+    let system:SystemSample|undefined;try{const sampled=this.systemSampler();if(Number.isFinite(sampled.systemTotalMemoryMB)&&sampled.systemTotalMemoryMB>0&&Number.isFinite(sampled.systemFreeMemoryMB)&&sampled.systemFreeMemoryMB>=0)system=sampled;else limitations.push('System memory sampling unavailable');}catch{limitations.push('System memory sampling unavailable');}
     for (const limitation of disk.limitations) if (!limitations.includes(limitation)) limitations.push(limitation);
     const queued=Number((this.db.raw.prepare("SELECT COUNT(*) n FROM tasks WHERE status='QUEUED'").get() as {n:number}).n);
     const running=Number((this.db.raw.prepare("SELECT COUNT(*) n FROM tasks WHERE status='RUNNING'").get() as {n:number}).n);
-    const pressure=this.nextPressure(source,{treeRssMB:treeRss,systemFreeMemoryMB:system?.systemFreeMemoryMB,diskAvailableBytes:disk.limitations.length?undefined:disk.diskAvailableBytes,cpuPercent});
+    const pressure=this.nextPressure(source,{treeRssMB:treeRss,systemFreeMemoryMB:system?.systemFreeMemoryMB,systemTotalMemoryMB:system?.systemTotalMemoryMB,diskAvailableBytes:disk.limitations.length?undefined:disk.diskAvailableBytes,cpuPercent});
     const previous=this.stored(source);const stale=Boolean(previous&&sampledAt-Date.parse(previous.sampledAt)>this.sampleTtlMs);
     const samplingStatus:ResourceSamplingStatus=processResult.unavailable?'unavailable':exitedPids.length?'process-exited':'fresh';
     if(stale&&processResult.unavailable)limitations.push('Previous resource metrics are stale');
@@ -301,9 +309,10 @@ export class ResourceMonitor {
     const escalate=(level:ResourceSnapshot['pressure']) => {
       severity=Math.max(severity,level==='danger'?2:1);
     };
-    if (metrics.treeRssMB>=this.thresholds.hardRssMb) escalate('danger');
-    else if (metrics.treeRssMB>=this.thresholds.softRssMb) escalate('pressure');
-    const memoryFloor=this.thresholds.minSystemFreeMemoryMB;
+    const thresholds=effectiveResourceThresholds(this.thresholds,metrics.systemTotalMemoryMB??0);
+    if (metrics.treeRssMB>=thresholds.hardRssMb) escalate('danger');
+    else if (metrics.treeRssMB>=thresholds.softRssMb) escalate('pressure');
+    const memoryFloor=thresholds.minSystemFreeMemoryMB;
     if (memoryFloor!==undefined && memoryFloor>0 && metrics.systemFreeMemoryMB!==undefined) {
       if (metrics.systemFreeMemoryMB<=memoryFloor/2) escalate('danger');
       else if (metrics.systemFreeMemoryMB<=memoryFloor) escalate('pressure');

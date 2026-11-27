@@ -1,30 +1,49 @@
-# 从 v0.0.4 升级到 v0.0.5
+# 升级与回滚指南
 
-v0.0.5 引入 Schema 4、主机研究档案、分析计划、授权范围、工具与演示表。升级前请备份 `data/`，不要删除旧数据库。
+当前正式版：**v0.0.7 / Schema 6**。v0.0.8 开发目标为 Schema 7，尚未发布。升级前必须备份整个 `data/`；数据库迁移不是数据备份的替代品。
 
-## 升级步骤
+## 通用升级步骤
 
-1. 停止 API、Worker 与桌面端。
-2. 备份整个 `data/` 目录，包括 SQLite、WAL/SHM、上传、产物、`secret.key` 与 `local-token`。
-3. 安装 v0.0.5 或替换应用目录。
-4. 启动后检查 `/api/version`：产品版本应为 `0.0.5`，当前 `schemaVersion=4`。
-5. 检查现有项目、任务、证据、缓存、设置与备份是否完整。
-6. 如迁移失败，保留备份与错误信息，不要手工删除数据库文件。
+1. 停止 API、Worker、CLI 长任务与桌面端，避免迁移时仍有进程写入 SQLite。
+2. 备份整个 `data/`，包括 SQLite 主文件、WAL/SHM、上传、产物、缓存、`secret.key`、`local-token` 和 `backups/`。凭证文件不要提交到仓库。
+3. 记录升级前版本、Schema 和安装位置；Windows 覆盖安装或 Portable 替换前关闭旧进程。
+4. 安装新版本或替换应用目录，使用官方固定版本资产并校验 `SHA256SUMS.txt`。
+5. 首次启动让迁移完成。实现会在数据库目录的 `backups/` 下创建 `pre-v<目标 Schema>-*.sqlite`，但整个 `data/` 备份仍是回滚前提。
+6. 检查 `/api/version` 与现有项目、任务、上传、证据、产物、设置和备份。
+7. 执行核心 smoke：打开现有项目、读取产物、启动一次合法分析；涉及游戏或 Legacy 时分别验证对应工作台。
 
-## 自动迁移
+迁移失败时保留原数据库、自动备份和错误信息，不要手工删除数据库或跳过完整性检查。
 
-- Schema 3 → 4 会新增 `console_profiles`、`analysis_plans`、`authorization_scopes`、`tool_installations`、`demo_runs`、`project_deletion_intents`。
-- 迁移前自动创建 `pre-v4-*.sqlite` 备份。
-- 旧项目、任务、证据、缓存与加密设置保持不变。
-- 新 adapter `console` 不会自动修改旧任务。
+## v0.0.6 → v0.0.7（Schema 5 → 6）
+
+- v0.0.6 使用 Schema 5；v0.0.7 使用 Schema 6。
+- Schema 6 为 `game_profiles` 增加 `behavior_json`，并包含旧游戏文件身份字段和完整性检查；旧游戏档案、扫描记录和生成物不会被改写为新行为规格。
+- 启动后确认产品版本为 `0.0.7`、`schemaVersion=6`。
+- 验证旧项目与上传仍可读取；已有 V5 游戏任务可继续查看证据和产物。不要把旧档案自动视为具有 V5 行为证据。
+- v0.0.7 正式候选已通过 Windows v0.0.6→v0.0.7 覆盖升级、Schema 6 迁移、用户数据/项目保留及 Game/Legacy smoke。
+
+## v0.0.7 → v0.0.8（Schema 6 → 7，开发中）
+
+- v0.0.8 计划新增 Autopilot 任务、消息和步骤结果表，目标 `schemaVersion=7`；以最终发布版本的实际值为准。
+- 旧分析任务、项目、上传、证据和设置应保持兼容；新增表不应要求用户重建旧项目。
+- 升级后除通用 smoke 外，还需验证旧任务可打开、历史产物可下载、备份可验证，以及新 Autopilot 任务可创建、恢复和取消。
+- Schema 7 尚在开发，未完成候选升级验收前不得把本步骤标为已验证。
 
 ## 回滚
 
-回滚到 v0.0.4 前应恢复升级前备份。旧版本不认识 Schema 4 新表，不要用旧 Worker 处理 v0.0.5 队列或新 adapter 任务。
+### 应用回滚
 
-## v0.0.5 新边界
+1. 停止新版本全部进程，保留当前 `data/` 和迁移备份供诊断。
+2. 安装上一正式版本及对应版本资产，恢复**升级前**的完整 `data/` 备份；不要混用新版本数据库与旧版本程序。
+3. 启动后确认版本、Schema 与核心 smoke，记录回滚原因和恢复点。
 
-- 默认只读、本地保存、凭证脱敏。
-- 远程 AI 共享需显式同意。
-- 主机 C0-C5 是证据等级，不是权限。
-- 真实 PS5/Xbox/Android TV 未提供时，相关能力保持 `BLOCKED` / `UNKNOWN`。
+### 数据兼容边界
+
+- 旧版本不认识的更高 Schema 会被拒绝；不能仅替换 EXE 后继续使用已升级数据库。
+- Schema 5→6 会新增字段，Schema 6→7 会新增表。回滚到旧程序时应恢复旧备份，而不是删除新表或手改 `PRAGMA user_version`。
+- 若升级后已创建新任务或写入新证据，先导出需要保留的内容；恢复旧备份会丢失这些后续写入。
+- 自动 `pre-v*.sqlite` 备份只覆盖数据库，不包含全部上传、产物和密钥，不能单独替代完整 `data/` 备份。
+
+## 历史：v0.0.4 → v0.0.5（Schema 3 → 4）
+
+v0.0.5 引入 `console_profiles`、`analysis_plans`、`authorization_scopes`、`tool_installations`、`demo_runs` 和 `project_deletion_intents`，升级后预期版本 `0.0.5`、Schema 4。该节仅用于旧环境迁移；从 v0.0.5 及以后版本升级应按当前章节连续迁移到 Schema 6，不要停留在旧预期。

@@ -1,13 +1,39 @@
 # Reverse Everything
 
-**AI-assisted local reverse engineering, console research, and digital compatibility reconstruction · v0.0.7**
+**Autopilot: natural-language local reverse engineering and compatibility reconstruction · v0.0.8**
+
+Current stable release: v0.0.7. v0.0.8 is a development candidate and is not published.
 
 [![CI](https://github.com/alicia1030su/reverse-everything/actions/workflows/ci.yml/badge.svg)](https://github.com/alicia1030su/reverse-everything/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
-[![Release](https://img.shields.io/badge/release-latest-blue.svg)](https://github.com/alicia1030su/reverse-everything/releases/latest)
+[![Release](https://img.shields.io/badge/release-v0.0.7-blue.svg)](https://github.com/alicia1030su/reverse-everything/releases/tag/v0.0.7)
+[![v0.0.8 development](https://img.shields.io/badge/release-v0.0.8-development-orange.svg)](#what-is-new-in-v008)
 [简体中文](README.md)
 
 ![Reverse Everything banner](docs/assets/banner.svg)
+
+## What is new in v0.0.8
+
+Describe what you want in natural language, such as “analyze this legacy software and propose a compatible rebuild” or “rebuild this site and deliver a deployable artifact”. Autopilot asks for missing information, shows a **goal contract** and **execution plan**, then runs real analysis, build, test, and independent rule-based acceptance only after your explicit approval. Deliveries include SHA-256, a tutorial, and an acceptance report.
+
+**Rule-based and local-only by default; no API key is required.** Provider V4 model management supports role routing, capability probes, budgets, and fallback, but real remote models are not yet wired into the full Autopilot main loop. Real-key end-to-end acceptance remains `UNVERIFIED`; Mock or rule-based results must not be presented as real-model capability. v0.0.8 is not released; v0.0.7 remains the current stable release.
+
+Real flow: describe a goal → answer dynamic questions → approve scope/budget/acceptance contract → approve the dependency plan → run real steps → review artifacts and limitations in Delivery Center. See the [Autopilot guide](docs/AUTOPILOT.md) and [beginner quickstart](docs/BEGINNER-QUICKSTART.md).
+
+### Screenshot placeholders (pending real E2E)
+
+These are documentation placeholders, not generated screenshots or evidence that visual/E2E acceptance has passed:
+
+```text
+[pending real E2E] Autopilot natural-language home: /autopilot
+[pending real E2E] Goal contract and plan approval: /autopilot/:id
+[pending real E2E] Delivery Center and independent acceptance: /delivery/:id
+[pending real E2E] Provider V4 model management: /models
+```
+
+Replace these placeholders only after recording the fixed commit, browser/viewport, task ID, and real acceptance status.
+
+## What is new in v0.0.7
 
 Reverse Everything turns **authorized targets** into traceable analysis jobs: real tool output, persisted stages, recoverable state, reproducible checks, and downloadable artifacts. v0.0.7 adds Legacy Software Revival Studio, read-only identification, compatibility and lawful-license diagnostics, data recovery, independent tool generation, and V5 behavior-IR-driven anti-template game revival.
 
@@ -170,7 +196,7 @@ Local URLs require `--confirm-local`. The CLI reads `RE_DATA_DIR/local-token` by
 
 - API: `http://127.0.0.1:4173/api/v1`; `/api` remains an alias.
 - OpenAPI: runtime `GET /api/openapi.json`.
-- MCP: stdio and Streamable HTTP share the API and expose **44 tools**; `create_task` now accepts the `legacy` adapter, while game tools remain `list_game_profiles`, `save_game_profile`, `scan_game_directory`, `create_game_server_spec`, `list_game_rebuilds`, `create_game_rebuild`, and `get_game_rebuild`.
+- MCP: stdio and Streamable HTTP share the API. The v0.0.7 baseline continues to expose **44 tools**; the v0.0.8 development tree adds 10 `autopilot_*` tools for 54 total. `create_task` accepts the `legacy` adapter, while game tools remain `list_game_profiles`, `save_game_profile`, `scan_game_directory`, `create_game_server_spec`, `list_game_rebuilds`, `create_game_rebuild`, and `get_game_rebuild`.
 - Skill: `skills/reverse-everything`; prefer MCP, otherwise CLI/API.
 
 All entrypoints share backend authorization, schemas, budgets, and structured errors. Cleanup, device opening, live capture, flashing, driver installation, and arbitrary host command execution are not exposed to MCP.
@@ -189,15 +215,15 @@ See the [security policy](SECURITY.md) and [disclaimer](DISCLAIMER.en.md).
 
 ## Downloads
 
-v0.0.7 is still in development/candidate stages. The following are current stable v0.0.6 assets and do not mean v0.0.7 has been released.
+The current stable v0.0.7 was officially released on 2026-11-26. These assets are pinned to the [v0.0.7 Release](https://github.com/alicia1030su/reverse-everything/releases/tag/v0.0.7) and will not move with Latest; the official release run is `45912292229`.
 
 | Platform / form | File |
 |---|---|
-| Windows installer | [Reverse-Everything-Setup-0.0.6-win-x64.exe](https://github.com/alicia1030su/reverse-everything/releases/latest/download/Reverse-Everything-Setup-0.0.6-win-x64.exe) |
-| Windows Portable | [Reverse-Everything-Portable-0.0.6-win-x64.zip](https://github.com/alicia1030su/reverse-everything/releases/latest/download/Reverse-Everything-Portable-0.0.6-win-x64.zip) |
-| CLI | [reverse-everything-cli-0.0.6.tgz](https://github.com/alicia1030su/reverse-everything/releases/latest/download/reverse-everything-cli-0.0.6.tgz) |
-| Server | [reverse-everything-server-0.0.6.tar.gz](https://github.com/alicia1030su/reverse-everything/releases/latest/download/reverse-everything-server-0.0.6.tar.gz) |
-| Skill | [reverse-everything-skill-0.0.6.zip](https://github.com/alicia1030su/reverse-everything/releases/latest/download/reverse-everything-skill-0.0.6.zip) |
+| Windows installer | [Reverse-Everything-Setup-0.0.7-win-x64.exe](https://github.com/alicia1030su/reverse-everything/releases/download/v0.0.7/Reverse-Everything-Setup-0.0.7-win-x64.exe) |
+| Windows Portable | [Reverse-Everything-Portable-0.0.7-win-x64.zip](https://github.com/alicia1030su/reverse-everything/releases/download/v0.0.7/Reverse-Everything-Portable-0.0.7-win-x64.zip) |
+| CLI | [reverse-everything-cli-0.0.7.tgz](https://github.com/alicia1030su/reverse-everything/releases/download/v0.0.7/reverse-everything-cli-0.0.7.tgz) |
+| Server | [reverse-everything-server-0.0.7.tar.gz](https://github.com/alicia1030su/reverse-everything/releases/download/v0.0.7/reverse-everything-server-0.0.7.tar.gz) |
+| Skill | [reverse-everything-skill-0.0.7.zip](https://github.com/alicia1030su/reverse-everything/releases/download/v0.0.7/reverse-everything-skill-0.0.7.zip) |
 
 Download `SHA256SUMS.txt` and run `sha256sum -c SHA256SUMS.txt`. Windows installers are unsigned and may trigger SmartScreen; no code-signing claim is made.
 
@@ -213,7 +239,7 @@ npm run validate:skill
 npm run version:check
 ```
 
-Historical baselines and v0.0.6 gates are governed by the [V006 test results](docs/development/V006-TEST-RESULTS.md) and [V007 baseline audit](docs/development/V007-BASELINE.md). v0.0.6 FPS/RPG Docker/L7 passed in the official candidate CI. Final v0.0.7 tests, skips, and release gates remain governed by the final report; checks that did not run are not marked passed.
+Historical baselines and v0.0.6 gates are governed by the [V006 test results](docs/development/V006-TEST-RESULTS.md) and [V007 baseline audit](docs/development/V007-BASELINE.md). See [V007 test results](docs/development/V007-TEST-RESULTS.md) for the frozen commit: Ubuntu 784 passed / 7 skipped, Windows 783 passed / 8 skipped; E2E Ubuntu 28 passed / 1 skipped and Windows 29 passed. Checks that did not run are not marked passed.
 
 - [PRD](docs/PRD.md) · [Architecture](docs/ARCHITECTURE.md) · [Security model](docs/SECURITY-MODEL.md) · [Roadmap](docs/ROADMAP.md)
 - [Legacy software](docs/LEGACY-SOFTWARE.md) · [Reconstruction](docs/SOFTWARE-RECONSTRUCTION.md) · [Data recovery](docs/DATA-RECOVERY.md) · [Local privacy](docs/LOCAL-PRIVACY.md) · [License diagnostics](docs/LICENSE-DIAGNOSTICS.md) · [Game compatibility](docs/GAME-COMPATIBILITY.md)

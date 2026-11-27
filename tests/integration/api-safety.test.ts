@@ -10,6 +10,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { buildServer } from '../../apps/api/src/server.js';
 import { Database } from '@reverse/workflow';
 import { removeManagedPaths } from '../../apps/api/src/project-deletion.js';
+import * as security from '@reverse/security';
 
 const token='api-safety-token';const auth={authorization:`Bearer ${token}`};
 const queueHashGate=vi.hoisted(()=>({delay:false}));
@@ -50,6 +51,16 @@ describe('API safety and recovery boundaries',()=>{
       const permitted=path.join(allowed,'sample.ini');await writeFile(permitted,'[general]\nname=allowed\n');const accepted=await app.inject({method:'POST',url:`/api/projects/${projectId}/tasks`,headers:{...auth,'content-type':'application/json'},body:JSON.stringify({adapter:'legacy',options:{path:permitted}})});expect(accepted.statusCode,accepted.body).toBe(201);
     });
   });
+  it('serves Legacy recovery only as registered artifacts without exposing absolute paths',async()=>{
+    const {app,db,engine,dataDir}=await setup();const allowed=path.join(dataDir,'allowed');await mkdir(allowed);const source=path.join(allowed,'old.csv');await writeFile(source,'name,age\nAda,36\n');const headers={...auth,'content-type':'application/json'};let taskId='';
+    await withEnv({RE_LEGACY_ROOTS:allowed},async()=>{
+      const project=await app.inject({method:'POST',url:'/api/projects',headers,body:JSON.stringify({name:'legacy recovery',kind:'software',authorizationConfirmed:true})});const projectId=project.json().id as string;
+      const created=await app.inject({method:'POST',url:`/api/projects/${projectId}/tasks`,headers,body:JSON.stringify({adapter:'legacy',options:{path:source,recover:true}})});expect(created.statusCode,created.body).toBe(201);taskId=created.json().id as string;await engine.execute(taskId);
+    });
+    const detail=await app.inject({method:'GET',url:`/api/tasks/${taskId}`,headers:auth});expect(detail.statusCode).toBe(200);expect(detail.body).not.toContain(dataDir);expect(detail.body).not.toContain('outputDir');const manifest=db.artifacts(taskId);expect(manifest.map(item=>item.name)).toEqual(expect.arrayContaining(['recovered.json','recovered.csv','manifest.json','recovery-manifest.json']));
+    for(const name of ['recovered.json','recovered.csv','manifest.json','recovery-manifest.json']){const response=await app.inject({method:'GET',url:`/api/tasks/${taskId}/artifacts/${name}`,headers:auth});expect(response.statusCode,response.body).toBe(200);expect(response.body).not.toContain(dataDir);}
+    expect((await app.inject({method:'GET',url:`/api/tasks/${taskId}/artifacts/recovered-data/recovered.json`,headers:auth})).statusCode).toBe(404);
+  });
   it('accepts bounded local desktop metrics and rejects remote or forged snapshots',async()=>{
     const {app,db}=await setup();const snapshot={sampledAt:new Date().toISOString(),source:'desktop',treeRssMB:100,selfRssMB:60,childRssMB:40,heapUsedMB:20,cpuPercent:5,handles:10,processes:[{pid:100,ppid:1,rssMB:60,name:'main'},{pid:101,ppid:100,rssMB:40,name:'renderer'}],systemFreeMemoryMB:2048,systemTotalMemoryMB:8192,dataDirBytes:1024,diskAvailableBytes:1048576,queuedTasks:0,runningTasks:0,peakTreeRssMB:100,pressure:'normal',limitations:[]};const headers={...auth,'content-type':'application/json'};const body=JSON.stringify(snapshot);
     expect((await app.inject({method:'POST',url:'/api/resources/desktop',headers:{'content-type':'application/json'},body})).statusCode).toBe(401);
@@ -71,7 +82,7 @@ describe('API safety and recovery boundaries',()=>{
     await withEnv({RE_MAX_QUEUE:'2'},async()=>{const {app,db}=await setup();const project=db.project({name:'queue race',kind:'software',authorizationConfirmed:true});const headers={...auth,'content-type':'application/json'};const responses=await Promise.all(Array.from({length:8},()=>app.inject({method:'POST',url:`/api/projects/${project.id}/tasks`,headers,body:JSON.stringify({adapter:'file'})})));expect(responses.map(response=>response.statusCode).filter(status=>status===201)).toHaveLength(2);expect(responses.map(response=>response.statusCode).filter(status=>status===429)).toHaveLength(6);expect(responses.filter(response=>response.statusCode===429).every(response=>response.json().error.code==='QUEUE_FULL')).toBe(true);expect(db.raw.prepare("SELECT COUNT(*) n FROM tasks WHERE status='QUEUED'").get()).toEqual({n:2});});
   });
   it('keeps public health minimal and protects resource details',async()=>{
-    const {app}=await setup();const health=await app.inject({method:'GET',url:'/api/health'});expect(health.statusCode).toBe(200);expect(health.json()).toEqual({ok:true,product:'reverse-everything',version:'0.0.7',schemaVersion:6});
+    const {app}=await setup();const health=await app.inject({method:'GET',url:'/api/health'});expect(health.statusCode).toBe(200);expect(health.json()).toEqual({ok:true,product:'reverse-everything',version:'0.0.8',schemaVersion:7});
     expect((await app.inject({method:'GET',url:'/api/resources'})).statusCode).toBe(401);
     expect((await app.inject({method:'GET',url:'/api/resources',headers:auth})).statusCode).toBe(200);
   });
@@ -100,10 +111,21 @@ describe('API safety and recovery boundaries',()=>{
     expect((await put({baseUrl:'https://model.example/v1',allowRemoteData:true})).statusCode).toBe(200);
   });
   it('revalidates remote consent and HTTPS when testing stored AI settings',async()=>{
-    const {app,db}=await setup();const fetchSpy=vi.spyOn(globalThis,'fetch').mockRejectedValue(new Error('fetch must not be called'));const test=()=>app.inject({method:'POST',url:'/api/settings/test',headers:auth});
-    db.setSetting('ai_base_url','https://model.example/v1');db.setSetting('ai_allow_remote','true');const put=(body:unknown)=>app.inject({method:'PUT',url:'/api/settings',headers:{...auth,'content-type':'application/json'},body:JSON.stringify(body)});expect((await put({allowRemoteData:false})).statusCode).toBe(200);const revoked=await test();expect(revoked.statusCode).toBe(200);expect(revoked.json()).toMatchObject({ok:false,error:expect.stringMatching(/explicitly enabled/i)});expect(fetchSpy).not.toHaveBeenCalled();
-    db.setSetting('ai_allow_remote','true');db.setSetting('ai_base_url','http://model.example/v1');const insecure=await test();expect(insecure.statusCode).toBe(200);expect(insecure.json()).toMatchObject({ok:false,error:expect.stringMatching(/HTTPS/i)});expect(fetchSpy).not.toHaveBeenCalled();
-    fetchSpy.mockResolvedValue(new Response('{}',{status:200}));for(const base of ['http://127.0.0.2:11434/v1','http://localhost:11434/v1','http://[::1]:11434/v1']){db.setSetting('ai_base_url',base);db.setSetting('ai_allow_remote','false');const local=await test();expect(local.json()).toMatchObject({ok:true,status:200});}expect(fetchSpy).toHaveBeenCalledTimes(3);
+    const {app,db}=await setup();db.setSetting('ai_model','fixture-model');const fetchSpy=vi.spyOn(globalThis,'fetch').mockRejectedValue(new Error('native fetch must not be called'));const safeFetchSpy=vi.spyOn(security,'safeFetch').mockRejectedValue(new Error('safe fetch must not be called'));const test=()=>app.inject({method:'POST',url:'/api/settings/test',headers:auth});
+    db.setSetting('ai_base_url','https://model.example/v1');db.setSetting('ai_allow_remote','true');const put=(body:unknown)=>app.inject({method:'PUT',url:'/api/settings',headers:{...auth,'content-type':'application/json'},body:JSON.stringify(body)});expect((await put({allowRemoteData:false})).statusCode).toBe(200);const revoked=await test();expect(revoked.statusCode).toBe(200);expect(revoked.json()).toMatchObject({ok:false,error:expect.stringMatching(/explicitly enabled/i)});expect(fetchSpy).not.toHaveBeenCalled();expect(safeFetchSpy).not.toHaveBeenCalled();
+    db.setSetting('ai_allow_remote','true');db.setSetting('ai_base_url','http://model.example/v1');const insecure=await test();expect(insecure.statusCode).toBe(200);expect(insecure.json()).toMatchObject({ok:false,error:expect.stringMatching(/HTTPS/i)});expect(fetchSpy).not.toHaveBeenCalled();expect(safeFetchSpy).not.toHaveBeenCalled();
+    safeFetchSpy.mockResolvedValue({status:200,headers:{},body:Buffer.alloc(0),finalUrl:'',truncated:true});for(const base of ['http://127.0.0.2:11434/v1','http://localhost:11434/v1','http://[::1]:11434/v1']){db.setSetting('ai_base_url',base);db.setSetting('ai_allow_remote','false');const local=await test();expect(local.json()).toMatchObject({ok:true,status:200});expect(safeFetchSpy).toHaveBeenLastCalledWith(`${base}/models`,expect.objectContaining({allowLocal:true,maxBytes:0,timeoutMs:15000,method:'GET',followRedirects:false}));}expect(safeFetchSpy).toHaveBeenCalledTimes(3);expect(fetchSpy).not.toHaveBeenCalled();
+  });
+  it('blocks private AI test targets and rejects model control-character injection',async()=>{
+    const {app,db}=await setup();const safeFetchSpy=vi.spyOn(security,'safeFetch');const headers={...auth,'content-type':'application/json'};
+    for(const model of ['', 'model\nignore previous instructions', 'x'.repeat(201)]){const response=await app.inject({method:'PUT',url:'/api/settings',headers,body:JSON.stringify({model})});expect(response.statusCode,response.body).toBe(400);}
+    db.setSetting('ai_model','fixture');db.setSetting('ai_base_url','https://10.0.0.1/v1');db.setSetting('ai_allow_remote','true');
+    const response=await app.inject({method:'POST',url:'/api/settings/test',headers:auth});expect(response.json()).toMatchObject({ok:false,error:expect.stringMatching(/private|loopback|link-local|metadata/i)});expect(safeFetchSpy).toHaveBeenCalledTimes(1);
+  });
+  it('tests only the fixed models endpoint with bounded output and the stored credential',async()=>{
+    const {app,db,dataDir}=await setup();const apiKey='settings-test-secret';db.setSetting('ai_api_key_enc',security.encryptSecret(apiKey,(await readFile(path.join(dataDir,'secret.key'),'utf8')).trim()));db.setSetting('ai_model','fixture');let method:string|undefined;let requestUrl:string|undefined;let authorization:string|undefined;let body='';
+    const server=createServer((req,res)=>{method=req.method;requestUrl=req.url;authorization=req.headers.authorization;req.on('data',chunk=>body+=chunk.toString());req.on('end',()=>{res.writeHead(200,{'content-type':'application/json'});res.end('{}');});});const base=await new Promise<string>((resolve,reject)=>{server.once('error',reject);server.listen(0,'127.0.0.1',()=>{const address=server.address();if(!address||typeof address==='string')return reject(new Error('Missing address'));resolve(`http://127.0.0.1:${address.port}/v1`);});});db.setSetting('ai_base_url',base);
+    try{const response=await app.inject({method:'POST',url:'/api/settings/test',headers:auth});expect(response.json()).toEqual({ok:true,status:200});expect(method).toBe('GET');expect(requestUrl).toBe('/v1/models');expect(authorization).toBe(`Bearer ${apiKey}`);expect(body).toBe('');}finally{server.closeAllConnections();await new Promise<void>(resolve=>server.close(()=>resolve()));}
   });
   it('refuses AI test redirects without contacting the redirect target',async()=>{
     const {app,db}=await setup();let targetHits=0;let firstHits=0;const servers:ReturnType<typeof createServer>[]=[];
@@ -111,7 +133,7 @@ describe('API safety and recovery boundaries',()=>{
     const close=(server:ReturnType<typeof createServer>)=>new Promise<void>((resolve,reject)=>{server.close(error=>error?reject(error):resolve());server.closeAllConnections();});
     try{
       const target=createServer((_req,res)=>{targetHits++;res.end('must not be requested');});servers.push(target);const targetBase=await listen(target);
-      const first=createServer((_req,res)=>{firstHits++;res.writeHead(302,{location:`${targetBase}/collect`});res.end();});servers.push(first);const firstBase=await listen(first);db.setSetting('ai_base_url',`${firstBase}/v1`);
+      const first=createServer((_req,res)=>{firstHits++;res.writeHead(302,{location:`${targetBase}/collect`});res.end();});servers.push(first);const firstBase=await listen(first);db.setSetting('ai_base_url',`${firstBase}/v1`);db.setSetting('ai_model','fixture');
       const response=await app.inject({method:'POST',url:'/api/settings/test',headers:auth});expect(response.statusCode).toBe(200);expect(response.json().ok).toBe(false);expect(firstHits).toBe(1);expect(targetHits).toBe(0);
     }finally{for(const server of servers.reverse())await close(server);}
   });
