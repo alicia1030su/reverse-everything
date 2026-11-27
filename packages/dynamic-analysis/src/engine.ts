@@ -151,7 +151,7 @@ export class DynamicAnalysisEngine {
         const programFunction = inferProgramFunction(frame, frame?.address);
         addEvent({ type: 'breakpoint', threadId, ...(frame ? { frame } : {}), ...(frame?.address ? { address: frame.address } : {}), data: { reason: field(stopped, 'reason') ?? 'stopped', ...(programFunction ?? {}) } });
         const [threadValue, stackValue, registerValue] = await Promise.all([
-          client!.execute('-thread-info'), client!.execute('-stack-list-frames'), client!.execute('-data-list-register-values'),
+          client!.execute('-thread-info'), client!.execute('-stack-list-frames'), client!.execute('-data-list-register-values', 'x'),
         ]);
         for (const thread of parseThreads(threadValue)) threads.set(thread.id, thread);
         addEvent({ type: 'thread', threadId, data: { threads: [...threads.values()] } });
