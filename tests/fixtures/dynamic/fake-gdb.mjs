@@ -48,6 +48,10 @@ readline.createInterface({ input: process.stdin }).on('line', async (line) => {
   else if (command === '-exec-run') {
     if (payload || (mode === 'with-args' && !argumentsReceived)) { process.stdout.write(`${id}^error,msg="expected -exec-arguments before argument-free -exec-run"\n(gdb) `); return; }
     if (mode === 'separate-group-orphan') {
+      const { existsSync } = await import('node:fs');
+      const marker = process.env.FAKE_GDB_CHILD_PID_FILE;
+      const markerDeadline = Date.now() + 2_000;
+      while (marker && !existsSync(marker) && Date.now() < markerDeadline) await new Promise(resolve => setTimeout(resolve, 10));
       process.stdout.write(`${id}^running\n*running,thread-id="all"\n=thread-group-started,id="i1",pid="${orphanGroupLeaderPid}"\n=thread-group-exited,id="i1"\n*stopped,reason="exited-normally"\n(gdb) `);
       return;
     }

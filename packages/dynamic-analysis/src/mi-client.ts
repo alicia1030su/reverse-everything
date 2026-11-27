@@ -166,10 +166,10 @@ export class GdbMiClient extends EventEmitter {
     return false;
   }
 
-  private async readProcGroupMembers(pgid: number): Promise<ProcessIdentity[]> {
+  private async readProcGroupMembers(pgid: number): Promise<ProcessIdentity[] | undefined> {
     const members: ProcessIdentity[] = [];
     let entries: string[];
-    try { entries = await readdir('/proc'); } catch { return members; }
+    try { entries = await readdir('/proc'); } catch { return undefined; }
     for (const entry of entries) {
       if (!/^\d+$/.test(entry)) continue;
       const pid = Number(entry);
@@ -186,11 +186,14 @@ export class GdbMiClient extends EventEmitter {
     const confirmed = await this.readProcStat(pid);
     if (!confirmed || confirmed.startTicks !== initial.startTicks || confirmed.pgid !== pid) return;
     const members = new Map<number, number>();
-    for (const member of await this.readProcGroupMembers(pid)) {
-      if (await this.isDescendantOfGdb(member.pid)) members.set(member.pid, member.startTicks);
+    const currentMembers = await this.readProcGroupMembers(pid);
+    if (currentMembers) {
+      for (const member of currentMembers) {
+        if (await this.isDescendantOfGdb(member.pid)) members.set(member.pid, member.startTicks);
+      }
     }
     if (!members.has(pid)) members.set(pid, confirmed.startTicks);
-    this.inferiorGroups.set(pid, { leaderPid: pid, leaderStartTicks: confirmed.startTicks, members });
+    this.inferiorGroups.set(pid, { leaderPid: pid, leaderStartTicks: confirmed.startTicks, members, membersComplete: currentMembers !== undefined });
   }
 
   private consumeStderr(chunk: string): void {
@@ -407,7 +410,8 @@ export class GdbMiClient extends EventEmitter {
         : undefined;
       const leaderMatches = currentLeader?.startTicks === group.leaderStartTicks && currentLeader.pgid === group.leaderPid;
       const currentMembers = leaderMatches ? [] : await this.readProcGroupMembers(group.leaderPid);
-      const plan = planInferiorCleanup(group, currentLeader, currentMembers);
+      if (!leaderMatches && currentMembers === undefined) { unresolved = true; continue; }
+      const plan = planInferiorCleanup(group, currentLeader, currentMembers ?? []);
       for (const pgid of plan.killGroupPids) {
         try { process.kill(-pgid, 'SIGKILL'); } catch { /* group already gone */ }
       }
