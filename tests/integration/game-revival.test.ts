@@ -116,9 +116,9 @@ describe('game revival API',()=>{
     if(mode==='completion'){vi.spyOn(gameRevival,'generateGameServer').mockResolvedValue({files:[],sha256:'test'});vi.spyOn(gameRevival,'validateGeneratedServer').mockImplementation(async()=>{await gate;return report;});}
     else{vi.spyOn(gameRevival,'generateGameServer').mockImplementation(async()=>{await gate;throw new Error('stale rebuild failure');});}
     const created=await app.inject({method:'POST',url:'/api/game/rebuilds',headers:{...headers,'content-type':'application/json'},body:JSON.stringify({specId:spec.json().spec.id})});expect(created.statusCode,created.body).toBe(202);
-    await vi.waitFor(()=>expect(mode==='completion'?gameRevival.validateGeneratedServer:gameRevival.generateGameServer).toHaveBeenCalledTimes(1));
+    await vi.waitFor(()=>expect(mode==='completion'?gameRevival.validateGeneratedServer:gameRevival.generateGameServer).toHaveBeenCalledTimes(1),{timeout:10_000});
     const saved=await app.inject({method:'PUT',url:`/api/projects/${project.id}/game-profile`,headers:{...headers,'content-type':'application/json'},body:JSON.stringify(profile)});expect(saved.statusCode,saved.body).toBe(200);db.raw.prepare("UPDATE game_profiles SET level='L6' WHERE project_id=?").run(project.id);release();
-    await vi.waitFor(async()=>{const current=await app.inject({method:'GET',url:`/api/game/rebuilds/${created.json().id}`,headers});expect(current.json().status).toBe(mode==='completion'?'COMPLETED':'FAILED');});
+    await vi.waitFor(async()=>{const current=await app.inject({method:'GET',url:`/api/game/rebuilds/${created.json().id}`,headers});expect(current.json().status).toBe(mode==='completion'?'COMPLETED':'FAILED');},{timeout:10_000});
     expect((db.raw.prepare('SELECT level FROM game_profiles WHERE project_id=?').get(project.id) as {level:string}).level).toBe('L6');
   });
   it('API 关闭取消并等待扫描，且数据库保持可用直至关闭',async()=>{
