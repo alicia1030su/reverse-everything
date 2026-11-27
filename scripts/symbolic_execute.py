@@ -370,11 +370,11 @@ def analyze(request: dict, worker_sha256: str, started_at: str, started: float) 
             truncated = True
             break
         manager.step(find=reached_target)
-        states_explored += len(manager.active) + len(manager.found) + len(manager.deadended)
+        newly_found = list(manager.stashes.get("found", []))
+        states_explored += len(manager.active) + len(newly_found) + len(manager.deadended)
         if time.monotonic() >= deadline:
             raise TimeoutError("symbolic analysis deadline exceeded")
-        newly_found = manager.found
-        manager.found = []
+        manager.stashes["found"] = []
         for found_state in newly_found:
             if len(paths) >= max_paths:
                 truncated = True
