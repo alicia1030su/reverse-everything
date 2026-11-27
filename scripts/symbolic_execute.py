@@ -26,6 +26,7 @@ LIMITS = {
 MAX_CONSTRAINT_CHARS = 4_000
 MAX_CONSTRAINTS = 512
 MAX_HISTORY = 4_096
+MAX_RESPONSE_BYTES = 2_097_152
 _ACTIVE_NATIVE_PROC: subprocess.Popen | None = None
 
 
@@ -167,6 +168,20 @@ def history_evidence(addresses: list[int]) -> tuple[list[str], dict]:
 
 def state_budget_allows(active_count: int, explored: int, maximum: int) -> bool:
     return active_count <= maximum - explored
+
+
+def bounded_response(result: dict) -> dict:
+    if len(json.dumps(result, separators=(",", ":")).encode("utf-8")) <= MAX_RESPONSE_BYTES:
+        return result
+    result["status"] = "partial"
+    result["partialReasons"] = ["output-budget"]
+    result["outputBudgetExceeded"] = True
+    result["paths"] = []
+    result["solvedInputs"] = []
+    result["stats"]["pathsFound"] = 0
+    result["limitations"].append("Worker response exceeded its budget and path records were omitted.")
+    result["error"] = "worker response budget exceeded"
+    return result
 
 
 def posix_group_alive(group_id: int) -> bool:
@@ -529,16 +544,8 @@ def main() -> int:
             },
             "error": f"{type(exc).__name__}: {exc}"[:16_000],
         }
+    result = bounded_response(result)
     encoded = json.dumps(result, separators=(",", ":")).encode("utf-8")
-    if len(encoded) > 2_097_152:
-        # A completed bounded response is preferable to silently truncating JSON.
-        result["status"] = "partial"
-        result["paths"] = []
-        result["solvedInputs"] = []
-        result["stats"]["pathsFound"] = 0
-        result["limitations"].append("Worker response exceeded its budget and path records were omitted.")
-        result["error"] = "worker response budget exceeded"
-        encoded = json.dumps(result, separators=(",", ":")).encode("utf-8")
     sys.stdout.buffer.write(encoded + b"\n")
     return 0
 
