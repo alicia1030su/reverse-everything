@@ -2,8 +2,9 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import { createHash, randomBytes, scrypt } from 'node:crypto';
 import { createRequire } from 'node:module';
 import { createServer } from 'node:net';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { promisify } from 'node:util';
+import { pathToFileURL } from 'node:url';
 import os from 'node:os';
 import path from 'node:path';
 import WebSocket from 'ws';
@@ -340,6 +341,36 @@ async function freePort():Promise<number> { return new Promise((resolve,reject)=
 function gameAbortError():Error { const error=new Error('Game validation cancelled');error.name='AbortError';return error; }
 function abortable<T>(promise:Promise<T>,signal:AbortSignal):Promise<T> { if(signal.aborted){promise.catch(()=>{});return Promise.reject(gameAbortError());}return new Promise((resolve,reject)=>{const onAbort=()=>{signal.removeEventListener('abort',onAbort);promise.catch(()=>{});reject(gameAbortError());};signal.addEventListener('abort',onAbort,{once:true});promise.then(value=>{signal.removeEventListener('abort',onAbort);resolve(value);},error=>{signal.removeEventListener('abort',onAbort);reject(error);});}); }
 const childTermination=new WeakMap<ChildProcess,Promise<void>>();
+const MAX_GENERATED_OUTPUT_BYTES=64*1024;
+const generatedRuntimeGuard=`import net from 'node:net';
+import dgram from 'node:dgram';
+import { syncBuiltinESMExports } from 'node:module';
+const loopback = host => !host || host === '127.0.0.1' || host === '::1' || host === 'localhost';
+const deny = name => { throw new Error('Generated runtime network policy denied '+name); };
+const connect = net.Socket.prototype.connect;
+net.Socket.prototype.connect = function (...args) {
+  const options = Array.isArray(args[0]) ? args[0][0] : typeof args[0] === 'object' && args[0] ? args[0] : { port: args[0], host: args[1] };
+  if (!loopback(options?.host)) deny(String(options?.host));
+  return connect.apply(this, args);
+};
+const send = dgram.Socket.prototype.send;
+dgram.Socket.prototype.send = function (...args) {
+  const address = args.find((value, index) => index > 0 && typeof value === 'string');
+  if (address && !loopback(address)) deny(address);
+  return send.apply(this, args);
+};
+if (globalThis.fetch) {
+  const fetch = globalThis.fetch;
+  globalThis.fetch = (input, init) => {
+    try {
+      const url = new URL(typeof input === 'string' || input instanceof URL ? input : input.url);
+      if (!loopback(url.hostname)) deny(url.hostname);
+      return fetch(input, init);
+    } catch (error) { return Promise.reject(error); }
+  };
+}
+syncBuiltinESMExports();
+`;
 function terminateChild(child:ChildProcess):Promise<void> {
   const existing=childTermination.get(child);if(existing)return existing;
   const termination=new Promise<void>(resolve=>{
@@ -371,22 +402,25 @@ export const gameAdapter=defineAdapter({
     const entries=[
       {name:'server.mjs',content:serverSource(compat),mime:'text/javascript; charset=utf-8'},
       {name:'package.json',content:JSON.stringify({name:'reverse-everything-compatibility-service',version:'1.0.0',private:true,type:'module',dependencies:{ws:'8.23.0'},scripts:{start:'node server.mjs'}},null,2),mime:'application/json'},
+      {name:'runtime-guard.mjs',content:generatedRuntimeGuard,mime:'text/javascript; charset=utf-8'},
       {name:'state-machine.json',content:JSON.stringify({level:compat.level,meaning:compat.meaning,state:model.state,limitations:[...model.state.limitations,'This is an independent stateful compatibility service candidate, not original game server recovery; L4 is assigned only after successful end-to-end validation']},null,2),mime:'application/json'},
       {name:'readme.md',content:'# 独立状态化兼容服务候选\n\n本服务由合法保留的通信记录推断生成，不是原始服务端代码恢复。它仅实现已观察的请求、状态字段与转换；未观察行为返回 UNKNOWN。\n\n```bash\nnpm install\nPORT=8080 npm start\n```\n\n状态保存在本服务目录的 `data/state.json`（可用 `DATA_DIR` 覆盖）。同一账号重新登录可恢复本地状态。每个 `DATA_DIR` 使用独占进程锁，只允许一个兼容服务进程运行。轮换后的旧登录凭证会保留审计记录，但被撤销的 verifier key 会持久化并拒绝后续登录。服务仅绑定 `127.0.0.1`：浏览器客户端必须使用同端口回环 Origin；无 Origin 的原生/Node/CLI 客户端可以连接，但登录仍必须通过已观察凭证的 scrypt 验证，未验证登录不会创建会话或状态。脚本通过 `createRequire(import.meta.url)` 从生成包及其父包解析 `ws`，不依赖启动 CWD。\n',mime:'text/markdown; charset=utf-8'}
     ];
     if(ctx.writeArtifacts)await ctx.writeArtifacts(entries);else for(const entry of entries){ctx.signal.throwIfAborted();await ctx.writeArtifact(entry.name,entry.content,entry.mime);}
     ctx.signal.throwIfAborted();
-    await ctx.evidence('VERIFIED','Stateful compatibility service source generated','reconstruction-generator','server.mjs',{basis:'Observed requests, state fields and bounded mutations only',independentRebuild:true,originalBackendRecovered:false});return {generated:true,files:['server.mjs','package.json','state-machine.json','readme.md']};
+    await ctx.evidence('VERIFIED','Stateful compatibility service source generated','reconstruction-generator','server.mjs',{basis:'Observed requests, state fields and bounded mutations only',independentRebuild:true,originalBackendRecovered:false});return {generated:true,files:['server.mjs','package.json','runtime-guard.mjs','state-machine.json','readme.md']};
   },
   validate:async ctx=>{
     ctx.signal.throwIfAborted();const model=output<ProtocolModel&{state:StateModel}>(ctx,'ANALYZE'); const compat=compatibilityModel(model,model.state); await ctx.writeArtifact('validation.json',JSON.stringify({passed:false,level:'L2',meaning:'Validation has not passed; L4 requires successful end-to-end checks',checks:[]},null,2),'application/json'); const dir=await mkdtemp(path.join(os.tmpdir(),'re-game-validation-'));
-    await writeFile(path.join(dir,'server.mjs'),await ctx.readArtifact('server.mjs')); await writeFile(path.join(dir,'package.json'),await ctx.readArtifact('package.json'));
-    const port=await freePort(); const require=createRequire(import.meta.url); let nodePath=process.env.NODE_PATH??'';
-    try{const wsEntry=require.resolve('ws');nodePath=[path.dirname(path.dirname(wsEntry)),nodePath].filter(Boolean).join(path.delimiter);}catch{}
-    ctx.signal.throwIfAborted();const child=spawn(process.execPath,[path.join(dir,'server.mjs')],{cwd:os.tmpdir(),detached:true,windowsHide:true,env:{...process.env,PORT:String(port),DATA_DIR:path.join(dir,'data'),NODE_PATH:nodePath},stdio:['ignore','pipe','pipe']});
-    let aborted=false;const onAbort=()=>{aborted=true;void terminateChild(child);};ctx.signal.addEventListener('abort',onAbort,{once:true});if(ctx.signal.aborted)onAbort();
-    let outputBuffer='';let errors='';const checks:{name:string;passed:boolean;details?:string}[]=[];
-    child.stdout?.on('data',(chunk:Buffer)=>{outputBuffer+=chunk.toString();});child.stderr?.on('data',(chunk:Buffer)=>{errors+=chunk.toString();});
+    await writeFile(path.join(dir,'server.mjs'),await ctx.readArtifact('server.mjs')); await writeFile(path.join(dir,'package.json'),await ctx.readArtifact('package.json'));await writeFile(path.join(dir,'runtime-guard.mjs'),await ctx.readArtifact('runtime-guard.mjs'));
+    const port=await freePort(); const require=createRequire(import.meta.url); let nodePath=process.env.NODE_PATH??'';let dependencyRoot=path.dirname(dir);
+    try{const wsEntry=require.resolve('ws');dependencyRoot=path.dirname(path.dirname(wsEntry));nodePath=[dependencyRoot,nodePath].filter(Boolean).join(path.delimiter);}catch{}
+    const minimalEnv:NodeJS.ProcessEnv={};for(const key of ['SystemRoot','WINDIR','ComSpec','PATH','PATHEXT','TEMP','TMP'])if(process.env[key])minimalEnv[key]=process.env[key];Object.assign(minimalEnv,{PORT:String(port),DATA_DIR:path.join(dir,'data'),NODE_PATH:nodePath,NO_COLOR:'1'});
+    const runtimeReadRoots=[dir,dependencyRoot,path.dirname(process.execPath)];const runtimeDataDir=path.join(dir,'data');await mkdir(runtimeDataDir,{recursive:true,mode:0o700});for(const match of (process.env.NODE_OPTIONS??'').matchAll(/(?:--require|--import)(?:=|\s+)(?:"([^"]+)"|'([^']+)'|([^\s]+))/g)){const runtimeHook=match[1]??match[2]??match[3];if(runtimeHook)runtimeReadRoots.push(path.resolve(runtimeHook));}
+    ctx.signal.throwIfAborted();const child=spawn(process.execPath,['--permission',...runtimeReadRoots.flatMap(root=>['--allow-fs-read',root]),'--allow-fs-write',runtimeDataDir,'--import',pathToFileURL(path.join(dir,'runtime-guard.mjs')).href,path.join(dir,'server.mjs')],{cwd:dir,detached:true,windowsHide:true,env:minimalEnv,stdio:['ignore','pipe','pipe']});
+    const unregisterProcess=ctx.registerProcess?.(child.pid!);let aborted=false;const onAbort=()=>{aborted=true;void terminateChild(child);};ctx.signal.addEventListener('abort',onAbort,{once:true});if(ctx.signal.aborted)onAbort();
+    let outputBuffer:Buffer=Buffer.alloc(0);let errors:Buffer=Buffer.alloc(0);let outputTruncated=false;const capture=(current:Buffer,chunk:Uint8Array):Buffer=>{if(current.length>=MAX_GENERATED_OUTPUT_BYTES){outputTruncated=true;return current;}const combined=Buffer.concat([current,chunk]);if(combined.length>MAX_GENERATED_OUTPUT_BYTES)outputTruncated=true;return combined.subarray(0,MAX_GENERATED_OUTPUT_BYTES);};const checks:{name:string;passed:boolean;details?:string}[]=[];
+    child.stdout?.on('data',(chunk:Uint8Array)=>{outputBuffer=capture(outputBuffer,chunk);});child.stderr?.on('data',(chunk:Uint8Array)=>{errors=capture(errors,chunk);});
     const listening=new Promise<void>((resolve,reject)=>{const started=Date.now();let lastProgress=started;let seenOutput=0;let seenErrors=0;let settled=false;const finish=(error?:Error)=>{if(settled)return;settled=true;clearInterval(timer);child.removeListener('exit',onExit);if(error)reject(error);else resolve();};const onExit=(code:number|null)=>{finish(aborted||ctx.signal.aborted?gameAbortError():new Error(`Generated service exited ${code}: ${errors.slice(0,500)}`));};const poll=()=>{const now=Date.now();if(outputBuffer.includes('"event":"listening"')){finish();return;}if(now-lastProgress>2000||now-started>10000)finish(new Error(`Generated service readiness timed out: ${errors.slice(0,500)}`));};child.once('exit',onExit);const timer=setInterval(()=>{if(outputBuffer.length!==seenOutput||errors.length!==seenErrors){seenOutput=outputBuffer.length;seenErrors=errors.length;lastProgress=Date.now();}poll();},25);timer.unref();});
     let client:TestClient|undefined;const validationClients=new Map<string,TestClient>();const closeValidationClients=async()=>{for(const session of validationClients.values())await session.close().catch(()=>{});validationClients.clear();};
     try{
@@ -437,9 +471,9 @@ export const gameAdapter=defineAdapter({
       const logout=compat.rules.find(r=>/^(?:logout|disconnect)$/i.test(r.type));const firstMutationRule=compat.rules.find(r=>r.mutations.some(item=>item.account===currentValidationKey));const firstMutation=firstMutationRule?.mutations.find(item=>item.account===currentValidationKey);
       if(logout&&firstMutationRule&&firstMutation){const expectedLogoutResponses=responsesFor(logout,currentValidationKey);const replies=await request(logout.type,observedByType.get(logout.type)??logout.requestPayload,expectedLogoutResponses.map(r=>r.type));checks.push({name:'Observed logout completes',passed:replies.length===expectedLogoutResponses.length});if(replies[0]?.type==='logout_ok'){const payload=observedByType.get(JSON.stringify([currentValidationKey,firstMutationRule.type]))??firstMutation.cases?.[0]?.request??firstMutationRule.requestPayload;const afterLogout=await request(firstMutationRule.type,payload,['error']);checks.push({name:'State request after logout returns UNKNOWN',passed:afterLogout[0]?.code==='UNKNOWN'});}}
       ctx.signal.throwIfAborted();const passed=checks.length>0&&checks.every(c=>c.passed);const level=passed?'L4':'L2';
-      await ctx.evidence(passed?'VERIFIED':'INFERENCE','Generated service end-to-end protocol and state validation','validation-agent','websocket',{passed,checks,stdout:outputBuffer.slice(0,1000),neutralCwd:os.tmpdir()});ctx.signal.throwIfAborted();
-      await ctx.writeArtifact('validation.json',JSON.stringify({passed,level,meaning:'L4 means independent stateful compatibility, not original server recovery',checks,stdout:outputBuffer.slice(0,2000)},null,2),'application/json');ctx.signal.throwIfAborted();
+      await ctx.evidence(passed?'VERIFIED':'INFERENCE','Generated service end-to-end protocol and state validation','validation-agent','websocket',{passed,checks,stdout:outputBuffer.toString('utf8').slice(0,1000),neutralCwd:dir,isolation:{minimalEnvironment:true,filesystemPermissions:true,network:'loopback-only',childProcesses:false},...(outputTruncated?{outputTruncated:true}:{})});ctx.signal.throwIfAborted();
+      await ctx.writeArtifact('validation.json',JSON.stringify({passed,level,meaning:'L4 means independent stateful compatibility, not original server recovery',checks,stdout:outputBuffer.toString('utf8').slice(0,2000)},null,2),'application/json');ctx.signal.throwIfAborted();
       return {passed,checks,level,limitations:[...model.state.limitations,'This validates the generated compatibility contract only; it does not prove original game restoration']};
-    }finally{ctx.signal.removeEventListener('abort',onAbort);await closeValidationClients();await terminateChild(child);await rm(dir,{recursive:true,force:true});}
+    }finally{unregisterProcess?.();ctx.signal.removeEventListener('abort',onAbort);await closeValidationClients();await terminateChild(child);await rm(dir,{recursive:true,force:true});}
   }
 });

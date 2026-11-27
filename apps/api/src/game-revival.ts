@@ -1,10 +1,10 @@
-import { randomUUID } from 'node:crypto';
-import { realpath, rm } from 'node:fs/promises';
+import { createHash, randomUUID } from 'node:crypto';
+import { lstat, readFile, readdir, realpath, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { FastifyInstance } from 'fastify';
 import { AppError, type GameEvidenceStatus, type GameProfile, type GameRebuildRecord, type GameRevivalLevel } from '@reverse/contracts';
-import { createGameServerSpec, generateGameServer, scanGameDirectory, validateGeneratedServer, type EvidenceStatus, type GameBehaviorEvidence, type GameFileRecord, type GameObservation, type GameValidationReport } from '@reverse/game-revival';
-import type { Database } from '@reverse/workflow';
+import { createGameServerSpec, generateGameServer, scanGameDirectory, validateGeneratedServer, type EvidenceStatus, type GameBehaviorEvidence, type GameFileRecord, type GameObservation, type GameServerSpec, type GameValidationReport } from '@reverse/game-revival';
+import { Database, ResourceMonitor, WorkflowEngine, type AdapterDefinition, type TaskContext } from '@reverse/workflow';
 import { archiveDigest, zipDirectory } from './game-archive.js';
 
 interface Options { db: Database; dataDir: string }
@@ -86,12 +86,69 @@ function nextTimestamp(previous?:string):string{
 async function canonicalPath(value:string):Promise<string>{try{return await realpath(value);}catch{return path.resolve(value);}}
 function samePath(left:string|null|undefined,right:string|null|undefined):boolean{if(!left||!right)return left===right;const a=path.resolve(left),b=path.resolve(right);return process.platform==='win32'?a.toLowerCase()===b.toLowerCase():a===b;}
 
+const GENERATED_NETWORK_GUARD=`import net from 'node:net';
+import dgram from 'node:dgram';
+import { syncBuiltinESMExports } from 'node:module';
+const loopback = host => !host || host === '127.0.0.1' || host === '::1' || host === 'localhost';
+const deny = name => { throw new Error('Generated runtime network policy denied '+name); };
+const connect = net.Socket.prototype.connect;
+net.Socket.prototype.connect = function (...args) {
+  const options = Array.isArray(args[0]) ? args[0][0] : typeof args[0] === 'object' && args[0] ? args[0] : { port: args[0], host: args[1] };
+  if (!loopback(options?.host)) deny(String(options?.host));
+  return connect.apply(this, args);
+};
+const send = dgram.Socket.prototype.send;
+dgram.Socket.prototype.send = function (...args) {
+  const address = args.find((value, index) => index > 0 && typeof value === 'string');
+  if (address && !loopback(address)) deny(address);
+  return send.apply(this, args);
+};
+if (globalThis.fetch) {
+  const fetch = globalThis.fetch;
+  globalThis.fetch = (input, init) => {
+    try {
+      const url = new URL(typeof input === 'string' || input instanceof URL ? input : input.url);
+      if (!loopback(url.hostname)) deny(url.hostname);
+      return fetch(input, init);
+    } catch (error) { return Promise.reject(error); }
+  };
+}
+syncBuiltinESMExports();
+`;
+function digestContent(content:string|Uint8Array):string{return createHash('sha256').update(content).digest('hex');}
+async function hardenGeneratedWorkspace(root:string,files:string[],originalSha256:string):Promise<{files:string[];sha256:string}>{
+  const packagePath=path.join(root,'package.json');const packageInfo=await lstat(packagePath).catch(()=>undefined);if(!packageInfo?.isFile())return {files,sha256:originalSha256};
+  const pkg=JSON.parse(await readFile(packagePath,'utf8')) as {scripts?:Record<string,string>};for(const [name,command] of Object.entries(pkg.scripts??{}))if(['start','test','healthcheck','backup','restore'].includes(name))pkg.scripts![name]=command.replace(/(^|\s)node(?=\s)/g,`$1node --import ./runtime-guard.mjs`);
+  const guard=GENERATED_NETWORK_GUARD;await writeFile(path.join(root,'runtime-guard.mjs'),guard,{mode:0o600});const packageContent=JSON.stringify(pkg,null,2)+'\n';await writeFile(packagePath,packageContent,{mode:0o600});
+  const buildInfoPath=path.join(root,'BUILD-INFO.json'),buildInfo=JSON.parse(await readFile(buildInfoPath,'utf8')) as {files:Record<string,string>};buildInfo.files['package.json']=digestContent(packageContent);buildInfo.files['runtime-guard.mjs']=digestContent(guard);await writeFile(buildInfoPath,JSON.stringify(buildInfo,null,2)+'\n',{mode:0o600});
+  const sumsPath=path.join(root,'SHA256SUMS.txt');const sums=(await readFile(sumsPath,'utf8')).trim().split('\n').filter(Boolean).map(line=>{const match=/^([a-f0-9]{64})  (.+)$/.exec(line);if(!match)throw new Error('Generated checksum manifest is invalid');return {digest:match[1]!,name:match[2]!};});for(const entry of sums){if(entry.name==='package.json')entry.digest=buildInfo.files['package.json']!;else if(entry.name==='BUILD-INFO.json')entry.digest=digestContent(JSON.stringify(buildInfo,null,2)+'\n');}sums.push({digest:buildInfo.files['runtime-guard.mjs']!,name:'runtime-guard.mjs'});sums.sort((a,b)=>a.name.localeCompare(b.name));const checksumContent=sums.map(entry=>`${entry.digest}  ${entry.name}`).join('\n')+'\n';await writeFile(sumsPath,checksumContent,{mode:0o600});return {files:[...new Set([...files,'runtime-guard.mjs'])],sha256:digestContent(checksumContent)};
+}
+
+function managedRebuildAdapter(spec:GameServerSpec,outputPath:string):AdapterDefinition{
+  return {
+    name:'game',version:'1.0.0',description:'Persistent managed game revival rebuild',available:async()=>({available:true,detail:'Managed rebuild'}),
+    detect:async()=>({adapter:'game',confidence:1,format:'game-revival-spec',details:{},limitations:[]}),prepare:async()=>({prepared:true}),analyze:async()=>({analyzed:true}),extractEvidence:async()=>({}),reconstruct:async()=>({}),
+    validate:async(ctx:TaskContext)=>{
+      ctx.signal.throwIfAborted();const generated=await generateGameServer(spec,outputPath);const hardened=await hardenGeneratedWorkspace(outputPath,generated.files,generated.sha256);const generatedFiles=hardened.files;ctx.signal.throwIfAborted();const report=await validateGeneratedServer(outputPath,{signal:ctx.signal,docker:process.env.RE_GAME_DOCKER==='true',commandTimeoutMs:Math.min(120000,ctx.effectiveTimeoutMs??120000),validationTimeoutMs:ctx.effectiveTimeoutMs??600000});ctx.signal.throwIfAborted();
+      if(!report.valid)throw new Error('Generated server validation failed');
+      const entries:{name:string;content:string|Uint8Array;mime:string}[]=[];let bytes=0;const maxBytes=Math.floor((ctx.effectiveMaxDiskMB??1024)*1048576);
+      const walk=async(relative:string):Promise<void>=>{const absolute=path.join(outputPath,relative);const info=await lstat(absolute);if(info.isSymbolicLink())throw new Error('Generated rebuild output contains a symbolic link');if(info.isDirectory()){for(const name of await readdir(absolute))await walk(path.join(relative,name));return;}if(!info.isFile())throw new Error('Generated rebuild output contains a special file');bytes+=info.size;if(bytes>maxBytes)throw new Error('Task artifact budget exceeded');entries.push({name:`revived--${relative.split(/[\\/]/).join('__')}`,content:await readFile(absolute),mime:'application/octet-stream'});};
+      for(const relative of generatedFiles)await walk(relative);
+      entries.push({name:'revived-validation.json',content:JSON.stringify({...report,files:generated.files},null,2),mime:'application/json'});bytes+=Buffer.byteLength(entries[entries.length-1]!.content);if(bytes>maxBytes)throw new Error('Task artifact budget exceeded');await ctx.writeArtifacts?.(entries);if(!ctx.writeArtifacts)for(const entry of entries)await ctx.writeArtifact(entry.name,entry.content,entry.mime);
+      await ctx.evidence('VERIFIED','Managed game revival rebuild validated','game-revival','rebuild',{files:generatedFiles,sha256:hardened.sha256,level:validationLevel(report),taskId:ctx.taskId});return report;
+    }
+  };
+}
+
 export function registerGameRevivalRoutes(app:FastifyInstance,options:Options):void{
   const {db,dataDir}=options;
+  const hardRssMb=Number(process.env.RE_WORKER_MAX_RSS_MB??950),softRssMb=Number(process.env.RE_WORKER_SOFT_RSS_MB??700);
+  const rebuildResources=new ResourceMonitor(db,dataDir,{hardRssMb,softRssMb},{sampleTtlMs:60000});
   const columns=db.raw.prepare('PRAGMA table_info(game_files)').all() as Array<{name:string}>;
   for(const [name,type] of [['ctime_ms','REAL'],['dev','INTEGER'],['ino','INTEGER']] as const)if(!columns.some(column=>column.name===name))db.raw.exec(`ALTER TABLE game_files ADD COLUMN ${name} ${type}`);
   db.raw.prepare("UPDATE game_profiles SET level='L2',updated_at=? WHERE id IN (SELECT project_id FROM game_rebuilds WHERE status='RUNNING')").run(new Date().toISOString());
   db.raw.prepare("UPDATE game_rebuilds SET status='FAILED',error='API restarted before rebuild completion',updated_at=? WHERE status='RUNNING'").run(new Date().toISOString());
+  db.raw.prepare("UPDATE tasks SET status='FAILED',error='API restarted before managed game rebuild completion',ended_at=?,lease_owner=NULL,lease_expires_at=NULL,heartbeat_at=NULL,updated_at=? WHERE status='RUNNING' AND json_extract(options_json,'$.gameRebuildId') IS NOT NULL").run(new Date().toISOString(),new Date().toISOString());
   let activeScans=0,activeRebuilds=0,activeArchives=0,closing=false;
   const shutdown=new AbortController();
   const background=new Set<Promise<void>>();
@@ -173,23 +230,29 @@ export function registerGameRevivalRoutes(app:FastifyInstance,options:Options):v
     const timeoutMs=rebuildTimeout();
     if(activeRebuilds>=MAX_REBUILDS)throw new AppError('QUEUE_FULL','A game rebuild is already running',503);
     activeRebuilds+=1;
+    try{await rebuildResources.sampleOrThrow('worker');}catch(error){activeRebuilds-=1;throw new AppError('RESOURCE_LIMIT','Game rebuild admission blocked because resource sampling failed',503);}
     const projectId=String(row.project_id),id=randomUUID(),outputPath=path.join(dataDir,'revived-games',id);
     const previousProfile=db.raw.prepare('SELECT updated_at FROM game_profiles WHERE project_id=?').get(projectId) as {updated_at:string}|undefined;
     const now=nextTimestamp(previousProfile?.updated_at);
     try{db.raw.exec('BEGIN IMMEDIATE');db.raw.prepare("INSERT INTO game_rebuilds (id,project_id,spec_id,status,level,output_path,error,validation_json,created_at,updated_at) VALUES (?,?,?,'RUNNING','L2',?,NULL,NULL,?,?)").run(id,projectId,specId,outputPath,now,now);db.raw.prepare("UPDATE game_profiles SET level='L2',updated_at=? WHERE project_id=? AND updated_at=?").run(now,projectId,previousProfile?.updated_at??'');db.raw.exec('COMMIT');}catch(error){db.raw.exec('ROLLBACK');activeRebuilds-=1;throw error;}
     const controller=new AbortController(),signal=AbortSignal.any([controller.signal,shutdown.signal]);rebuildControllers.set(projectId,controller);
-    const timer=setTimeout(()=>controller.abort(new Error(`Game rebuild exceeded ${timeoutMs}ms`)),timeoutMs);timer.unref();
-    let report:GameValidationReport|undefined,generatedFiles:string[]=[];
+    let timedOut=false;const timer=setTimeout(()=>{timedOut=true;controller.abort(new Error(`Game rebuild exceeded ${timeoutMs}ms`));},timeoutMs);timer.unref();
+    let report:GameValidationReport|undefined,generatedFiles:string[]=[];let taskId:string|undefined;
     const operation=(async()=>{
+      let engine:WorkflowEngine|undefined;
       try{
-        const spec=JSON.parse(String(row.spec_json));signal.throwIfAborted();const generated=await generateGameServer(spec,outputPath);generatedFiles=generated.files;signal.throwIfAborted();report=await validateGeneratedServer(outputPath,{signal});signal.throwIfAborted();const level=validationLevel(report),finished=new Date().toISOString();
-        if(!report.valid)throw new Error('Generated server validation failed');
-        db.raw.exec('BEGIN IMMEDIATE');
-        try{
-          const changed=db.raw.prepare("UPDATE game_rebuilds SET status='COMPLETED',level=?,validation_json=?,updated_at=? WHERE id=? AND status='RUNNING'").run(level,JSON.stringify({...report,files:generatedFiles}),finished,id);
-          db.raw.prepare('UPDATE game_profiles SET level=?,updated_at=? WHERE project_id=? AND updated_at=?').run(level,finished,projectId,now);db.raw.exec('COMMIT');
-          if(changed.changes===0)await rm(outputPath,{recursive:true,force:true});
-        }catch(error){db.raw.exec('ROLLBACK');throw error;}
+        const spec=JSON.parse(String(row.spec_json));const adapter=managedRebuildAdapter(spec,outputPath);engine=new WorkflowEngine(db,{dataDir,adapters:[adapter],resources:rebuildResources,thresholds:{hardRssMb,softRssMb},timeoutMs,maxDiskMB:Number(process.env.RE_TASK_MAX_DISK_MB??1024),leaseMs:Number(process.env.RE_WORKER_LEASE_MS??15000)});
+        const task=await engine.create(projectId,{adapter:'game',options:{gameRebuildId:id,timeoutMs,maxMemoryMB:hardRssMb,maxDiskMB:Number(process.env.RE_TASK_MAX_DISK_MB??1024)}});taskId=task.id;
+        const onAbort=():void=>{if(taskId)engine?.cancel(taskId);};controller.signal.addEventListener('abort',onAbort,{once:true});signal.addEventListener('abort',onAbort,{once:true});if(signal.aborted)onAbort();
+        await engine.execute(task.id);const taskResult=db.getTask(task.id);
+        if(taskResult?.status==='COMPLETED'){report=db.stageOutput(task.id,'VALIDATE') as GameValidationReport|undefined;generatedFiles=report?.files??[];signal.throwIfAborted();const level=validationLevel(report!),finished=new Date().toISOString();
+          db.raw.exec('BEGIN IMMEDIATE');
+          try{
+            const changed=db.raw.prepare("UPDATE game_rebuilds SET status='COMPLETED',level=?,validation_json=?,updated_at=? WHERE id=? AND status='RUNNING'").run(level,JSON.stringify({...report,files:generatedFiles}),finished,id);
+            db.raw.prepare('UPDATE game_profiles SET level=?,updated_at=? WHERE project_id=? AND updated_at=?').run(level,finished,projectId,now);db.raw.exec('COMMIT');
+            if(changed.changes===0)await rm(outputPath,{recursive:true,force:true});
+          }catch(error){db.raw.exec('ROLLBACK');throw error;}
+        }else throw new Error(taskResult?.error??(timedOut&&controller.signal.reason instanceof Error?controller.signal.reason.message:taskResult?.status==='CANCELLED'?'Game rebuild cancelled':'Managed game rebuild did not complete'));
       }catch(error){
         const message=error instanceof Error?error.message:String(error);let cleanup='';
         try{await rm(outputPath,{recursive:true,force:true});}catch(cleanupError){cleanup=`; output cleanup failed: ${cleanupError instanceof Error?cleanupError.message:String(cleanupError)}`;}

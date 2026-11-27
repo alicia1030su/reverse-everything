@@ -1,6 +1,6 @@
 # 游戏兼容与 V5 行为 IR
 
-v0.0.7 的游戏复活从“固定 FPS/RPG 模板”转向**显式行为 IR 驱动、反模板可验收**的独立实现。目标行为证据、生成服务实现能力和原客户端兼容必须分开报告。
+v0.0.8 的游戏复活从“固定 FPS/RPG 模板”转向**显式行为 IR 驱动、反模板可验收**的独立实现。目标行为证据、生成服务实现能力和原客户端兼容必须分开报告。
 
 ## 1. V5 行为 IR
 
@@ -52,9 +52,11 @@ v0.0.7 保留两个许可证明确的原始浏览器客户端，并只依据客�
 | 游戏 | 上游与许可证 | 原始客户端验收 | 独立服务端能力 |
 | --- | --- | --- | --- |
 | Pixelknight | `imdvls/Pixelknight`，ISC，固定提交 `d6636aa9` | 两个原始页面连接、移动、刷新重连、服务端重启后恢复同一玩家位置 | WebSocket JSON、权威移动/重力/平台碰撞、金币状态、JSON 持久化、同源 Cookie 身份恢复 |
-| Tron | `leodhin/trongame`，ISC，固定提交 `18ca8562` | 两个原始页面入房、准备、移动、刷新重连、真实对局结束 | Socket.IO `/game`、房间/玩家状态、准备开局、方向移动、轨迹碰撞、结算与持久化 |
+| Tron | `leodhin/trongame`，ISC，固定提交 `18ca8562` | 两个原始页面入房、准备、移动、刷新重连、服务端重启后同 playerId/房间/位置继续、真实对局结束 | Socket.IO `/game`、房间/玩家状态、准备开局、方向移动、轨迹碰撞、10 秒宽限重连、结算与持久化 |
 
-证据文件位于 `artifacts/v007-game-compat/`，截图位于 `docs/assets/v007-pixelknight-compat.png` 与 `docs/assets/v007-tron-compat.png`。发行时额外提供 `reverse-everything-game-compat-demo-0.0.7.zip` 与 `demo-evidence.json`。
+Tron 刷新只标记暂时离线，不会立即结束房间。默认宽限窗口为 10 秒（`TRON_RECONNECT_GRACE_MS`，允许 1-60 秒），窗口内同 playerId 回到同房间并保留位置与轨迹继续；超时才结算。服务端重启从持久化状态恢复，并重新给予宽限窗口。只有对局确实结束后，验收证据才可写 `matchFinished: true`。
+
+E2E 使用随机端口与 Playwright 临时输出目录，不覆盖受版本控制的截图或工件。打包时通过 `GAME_COMPAT_EVIDENCE_DIR` 显式传入该临时目录，避免读取陈旧工件。发行时额外提供 `reverse-everything-game-compat-demo-0.0.8.zip`、`reverse-everything-legacy-demo-0.0.8.zip` 与 `demo-evidence.json`。两个 ZIP 都在干净临时目录解包，按包内默认脚本执行安装、测试、启动及原始浏览器客户端冒烟测试；`demo-evidence.json` 绑定每个 ZIP 的 SHA256，未完成任一真实检查不得标记 `VERIFIED`。
 
 这证明两个真实开源客户端可以连接本项目独立实现的服务端，但不证明任意商业游戏协议兼容，也不证明 CODOL 2021 可运行。
 

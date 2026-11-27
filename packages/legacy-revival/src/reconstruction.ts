@@ -4,10 +4,51 @@ import path from 'node:path';
 import type { LegacyGeneratedProject, LegacyReconstructionSpec, LegacySoftwareProfile } from './types.js';
 
 export interface ReconstructionInput { kind:LegacyReconstructionSpec['kind']; name:string; requirements:string[]; profile:LegacySoftwareProfile }
-export function createReconstructionSpec(input:ReconstructionInput):LegacyReconstructionSpec{
+export interface LegacyRequirementAssessment { requirement:string; status:'SUPPORTED'|'UNCOVERED'|'REJECTED'; tests:string[]; note:string }
+export type AssessedReconstructionSpec=LegacyReconstructionSpec&{requirementAssessments:LegacyRequirementAssessment[];capabilityMatrix:Array<{kind:LegacyReconstructionSpec['kind'];capability:string;status:'SUPPORTED'|'REJECTED';tests:string[];note:string}>}
+const capabilityMatrix:AssessedReconstructionSpec['capabilityMatrix']=[
+  {kind:'ini-editor',capability:'读取 section 与 key=value',status:'SUPPORTED',tests:['tests/ini-tool.test.mjs'],note:'注释与空行忽略；不展开环境变量'},
+  {kind:'ini-editor',capability:'本地编辑保存与独立复制',status:'SUPPORTED',tests:['tests/ini-tool.test.mjs'],note:'浏览器 localStorage 与 CLI copy；不覆盖来源'},
+  {kind:'ini-editor',capability:'二进制 INI、环境变量展开、远程同步',status:'REJECTED',tests:[],note:'超出独立编辑器范围'},
+  {kind:'csv-viewer',capability:'本地 CSV 表格预览与行列统计',status:'SUPPORTED',tests:['tests/csv-tool.test.mjs'],note:'基础逗号分隔；不执行公式'},
+  {kind:'csv-viewer',capability:'编辑导出、完整 RFC 4180、远程数据库',status:'REJECTED',tests:[],note:'当前仅查看，不代表完整 CSV 标准实现'},
+  {kind:'text-tool',capability:'本地文本编辑与独立复制',status:'SUPPORTED',tests:[],note:'仅静态页面和复制 CLI；当前无自动化行为测试，标为未覆盖'},
+  {kind:'text-tool',capability:'语法分析、格式转换、协作编辑',status:'REJECTED',tests:[],note:'通用文本工具不实现这些能力'},
+  {kind:'data-converter',capability:'JSON 对象数组与 CSV 双向转换',status:'SUPPORTED',tests:['tests/convert.test.mjs'],note:'含引号、换行、CRLF 与公式中和'},
+  {kind:'data-converter',capability:'输入、行列、字段与单元格上限',status:'SUPPORTED',tests:['tests/convert.test.mjs'],note:'1MiB、10000 行、256 列、64KiB 单元格'},
+  {kind:'data-converter',capability:'XML、数据库、任意格式或无限输入',status:'REJECTED',tests:['tests/convert.test.mjs'],note:'仅 JSON/CSV；超限明确失败'},
+];
+const requirementPatterns:Record<LegacyReconstructionSpec['kind'],Array<{pattern:RegExp;tests:string[];note:string}>>={
+  'ini-editor':[
+    {pattern:/ini|section|key\s*=|配置|节|键值/i,tests:['tests/ini-tool.test.mjs'],note:'基础 INI 读取'},
+    {pattern:/保存|save|persist|本地编辑/i,tests:[],note:'页面保存存在，但无浏览器自动化测试，标为未覆盖'},
+    {pattern:/导出|export|copy|复制|不覆盖/i,tests:['tests/ini-tool.test.mjs'],note:'独立复制且不覆盖来源'},
+  ],
+  'csv-viewer':[
+    {pattern:/csv|表格|预览|view|preview|row|column|行|列/i,tests:['tests/csv-tool.test.mjs'],note:'基础 CSV 查看与统计'},
+  ],
+  'text-tool':[
+    {pattern:/text|文本|复制|copy/i,tests:[],note:'基础文本工具存在，但无自动化行为测试，标为未覆盖'},
+  ],
+  'data-converter':[
+    {pattern:/json\s*(?:to|->|→|转|到)\s*csv|json.*csv/i,tests:['tests/convert.test.mjs'],note:'JSON 到 CSV'},
+    {pattern:/csv\s*(?:to|->|→|转|到)\s*json|csv.*json/i,tests:['tests/convert.test.mjs'],note:'CSV 到 JSON'},
+    {pattern:/quote|quoted|引号|换行|newline|crlf|公式|formula|上限|limit|bound/i,tests:['tests/convert.test.mjs'],note:'转换边界与公式中和'},
+  ],
+};
+function assessRequirements(kind:LegacyReconstructionSpec['kind'],requirements:string[]):LegacyRequirementAssessment[]{return requirements.map(requirement=>{
+  if(/绕过|drm|激活破解|未授权.*(?:源码|资源)|原始服务端|反作弊|无限|unbounded/i.test(requirement))return{requirement,status:'REJECTED',tests:[],note:'违反合法边界或无界要求，生成器不声称支持'};
+  const match=requirementPatterns[kind].find(item=>item.pattern.test(requirement));
+  if(!match)return{requirement,status:'UNCOVERED',tests:[],note:'没有对应实现与测试映射，不得声称已实现'};
+  const hasTests=match.tests.length>0;return{requirement,status:hasTests?'SUPPORTED':'UNCOVERED',tests:match.tests,note:hasTests?match.note:`${match.note}；当前无自动化测试`};
+});}
+export function createReconstructionSpec(input:ReconstructionInput):AssessedReconstructionSpec{
   if(!input.name.trim()||input.name.length>80||input.requirements.length<1||input.requirements.length>32||input.requirements.some(item=>!item.trim()||item.length>500))throw new Error('独立重建需要 1-80 字名称和 1-32 条有界功能需求');
   if(input.profile.truncated)throw new Error('截断档案不能用于独立重建；恢复工具仍可使用');
-  return{id:`legacy-${createHash('sha256').update(JSON.stringify(input)).digest('hex').slice(0,16)}`,name:input.name.replace(/[^a-zA-Z0-9_-]/g,'-').slice(0,64)||'legacy-tool',kind:input.kind,requirements:input.requirements.map(item=>item.trim().slice(0,500)),sourceProfileSha256:input.profile.sha256,evidenceStatus:'INFERENCE',limitations:['独立实现，不复制原软件源码、资源或品牌标识','功能一致性仅针对用户提供的规格与样本，不代表原软件完整兼容']};
+  const requirementAssessments=assessRequirements(input.kind,input.requirements.map(item=>item.trim().slice(0,500)));
+  const rejected=requirementAssessments.find(item=>item.status==='REJECTED');if(rejected)throw new Error(`重建需求被拒绝：${rejected.requirement}（${rejected.note}）`);
+  const uncovered=requirementAssessments.filter(item=>item.status==='UNCOVERED').map(item=>`需求未覆盖或缺少自动化测试：${item.requirement}`);
+  return{id:`legacy-${createHash('sha256').update(JSON.stringify(input)).digest('hex').slice(0,16)}`,name:input.name.replace(/[^a-zA-Z0-9_-]/g,'-').slice(0,64)||'legacy-tool',kind:input.kind,requirements:input.requirements.map(item=>item.trim().slice(0,500)),sourceProfileSha256:input.profile.sha256,evidenceStatus:'INFERENCE',limitations:['独立实现，不复制原软件源码、资源或品牌标识','功能一致性仅针对用户提供的规格与样本，不代表原软件完整兼容',...uncovered],requirementAssessments,capabilityMatrix:capabilityMatrix.filter(item=>item.kind===input.kind)};
 }
 const html=(title:string,body:string)=>`<!doctype html><html lang="zh"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title}</title><style>body{font:15px system-ui;max-width:960px;margin:32px auto;padding:0 16px;background:#f8fafc;color:#0f172a}textarea,input,button{font:inherit;padding:8px;margin:4px 0}textarea{width:100%;box-sizing:border-box}pre{white-space:pre-wrap;background:#e2e8f0;padding:12px}table{border-collapse:collapse;width:100%}td,th{border:1px solid #cbd5e1;padding:6px;text-align:left}</style><h1>${title}</h1>${body}</html>\n`;
 function iniProject(spec:LegacyReconstructionSpec):Map<string,string>{
@@ -56,8 +97,10 @@ export function generateReconstructionProject(spec:LegacyReconstructionSpec):Leg
   files.set('package.json',JSON.stringify({name:spec.name,version:'1.0.0',private:true,type:'module',scripts:{test:'node --test',start:'node server.mjs'}},null,2)+'\n');
   files.set('server.mjs',`import {createServer} from 'node:http';import {readFile} from 'node:fs/promises';const port=Number(process.env.PORT??4173);createServer(async(req,res)=>{try{const file=req.url==='/'?'web/index.html':req.url.slice(1);if(!/^(?:web\\/[a-z0-9.-]+|converter-core\\.js)$/.test(file)){res.writeHead(404);res.end();return}const body=await readFile(file);res.setHeader('content-type',file.endsWith('.html')?'text/html; charset=utf-8':file.endsWith('.js')?'text/javascript; charset=utf-8':'text/plain');res.end(body)}catch{res.writeHead(404);res.end()}}).listen(port,'127.0.0.1',()=>console.log('http://127.0.0.1:'+port));
 `);
-  files.set('README.md',`# ${spec.name}\n\n独立重建产物，不复用原软件源码或资源。\n\n## 需求\n\n${spec.requirements.map(item=>`- ${item}`).join('\n')}\n\n## 运行\n\n\`\`\`sh\nnpm test\nnpm start\n\`\`\`\n\n打开 http://127.0.0.1:4173。CLI 工具位于 bin/。\n\n## 边界\n\n${spec.limitations.map(item=>`- ${item}`).join('\n')}\n`);
-  files.set('RECONSTRUCTION.json',JSON.stringify(spec,null,2)+'\n');return{files,spec};
+  const saved=spec as Partial<AssessedReconstructionSpec>;
+  const assessed:AssessedReconstructionSpec={...spec,requirementAssessments:saved.requirementAssessments??assessRequirements(spec.kind,spec.requirements),capabilityMatrix:saved.capabilityMatrix??capabilityMatrix.filter(item=>item.kind===spec.kind)};
+  files.set('README.md',`# ${spec.name}\n\n独立重建产物，不复用原软件源码或资源。\n\n## 需求与测试映射\n\n| 需求 | 状态 | 测试 | 说明 |\n| --- | --- | --- | --- |\n${assessed.requirementAssessments.map(item=>`| ${item.requirement.replace(/\|/g,'\\|')} | ${item.status} | ${item.tests.join(', ')||'无'} | ${item.note.replace(/\|/g,'\\|')} |`).join('\n')}\n\n## 能力支持/拒绝矩阵\n\n| 能力 | 状态 | 测试 | 边界 |\n| --- | --- | --- | --- |\n${assessed.capabilityMatrix.map(item=>`| ${item.capability} | ${item.status} | ${item.tests.join(', ')||'无（拒绝项无需测试）'} | ${item.note} |`).join('\n')}\n\n## 运行\n\n\`\`\`sh\nnpm test\nnpm start\n\`\`\`\n\n打开 http://127.0.0.1:4173。CLI 工具位于 bin/。\n\n## 边界\n\n${spec.limitations.map(item=>`- ${item}`).join('\n')}\n`);
+  files.set('RECONSTRUCTION.json',JSON.stringify(assessed,null,2)+'\n');return{files,spec:{...spec,...assessed}};
 }
 export async function writeReconstructionProject(project:LegacyGeneratedProject,outputDir:string):Promise<string[]>{
   const root=path.resolve(outputDir);await mkdir(root,{recursive:false});const written:string[]=[];

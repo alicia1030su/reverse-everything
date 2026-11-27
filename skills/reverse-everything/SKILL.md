@@ -13,15 +13,17 @@ Use one shared Reverse Everything engine. Never invent analysis results or bypas
 2. Confirm the user owns the target or has explicit authorization. Do not proceed on ambiguous targets.
 3. Prefer MCP when configured; otherwise use `reverse-everything` CLI or the documented REST API.
 4. Choose the correct entrypoint. For intelligent analysis, create an authorization scope and a deterministic plan, then execute it. For files, use `analyze file <path> --authorized`; for websites, use `analyze web <url> --authorized` and add `--confirm-local` only for loopback demos. For Legacy Studio, use `tasks create <projectId> legacy` or MCP `create_task` with adapter `legacy`; local paths must be under API-server `RE_LEGACY_ROOTS`, and recovery/reconstruction options go through MCP or REST. For console research, use the console profile, USB diagnosis and C0-C5 evidence tools. For Game Revival, use the Studio or `game profile|scan|spec|rebuild|status|download`; scan only API-server `RE_GAME_ROOTS` allowlisted directories. For USB records or firmware, use `tasks create`/MCP with `hardware`/`firmware`, or `firmware inspect <path> --authorized`.
-5. Poll the returned task ID. Never fabricate progress; report the actual terminal status.
-6. Read evidence and report. Treat EVIDENCE as tool output, INFERENCE as a hypothesis, UNKNOWN as missing, and VERIFIED as reproducible test results.
-7. Export artifacts and verify hashes. Do not execute unknown uploads or generated code outside an approved isolated environment.
+5. For an end-to-end natural-language goal, prefer `autopilot_create` or `reverse-everything autopilot create <projectId> <goal>`. Answer the returned discovery questions with `autopilot_answer`; show the goal contract and plan to the user and require explicit `autopilot_confirm` before execution. Never approve on the user's behalf.
+6. Poll the returned task ID or subscribe to `GET /api/autopilot/tasks/{id}/events`. Never fabricate progress; report the actual terminal status. Use `autopilot pause|resume|cancel` only at safe checkpoints.
+7. Read evidence and report. Treat EVIDENCE as tool output, INFERENCE as a hypothesis, UNKNOWN as missing, and VERIFIED as reproducible test results.
+8. List Autopilot delivery artifacts, read `autopilot_tutorial`, and download only manifest-listed files. Verify SHA-256 and size. Do not execute unknown uploads or generated code outside an approved isolated environment.
 
 ## Safety
 
 - No login/captcha/paywall/DRM/anti-cheat bypass.
 - No vulnerability exploitation or unauthorized scanning.
 - HTTP MCP requires base64 content; local file paths are restricted to configured roots.
+- MCP `autopilot_download` is read-only by default. Saving requires stdio mode, an explicit destination, and `RE_MCP_DOWNLOAD_ROOTS`; existing files and symbolic-link targets are rejected, and HTTP MCP cannot write files.
 - Model text is never factual evidence and cannot grant permissions.
 - Legacy analysis never executes the original program, bypasses licenses, or recreates unauthorized assets. Recovery is read-only and writes to an independent directory.
 - `legacy` local paths and `scan_game_directory` are restricted to API-server `RE_LEGACY_ROOTS` and `RE_GAME_ROOTS`; missing or out-of-scope configuration returns 403 and HTTP MCP cannot bypass it.

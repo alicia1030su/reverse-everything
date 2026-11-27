@@ -17,7 +17,7 @@ function roomState(room) {
   return {
     id: room.id,
     state: room.state,
-    players: [...room.players.values()].map(player => ({ id: player.id, nickname: player.nickname, color: player.color, x: player.x, y: player.y, direction: player.direction, state: player.state, ready: player.ready })),
+    players: [...room.players.values()].map(player => ({ id: player.id, nickname: player.nickname, color: player.color, x: player.x, y: player.y, direction: player.direction, state: player.state, ready: player.ready, connected: player.connected })),
   };
 }
 function validateRoomId(value) {
@@ -38,15 +38,17 @@ function testAuthorized(req) {
 export async function startTronServer(options = {}) {
   const port = Number(options.port ?? process.env.TRON_PORT ?? 18081);
   const dataDir = path.resolve(options.dataDir ?? process.env.TRON_DATA_DIR ?? path.join(ROOT, 'data/game-compat/tron'));
+  const reconnectGraceMs = Number(options.reconnectGraceMs ?? process.env.TRON_RECONNECT_GRACE_MS ?? 10_000);
   const stateFile = path.join(dataDir, 'state.json');
   if (!Number.isSafeInteger(port)) throw new Error('Invalid Tron port');
+  if (!Number.isSafeInteger(reconnectGraceMs) || reconnectGraceMs < 1_000 || reconnectGraceMs > 60_000) throw new Error('Invalid Tron reconnect grace window');
   await mkdir(dataDir, { recursive: true });
   if (options.reset) await rm(stateFile, { force: true });
   const rooms = new Map();
   try {
     const saved = JSON.parse(await readFile(stateFile, 'utf8'));
     for (const raw of saved.rooms ?? []) {
-      const room = { id: raw.id, state: raw.state, players: new Map(), trails: new Map(Object.entries(raw.trails ?? {})) };
+      const room = { id: raw.id, state: raw.state, players: new Map(), trails: new Map(Object.entries(raw.trails ?? {})), reconnectDeadline: raw.state === 'playing' ? Date.now() + reconnectGraceMs : undefined };
       for (const player of raw.players ?? []) room.players.set(player.id, { ...player, connected: false, socketId: undefined });
       rooms.set(room.id, room);
     }
@@ -95,7 +97,9 @@ export async function startTronServer(options = {}) {
           player.y = index === 0 ? 100 : HEIGHT - 100;
           player.direction = index === 0 ? 'right' : 'left';
         }
-        player.connected = true; player.socketId = socket.id; player.state = room.state === 'playing' ? 'playing' : 'waiting';
+        player.connected = true; player.socketId = socket.id;
+        player.state = room.state === 'playing' ? (player.state === 'finished' ? 'finished' : 'playing') : 'waiting';
+        if (room.state === 'playing' && [...room.players.values()].filter(item => item.connected && item.state === 'playing').length >= 2) room.reconnectDeadline = undefined;
         room.players.set(player.id, player);
         joinedRoom = room; joinedPlayer = player;
         dirty = true;
@@ -129,6 +133,7 @@ export async function startTronServer(options = {}) {
     socket.on('disconnect', () => {
       if (!joinedRoom || !joinedPlayer) return;
       joinedPlayer.connected = false; joinedPlayer.socketId = undefined; joinedPlayer.ready = false; dirty = true;
+      if (joinedRoom.state === 'playing' && joinedPlayer.state === 'playing' && !joinedRoom.reconnectDeadline) joinedRoom.reconnectDeadline = Date.now() + reconnectGraceMs;
       socket.to(joinedRoom.id).emit('playerDisconnected', joinedPlayer.nickname);
       game.to(joinedRoom.id).emit('syncGameState', roomState(joinedRoom));
     });
@@ -151,7 +156,7 @@ export async function startTronServer(options = {}) {
     game.to(room.id).emit('syncGameState', roomState(room));
   }
   function finishRoom(room, winner) {
-    room.state = 'finished';
+    room.state = 'finished'; room.reconnectDeadline = undefined;
     for (const player of room.players.values()) if (player.state === 'playing') player.state = 'finished';
     dirty = true;
     game.to(room.id).emit('state', `finished winner=${winner ?? 'none'}`);
@@ -162,7 +167,13 @@ export async function startTronServer(options = {}) {
     for (const room of rooms.values()) {
       if (room.state !== 'playing') continue;
       const active = [...room.players.values()].filter(player => player.connected && player.state === 'playing');
-      if (active.length < 2) { finishRoom(room, active[0]?.nickname); continue; }
+      const reconnecting = [...room.players.values()].some(player => !player.connected && player.state === 'playing');
+      if (reconnecting && room.reconnectDeadline && Date.now() >= room.reconnectDeadline) {
+        for (const player of room.players.values()) if (!player.connected && player.state === 'playing') player.state = 'finished';
+        room.reconnectDeadline = undefined;
+      }
+      const pending = [...room.players.values()].some(player => !player.connected && player.state === 'playing');
+      if (active.length < 2 && !pending) { finishRoom(room, active[0]?.nickname); continue; }
       for (const player of active) {
         const delta = { up: [0, -SPEED], down: [0, SPEED], left: [-SPEED, 0], right: [SPEED, 0] }[player.direction];
         const x = player.x + delta[0]; const y = player.y + delta[1];
@@ -177,7 +188,7 @@ export async function startTronServer(options = {}) {
       }
       dirty = true;
       const alive = [...room.players.values()].filter(player => player.connected && player.state === 'playing');
-      if (alive.length <= 1) finishRoom(room, alive[0]?.nickname);
+      if (alive.length <= 1 && ![...room.players.values()].some(player => !player.connected && player.state === 'playing')) finishRoom(room, alive[0]?.nickname);
       else game.to(room.id).emit('syncGameState', roomState(room));
     }
   }
@@ -191,8 +202,12 @@ export async function startTronServer(options = {}) {
   const saver = setInterval(() => { if (dirty) void persist().catch(() => undefined); }, SAVE_INTERVAL);
   async function close() {
     clearInterval(ticker); clearInterval(saver);
-    await new Promise(resolve => io.close(() => resolve()));
+    // Socket.IO's close callback waits for the HTTP server to finish closing,
+    // which in turn waits for active connections. Force those connections down
+    // first so an attached original client cannot deadlock shutdown/restart.
+    const closing = io.close();
     server.closeAllConnections();
+    await closing;
     if (server.listening) await new Promise(resolve => server.close(() => resolve()));
     await persist();
   }

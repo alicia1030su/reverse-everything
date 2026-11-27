@@ -47,6 +47,23 @@ describe('console research and intelligent planning API', () => {
     const repeated = await app.inject({ method: 'POST', url: `/api/plans/${plan.json().plan.id}/execute`, headers: auth }); expect(repeated.statusCode).toBe(200); expect(repeated.json().task.id).toBe(executed.json().task.id);
   });
 
+  it('rejects a plan replaced between the execute read and task creation', async () => {
+    const { app, db, engine, dataDir } = await setup(); const project = db.project({ name: 'plan CAS', kind: 'protocol', authorizationConfirmed: true }); const file = await upload(db, dataDir, project.id); const scope = await authorization(app, project.id, file.id); expect(scope.statusCode).toBe(200);
+    const created = await app.inject({ method: 'POST', url: `/api/projects/${project.id}/plans`, headers: { ...auth, 'content-type': 'application/json' }, body: JSON.stringify({ mode: 'beginner', objective: 'bounded', uploadId: file.id, authorizationId: scope.json().id }) }); expect(created.statusCode).toBe(200);
+    const originalCreate = engine.create.bind(engine); let replaced = false; let failure = '';
+    engine.create = async (projectId, input) => {
+      if (!replaced && input.options?.planId === created.json().plan.id) {
+        replaced = true;
+        db.raw.prepare("UPDATE analysis_plans SET steps_json=?,updated_at='2030-01-01T00:00:00.000Z' WHERE id=?").run(JSON.stringify([{ id: 'execution', kind: 'execution', status: 'READY', analyzer: 'file', adapterAllowlist: ['file'] }]), created.json().plan.id);
+      }
+      try { return await originalCreate(projectId, input); } catch (error) { failure = error instanceof Error ? error.message : String(error); throw error; }
+    };
+    const executed = await app.inject({ method: 'POST', url: `/api/plans/${created.json().plan.id}/execute`, headers: auth });
+    expect(replaced).toBe(true); expect(executed.statusCode).toBe(409); expect(failure).toContain('changed after it was read');
+    expect(db.raw.prepare('SELECT COUNT(*) count FROM tasks WHERE project_id=?').get(project.id)).toEqual({ count: 0 });
+    expect(db.raw.prepare('SELECT task_id FROM analysis_plans WHERE id=?').get(created.json().plan.id)).toEqual({ task_id: null });
+  });
+
   it('normalizes inline authorization and rejects revoked or expired execution', async () => {
     const { app, db, dataDir } = await setup(); const project = db.project({ name: 'inline auth', kind: 'protocol', authorizationConfirmed: true }); const file = await upload(db, dataDir, project.id);
     const plan = await app.inject({ method: 'POST', url: `/api/projects/${project.id}/plans`, headers: { ...auth, 'content-type': 'application/json' }, body: JSON.stringify({ mode: 'beginner', objective: 'bounded', uploadId: file.id, authorization: { granted: true, operations: ['read-target', 'execute-analyzer'], allowedAdapters: ['network'], allowedTargetKinds: ['HAR'] } }) });

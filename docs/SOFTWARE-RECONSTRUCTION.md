@@ -8,8 +8,10 @@
 |---|---|---|
 | `ini-editor` | 浏览器 INI 编辑器、`bin/ini-tool.mjs`、测试 | 仅处理 `key=value` 与 section；不展开环境变量 |
 | `csv-viewer` | 浏览器 CSV 查看器、`bin/csv-tool.mjs`、测试 | 基础 CSV 展示；不执行公式，不代表完整 CSV 标准实现 |
-| `text-tool` | 浏览器文本编辑区、`bin/text-tool.mjs`、静态服务 | 独立文本复制工具；不复用原程序代码 |
-| `data-converter` | adapter 接受该规格类型，但当前生成通用文本工具 | 功能完整性为 `PARTIAL`，不得宣称通用数据转换器已完成 |
+| `text-tool` | 浏览器文本编辑区、`bin/text-tool.mjs`、静态服务 | 独立文本复制工具；无自动化行为测试，相关需求标记 `UNCOVERED` |
+| `data-converter` | JSON/CSV 双向转换核心、CLI、浏览器页面与独立测试 | 仅 JSON/CSV；1MiB 输入、10000 行、256 列、64KiB 单元格上限；不支持 XML、数据库或任意格式 |
+
+每种 kind 都生成能力支持/拒绝矩阵，并将每条需求映射到具体测试文件。映射存在但缺少自动化测试的需求标记 `UNCOVERED`，不会仅因出现在 README 就视为已实现；违法、无界或明确超出能力范围的需求在创建规格时失败。矩阵同时写入生成项目的 `README.md` 与 `RECONSTRUCTION.json`。
 
 生成项目包含 `package.json`、`server.mjs`、`RECONSTRUCTION.json`、独立测试与运行说明。静态服务默认仅监听 `127.0.0.1`。
 

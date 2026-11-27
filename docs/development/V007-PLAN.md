@@ -51,7 +51,7 @@
 
 - [x] 历史 724 测试、26 E2E、Ghidra、JADX、安全/性能/安装/Docker 全量回归。
 - [x] 独立复审 P0/P1=0；发布 PRR 与回滚方案。
-- [ ] PR → CI → main → freeze → 候选 → 实际安装 → annotated Tag → 唯一 Draft → Release ID 上传 → 校验 → 一次性公开 → 下载复验。
+- [x] PR → CI → main → freeze → 候选 → 实际安装 → annotated Tag → 唯一 Draft → Release ID 上传 → 校验 → 一次性公开 → 下载复验。正式 Run `45912292229`，Tag `v0.0.7`，Commit `a54871a57e68aa0833a1636b79cf98e15bcd7cbe`，15 项公开资产。
 - [ ] 最终报告逐项回答 14 个交付问题，不只用测试数量证明能力。
 
 ## 风险与回退
@@ -73,7 +73,9 @@
 | 发布证据 | GitHub Run `45792899427` | 8 阶段 success | v0.0.6 原子发布成立 |
 | 真实性审计 | `spec.ts`/`templates.ts`/`validator.ts` | 固定模板 + 内部客户端 | 需要 V5 改造，不得宣称原游戏兼容 |
 | 反模板验收 | `game-revival.test.ts` | 4 个保留样本、不同规格/代码/联机结果；behavior-runtime 逐项断言 | 通过；内部客户端标签正确 |
-| 最终全量回归 | `npm test` / `npm run test:e2e` | 67 files，782 passed / 9 skipped；E2E 29/29 | 通过 |
+| 开发期本机回归（历史） | `npm test` / `npm run test:e2e` | 67 files，782 passed / 9 skipped；E2E 29/29 | 历史记录；不是冻结 Commit 的分平台 CI 口径 |
+| 冻结 Commit 分平台回归 | CI Run `45910219157` | Ubuntu 784 passed / 7 skipped；Windows 783 passed / 8 skipped；E2E Ubuntu 28 passed / 1 skipped、Windows 29 passed | 通过；详见 V007-TEST-RESULTS.md |
+| v0.0.7 正式发行 | Release Run `45912292229` | 8 阶段 success；Tag/Build/Acceptance Commit 一致；15 项资产公开复验 | 已发布 |
 | 发行静态门禁 | build/typecheck/lint/docs/version/skill/secrets/licenses/audit/defects | build、typecheck、lint（0 error）、docs、version、skill、secrets、licenses、defects 均通过；audit 0 vulnerabilities | 通过 |
 | 原客户端兼容 | `artifacts/v007-game-compat/*.json` | Pixelknight/Tron 原始客户端、双人操作、重连 | VERIFIED；Pixelknight 重启持久化、Tron 对局结束 |
 | Legacy 真实恢复 | `web-v007.spec.ts` | 共享 Worker 恢复、预览、导出与截图 | 通过 |

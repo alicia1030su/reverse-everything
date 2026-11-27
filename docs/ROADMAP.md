@@ -54,7 +54,9 @@
 - 本机未运行 Docker；v0.0.6 正式候选 CI 的 FPS/RPG Docker/L7 已真实通过，仅证明生成服务部署能力。
 - 独立兼容实现不是原始服务端，不保证商业原客户端兼容，不绕过 DRM/反作弊/认证，不分发未授权资源。
 
-## v0.0.7：Legacy Studio 与 V5 Game Revival（当前）
+## v0.0.7：Legacy Studio 与 V5 Game Revival（已发布）
+
+2026-11-26 正式发布；annotated Tag `v0.0.7` 解引用 Commit `a54871a57e68aa0833a1636b79cf98e15bcd7cbe`，正式发行 Run `45912292229`。分平台冻结测试结果见 [V007 测试结果](development/V007-TEST-RESULTS.md)。
 
 - Legacy Software Revival Studio：PE/ELF/Mach-O、MSI/JAR/Electron/Python 与安装目录只读识别，兼容性和合法许可诊断。
 - CSV/DBF/SQLite/INI/JSON/XML 有界只读恢复，独立 JSON/CSV 导出与来源/产物 SHA-256。

@@ -110,6 +110,27 @@ describe('createAnalysisPlan', () => {
     validatePlan(plan);
   });
 
+  it('creates objective-aware recovery and multi-delivery plans', () => {
+    const recovery = createAnalysisPlan({ target: detectTarget({ bytes: elf }), authorization: scope(), capabilities: allCapabilities, objective: '恢复数据并提取文件，不需要反编译' });
+    expect(recovery.steps.find(step => step.id === 'execution')).toMatchObject({ analyzer: 'file', title: expect.stringContaining('without forced decompilation') });
+    expect(recovery.steps.some(step => step.id === 'data-recovery')).toBe(true);
+    const recoveryWithoutDecompiler = createAnalysisPlan({ target: detectTarget({ bytes: elf }), authorization: scope(), capabilities: [{ id: 'file', available: true, detail: 'ready' }], objective: '数据恢复' });
+    expect(recoveryWithoutDecompiler.steps.find(step => step.id === 'execution')?.status).toBe('READY');
+    expect(recoveryWithoutDecompiler.steps.find(step => step.id === 'execution')?.analyzer).toBe('file');
+    const deployment = createAnalysisPlan({ target: detectTarget({ bytes: elf }), authorization: scope(), capabilities: allCapabilities, objective: '重建兼容版本并部署发布交付' });
+    const kinds = deployment.steps.map(step => step.kind);
+    expect(kinds).toEqual(expect.arrayContaining(['restore', 'build', 'test', 'package', 'document', 'report']));
+    expect(kinds.indexOf('build')).toBeLessThan(kinds.indexOf('test'));
+    expect(kinds.indexOf('test')).toBeLessThan(kinds.indexOf('package'));
+    expect(kinds.indexOf('package')).toBeLessThan(kinds.indexOf('document'));
+    expect(deployment.id).not.toBe(planFor().id);
+    validatePlan(deployment);
+  });
+
+  it('rejects an objective that cannot fit the explicit step bound', () => {
+    expect(() => createAnalysisPlan({ target: detectTarget({ bytes: elf }), authorization: scope(), capabilities: allCapabilities, objective: 'deploy release', maxSteps: 9 })).toThrow('requires');
+  });
+
   it('fails closed without explicit execution authorization', () => {
     const plan = planFor(detectTarget({ bytes: elf }), scope({ granted: false }));
     expect(plan.steps.find(step => step.kind === 'execution')?.status).toBe('BLOCKED');
@@ -164,10 +185,18 @@ describe('BudgetManager', () => {
     expect(() => manager.consumeModelIteration()).toThrow('exhausted');
   });
 
+  it('records actual consumption and allows the exact inclusive limit', () => {
+    const manager = new BudgetManager(budget);
+    manager.consumeToolCall(); manager.consumeModelIteration(); manager.addTokens(10); manager.addCost(1); manager.setMemory(100); manager.addDisk(100); manager.noProgress(); manager.noProgress();
+    expect(manager.snapshot()).toMatchObject({ toolCalls: 1, modelIterations: 1, tokens: 10, costUsd: 1, memoryBytes: 100, diskBytes: 100, noProgressSteps: 2 });
+    manager.progress();
+    expect(manager.snapshot().noProgressSteps).toBe(0);
+  });
+
   it('enforces tokens, cost, memory, disk and no-progress budgets', () => {
     expect(() => { const m = new BudgetManager(budget); m.addTokens(11); }).toThrow(BudgetExceededError);
     expect(() => { const m = new BudgetManager(budget); m.addCost(2); }).toThrow(BudgetExceededError);
-    expect(() => { const m = new BudgetManager(budget); m.setMemory(100); }).toThrow(BudgetExceededError);
+    expect(() => { const m = new BudgetManager(budget); m.setMemory(101); }).toThrow(BudgetExceededError);
     expect(() => { const m = new BudgetManager(budget); m.addDisk(101); }).toThrow(BudgetExceededError);
     const m = new BudgetManager(budget); m.noProgress(); m.noProgress(); expect(() => m.noProgress()).toThrow(BudgetExceededError);
   });
@@ -202,8 +231,9 @@ describe('adaptive replanning', () => {
     const plan = planFor();
     const result = replan({ plan, failedStepId: 'execution', reason: 'decompiler crashed', capabilities: allCapabilities, alternativePath: 'file' });
     expect(result).toMatchObject({ changed: true, failureRecorded: true });
-    expect(result.plan.steps.find(step => step.id === 'execution')).toMatchObject({ analyzer: 'file', status: 'READY' });
-    expect(result.plan.steps.find(step => step.id === 'execution')?.reason).toContain('decompiler crashed');
+    expect(result.plan.steps.find(step => step.id === 'execution')).toMatchObject({ analyzer: 'ghidra', status: 'FAILED' });
+    expect(result.plan.steps.find(step => step.id === 'execution:retry-1')).toMatchObject({ analyzer: 'file', status: 'READY' });
+    expect(result.plan.failures).toEqual([expect.objectContaining({ stepId: 'execution', reason: 'decompiler crashed' })]);
     expect(plan.steps.find(step => step.id === 'execution')?.analyzer).toBe('ghidra');
   });
 
@@ -214,6 +244,15 @@ describe('adaptive replanning', () => {
     const unauthorized = replan({ plan: unauthorizedPlan, failedStepId: 'execution', reason: 'failed', capabilities: allCapabilities, alternativePath: 'file' });
     expect(unauthorized.changed).toBe(false);
     expect(unauthorized.plan.steps.find(step => step.id === 'execution')?.status).toBe('FAILED');
+  });
+
+  it('replans a blocked missing-tool capability match without discarding the failure', () => {
+    const plan = planFor(detectTarget({ bytes: elf }), scope(), [{ id: 'file', available: true, detail: 'ready' }]);
+    const result = replan({ plan, failedStepId: 'capability-match', failureKind: 'MISSING_TOOL', reason: 'ghidra missing', capabilities: [{ id: 'file', available: true, detail: 'ready' }], alternativePath: 'file' });
+    expect(result.changed).toBe(true);
+    expect(result.plan.steps.find(step => step.id === 'capability-match')).toMatchObject({ status: 'BLOCKED', reason: 'ghidra missing' });
+    expect(result.plan.steps.find(step => step.id === 'capability-match:retry-1')).toMatchObject({ status: 'READY', analyzer: 'file' });
+    expect(result.plan.failures?.[0]).toMatchObject({ kind: 'MISSING_TOOL', stepId: 'capability-match' });
   });
 
   it('rejects arbitrary alternatives and records missing-step failures without changing plan', () => {

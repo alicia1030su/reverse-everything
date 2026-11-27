@@ -9,6 +9,7 @@ import { createAnalysisPlan, detectTarget, PlannerError, validatePlan, type Anal
 import { hashFile } from '@reverse/evidence';
 import type { Database, WorkflowEngine } from '@reverse/workflow';
 import { normalizeInputTarget } from '@reverse/workflow';
+import { publicTask } from './security.js';
 
 interface ResearchOptions { db: Database; engine: WorkflowEngine; dataDir: string; resourceDir: string }
 interface PlanRow { id: string; projectId: string; taskId: string | null; mode: string; target: TargetDetection; detection: TargetDetection; authorizationId: string | null; uploadId: string | null; inputHash: string | null; steps: PlanStep[]; budget: PlanBudget; status: string; createdAt: string; updatedAt: string }
@@ -135,7 +136,7 @@ export function registerResearchRoutes(app: FastifyInstance, options: ResearchOp
   app.get<{ Params: { id: string } }>('/api/plans/:id', async req => ({ plan: requirePlan(db, req.params.id) }));
   app.post<{ Params: { id: string } }>('/api/plans/:id/execute', async req => {
     const row = requirePlan(db, req.params.id), current = project(db, row.projectId);
-    if (row.taskId) { const existing = db.getTask(row.taskId); if (existing) return { task: existing }; throw new AppError('CONFLICT', 'Plan is bound to a missing task', 409); }
+    if (row.taskId) { const existing = db.getTask(row.taskId); if (existing) return { task: publicTask(existing) }; throw new AppError('CONFLICT', 'Plan is bound to a missing task', 409); }
     if (!row.authorizationId || (row.uploadId ? !row.inputHash : !current.target)) throw new AppError('CONFLICT', 'Plan has no persisted authorization and input binding', 409);
     const upload = row.uploadId ? db.uploads(current.id).find(item => item.id === row.uploadId) : undefined;
     if (row.uploadId && (!upload || upload.sha256 !== row.inputHash)) throw new AppError('CONFLICT', 'Bound upload is missing or changed', 409);
@@ -145,8 +146,11 @@ export function registerResearchRoutes(app: FastifyInstance, options: ResearchOp
     if (!auth || auth.revoked_at || (auth.expires_at && Date.parse(String(auth.expires_at)) <= Date.now()) || String(auth.target) !== expectedTarget) throw new AppError('CONFLICT', 'Authorization is missing, revoked, expired or targets another input', 409);
     if (upload) { const file = path.join(dataDir, 'uploads', current.id, upload.storedName); if (await hashFile(file) !== row.inputHash) throw new AppError('CONFLICT', 'Bound upload hash changed', 409); }
     const authorization = scopeFromRow(auth); const plan: AnalysisPlan = { id: row.id, deterministic: true, target: row.target, authorization, objective: 'Execute stored analysis plan', steps: row.steps, budget: row.budget, adapterAllowlist: [...new Set(row.steps.flatMap(step => step.adapterAllowlist))], maxDepth: Math.max(0, ...row.steps.map(step => step.maxDepth)), limitations: [], aiSuggestions: [] };
-    validatePlan(plan); const execution = plan.steps.find(step => step.kind === 'execution'); if (!execution || execution.status === 'BLOCKED' || !authorization.granted || !authorization.operations.includes('read-target') || !authorization.operations.includes('execute-analyzer') || !authorization.allowedTargetKinds.includes(row.target.kind)) throw new AppError('CONFLICT', 'Plan execution is blocked', 409); const analyzer = execution.analyzer ?? plan.adapterAllowlist[0]; if (!analyzer || !authorization.allowedAdapters.includes(analyzer) || !execution.adapterAllowlist.includes(analyzer)) throw new AppError('CONFLICT', 'Plan analyzer is outside authorization scope', 409);
-    const task = await engine.create(row.projectId, { adapter: ADAPTER_BY_ANALYZER[analyzer], options: { planId: row.id, ...(row.uploadId ? { uploadId: row.uploadId } : {}), mode: row.mode, aiV3: row.mode === 'agent' } }); db.raw.prepare("UPDATE analysis_plans SET task_id=?,status='RUNNING',updated_at=? WHERE id=?").run(task.id, new Date().toISOString(), row.id); return { task };
+    validatePlan(plan); const execution = plan.steps.find(step => step.kind === 'execution' && step.status !== 'FAILED' && step.status !== 'BLOCKED') ?? plan.steps.find(step => step.kind === 'execution'); if (!execution || execution.status === 'BLOCKED' || !authorization.granted || !authorization.operations.includes('read-target') || !authorization.operations.includes('execute-analyzer') || !authorization.allowedTargetKinds.includes(row.target.kind)) throw new AppError('CONFLICT', 'Plan execution is blocked', 409); const analyzer = execution.analyzer ?? plan.adapterAllowlist[0]; if (!analyzer || !authorization.allowedAdapters.includes(analyzer) || !execution.adapterAllowlist.includes(analyzer)) throw new AppError('CONFLICT', 'Plan analyzer is outside authorization scope', 409);
+    let task;
+    try { task = await engine.create(row.projectId, { adapter: ADAPTER_BY_ANALYZER[analyzer], options: { planId: row.id, planUpdatedAt: row.updatedAt, ...(row.uploadId ? { uploadId: row.uploadId } : {}), mode: row.mode, aiV3: row.mode === 'agent' } }); }
+    catch (error) { if (error instanceof Error && /changed after it was read|already bound|missing or already bound/i.test(error.message)) throw new AppError('CONFLICT', 'Analysis plan changed or was already bound before task creation', 409); throw error; }
+    db.raw.prepare("UPDATE analysis_plans SET task_id=?,status='RUNNING',updated_at=? WHERE id=?").run(task.id, new Date().toISOString(), row.id); return { task: publicTask(task) };
   });
 
   app.get('/api/tools', async () => ({ items: await analyzerCapabilities(), note: 'Large tools require explicit user confirmation and official sources; this endpoint never installs software automatically' }));

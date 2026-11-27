@@ -95,3 +95,38 @@ export async function api<T>(route: string, init: RequestInit = {}): Promise<T> 
   }
   return data as T;
 }
+
+export async function apiBytes(route: string, init: RequestInit = {}): Promise<Response> {
+  const base = apiUrl();
+  const authToken = await token();
+  const timeout = Number(process.env.RE_CLI_TIMEOUT_MS ?? 120000);
+  if (!Number.isFinite(timeout) || timeout <= 0) throw new CliError(1, 'RE_CLI_TIMEOUT_MS must be a positive number');
+  let response: Response;
+  try {
+    response = await fetch(`${base}${route}`, { ...init, headers: { ...init.headers, authorization: `Bearer ${authToken}` }, signal: init.signal ?? AbortSignal.timeout(timeout) });
+  } catch (error) {
+    throw new CliError(1, redactToken(`Cannot reach ${base}: ${error instanceof Error ? error.message : String(error)}`, authToken));
+  }
+  if (!response.ok) throw new CliError(response.status, redactToken(await response.text(), authToken));
+  return response;
+}
+
+export interface AutopilotTaskView { id: string; projectId: string; prompt: string; status: string; questions: Array<{ id: string; prompt: string; required: boolean; field: string }>; contract: unknown; plan: unknown; error: string | null }
+export interface AutopilotArtifactView { name: string; size: number; sha256: string; downloadPath?: string }
+
+export function createAutopilotTask(input: { projectId: string; prompt: string; idempotencyKey?: string; uploadIds?: string[]; paths?: string[]; urls?: string[] }) {
+  return api<AutopilotTaskView>('/api/autopilot/tasks', { method: 'POST', body: JSON.stringify(input) });
+}
+export function listAutopilotTasks(projectId: string, limit = 100, offset = 0) {
+  return api<{ items: AutopilotTaskView[]; total: number; limit: number; offset: number }>(`/api/autopilot/tasks?projectId=${encodeURIComponent(projectId)}&limit=${limit}&offset=${offset}`);
+}
+export function getAutopilotTask(id: string) { return api<AutopilotTaskView>(`/api/autopilot/tasks/${encodeURIComponent(id)}`); }
+export function answerAutopilotTask(id: string, answers: Record<string, unknown>, options: { approveContract?: boolean; approvePlan?: boolean } = {}) {
+  return api<AutopilotTaskView>(`/api/autopilot/tasks/${encodeURIComponent(id)}/answers`, { method: 'POST', body: JSON.stringify({ answers, ...options }) });
+}
+export function autopilotAction(id: string, action: 'pause' | 'resume' | 'cancel') {
+  return api<AutopilotTaskView>(`/api/autopilot/tasks/${encodeURIComponent(id)}/${action}`, { method: 'POST' });
+}
+export function autopilotMessages(id: string) { return api<{ items: unknown[] }>(`/api/autopilot/tasks/${encodeURIComponent(id)}/messages`); }
+export function autopilotArtifacts(id: string) { return api<AutopilotArtifactView[]>(`/api/autopilot/tasks/${encodeURIComponent(id)}/artifacts`); }
+export function autopilotArtifactUrl(id: string, name: string) { return `${apiUrl()}/api/autopilot/tasks/${encodeURIComponent(id)}/artifacts/${encodeURIComponent(name)}`; }

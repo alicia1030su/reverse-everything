@@ -10,7 +10,7 @@
 | V007-004 | P1 | GitHub Actions 使用已弃用 Node20 运行时版本 | 全仓 `actions/checkout@v4`、`setup-node@v4`、`upload-artifact@v4`、`download-artifact@v4` | 升级官方 Node24 兼容版本并在 PR CI 验收 | VERIFIED |
 | V007-005 | P2 | README Docker/L7 状态过期 | `README.md:29,69,195`；正式 CI 已通过 | 更新为 CI 已验证，并保留本机未运行说明 | FIXED |
 | V007-006 | P2 | V006 能力矩阵 Docker/L7 状态过期 | `V006-CAPABILITY-MATRIX.md:17,21` | 对照正式 Run 回填，不篡改历史报告 | FIXED |
-| V007-007 | P2 | 正式 v0.0.6 性能证据 Commit 不匹配 | 基准 JSON 指向 v0.0.5 快照 | 重新在冻结 Commit 上运行并记录配置来源 | IN_PROGRESS |
+| V007-007 | P2 | 正式 v0.0.6 性能证据 Commit 不匹配 | 基准 JSON 指向 v0.0.5 快照；其 environment.commit `fa499e8a0e3d269489beb9b2c65cfe0b8e0cddf2` 经 GitHub API 核验不存在，历史来源不可核验，不能作为 v0.0.6 冻结 Commit 的性能证据 | 保留为 OPEN P2；重新在冻结 Commit 上运行并记录配置来源，未完成前不得用于发行声明 | OPEN |
 | V007-008 | P1 | 负载测试修改认证限流，生产/测试配置边界不足清晰 | `benchmark-game-revival.mjs` 设置 `MAX_CONNECTIONS`，认证分批；未明确标注负载专用覆盖 | 显式 load-test profile，记录所有覆盖；生产默认安全门禁单独回归 | FIXED |
 | V007-009 | P1 | 老软件、数据恢复、本地隐私、独立重建入口缺失 | 当前只有 `software` 静态文件分析 | 新建统一 Legacy Studio 核心任务与入口 | VERIFIED |
 | V007-010 | P1 | 真实游戏原客户端兼容无验收样本 | CODOL 档案明确无客户端/授权；现有 FPS/RPG 为自研客户端 | 选择许可明确的开源多人游戏；原客户端连接独立服务；外部阻塞如实记录 | VERIFIED |
@@ -41,7 +41,7 @@
 | V007-035 | P1 | 无重生 firstToScore 人数口径不一致 | 解析按 maxPlayers 校验，harness 按 minPlayers 执行 | `requiredMatchSize` 统一按 target+1 计算并用于验证器与 Docker | VERIFIED |
 | V007-036 | P1 | 多回合未重置积分、任务与背包 | 模板 start 只重置血量与位置 | 每回合重置 score/quest/inventory，并加运行时回归 | VERIFIED |
 | V007-037 | P1 | SQLite WAL 边车未纳入恢复身份 | 只读打开主文件可能漏掉未检查点数据 | 默认拒绝非空 WAL，要求先 checkpoint；补回归 | VERIFIED |
-| V007-038 | P1 | INTAKE 后源文件变化可污染后续阶段 | 直接路径与上传在 INTAKE 后仍读取可变源 | 创建时与首次 INTAKE 执行 adapter 输入预检；Legacy 在建快照前校验 RE_LEGACY_ROOTS；直接路径与上传均创建任务私有不可变快照，恢复 INTAKE 时复用并复核摘要，后续阶段只读快照 | VERIFIED |
+| V007-038 | P1 | INTAKE 后源文件变化可污染后续阶段 | 直接路径与上传曾共用可变源：创建/首次 INTAKE 预检后仍可能重新读取源文件；Legacy 建快照前还缺 RE_LEGACY_ROOTS 复核 | 创建与首次 INTAKE 执行 adapter 输入预检，Legacy 建快照前复核 RE_LEGACY_ROOTS；直接路径复制、上传另存为任务私有不可变快照，恢复 INTAKE 时复用并复核摘要，后续阶段只读快照 | VERIFIED |
 | V007-039 | P2 | 直接上传任务静默选择首个上传且未持久化 | `engine.create` 无 uploadId 时取首个上传 | 单上传自动绑定并持久化 uploadId；多上传失败关闭；补回归 | VERIFIED |
 | V007-040 | P2 | 分析器跳过符号链接未标记截断 | 嵌套链接继续扫描但不体现完整性下降 | 链接或特殊文件命中时标记 truncated，档案降为 INFERENCE | VERIFIED |
 | V007-041 | P2 | Windows 路径授权归一化不一致 | API 与 Worker 对大小写、盘符和相对段处理不同 | 共享 `normalizeInputTarget`，先识别绝对路径再规范化 URL | VERIFIED |

@@ -23,6 +23,28 @@ export type PlanMode='beginner'|'professional'|'agent';
 export interface PlanRecord {id:string;projectId:string;taskId:string|null;mode:PlanMode;target:AnalysisPlan['target'];detection:AnalysisPlan['target'];authorizationId:string|null;steps:AnalysisPlan['steps'];budget:PlanBudget;status:string;createdAt:string;updatedAt:string}
 export interface PlansResponse {items:PlanRecord[]}
 export interface CreatePlanInput {mode:PlanMode;objective:string;uploadId?:string;fileName?:string;size?:number;headHex?:string;declaredKind?:TargetKind;authorizationId?:string;authorization?:AuthorizationScope;budget?:Partial<PlanBudget>;maxSteps?:number;maxDepth?:number;adapterAllowlist?:AnalyzerId[]}
+export type AutopilotStatus='DRAFT'|'DISCOVERING_REQUIREMENTS'|'PLANNING'|'WAITING_FOR_APPROVAL'|'RUNNING'|'ANALYZING'|'RECONSTRUCTING'|'BUILDING'|'TESTING'|'REPAIRING'|'PACKAGING'|'VERIFYING'|'WAITING_FOR_USER'|'PAUSED'|'BLOCKED'|'PARTIAL_SUCCESS'|'FAILED'|'CANCELLED'|'COMPLETED';
+export type AutopilotQuestionKind='single'|'multi'|'file'|'directory'|'text'|'version'|'platform'|'depth'|'permission'|'sharing';
+export interface AutopilotIntentInputs {uploadIds:string[];paths:string[];urls:string[];imageIds:string[];logIds:string[];deviceInfo:string[]}
+export interface AutopilotIntent {kind:string;objectives:string[];finalPurpose:string;inputs:AutopilotIntentInputs;targetPlatform:string;requiredCapabilities:string[];delivery:string[];missing:string[];permissions:string[];feasibility:string;risks:string[];limitations:string[];confidence:number;source:'rules'|'model'|'mixed'}
+export interface AutopilotQuestion {id:string;kind:AutopilotQuestionKind;prompt:string;help:string;required:boolean;field:string;options?:{value:string;label:string;description?:string}[];defaultValue?:string}
+export interface AutopilotContract {version:number;userGoal:string;inputs:AutopilotIntentInputs;analysisTargets:string[];authorizedScope:string[];allowedOperations:string[];forbiddenOperations:string[];expectedOutputs:string[];requiredDeliverables:string[];acceptanceCriteria:string[];budget:{timeoutMs:number;maxDiskMB:number;maxMemoryMB:number;maxModelCalls:number;maxTokens:number;maxCostUsd:number;maxRepairAttempts:number};dataSharing:'local-only'|'remote-approved';knownLimitations:string[];unknowns:string[];userParticipation:string[]}
+export type AutopilotStepStatus='PENDING'|'READY'|'RUNNING'|'WAITING_FOR_USER'|'SUCCEEDED'|'FAILED'|'SKIPPED'|'BLOCKED';
+export interface AutopilotStep {id:string;goal:string;title:string;kind:'discover'|'analyze'|'reconstruct'|'build'|'test'|'repair'|'package'|'verify'|'document';dependsOn:string[];tool:string;inputRefs:string[];expectedOutput:string;acceptance:string;budget:{timeoutMs:number;maxDiskMB:number};retries:number;status:AutopilotStepStatus;attempt:number;taskId?:string;outputRefs:string[];error?:string;startedAt?:string;endedAt?:string}
+export interface AutopilotPlan {version:number;goal:string;steps:AutopilotStep[];createdAt:string;rationale:string}
+export interface AutopilotMetrics {questionsAsked:number;repeatedQuestions:number;interventions:number;modelCalls:number;tokens:number;costUsd:number;repairAttempts:number;repairSuccesses:number;noProgressSteps:number;peakMemoryMB:number;startedAt?:string;endedAt?:string}
+export interface AutopilotTask {id:string;projectId:string;conversationId:string;prompt:string;intent:AutopilotIntent;questions:AutopilotQuestion[];answers:Record<string,unknown>;contract:AutopilotContract|null;plan:AutopilotPlan|null;status:AutopilotStatus;planVersion:number;stateVersion:number;checkpoint:string;idempotencyKey:string;error:string|null;metrics:AutopilotMetrics;leaseOwner:string|null;leaseExpiresAt:string|null;createdAt:string;updatedAt:string}
+export interface AutopilotMessage {id:number;taskId:string;role:'user'|'assistant'|'system';content:string;metadata:Record<string,unknown>;createdAt:string}
+export interface AutopilotArtifact {name:string;path:string;size:number;sha256:string;mime?:string}
+export interface CreateAutopilotInput {projectId:string;prompt:string;idempotencyKey?:string;conversationId?:string;uploadIds?:string[];paths?:string[];urls?:string[]}
+export interface SubmitAutopilotAnswersInput {answers:Record<string,unknown>;approveContract?:boolean;approvePlan?:boolean}
+export type ModelRole='main'|'light'|'code'|'multimodal'|'reviewer'|'fallback';
+export type ProviderKind='openai-compatible'|'ollama'|'custom';
+export interface ProviderCapabilities {chat:boolean;stream:boolean;tools:boolean;structuredOutput:boolean;vision:boolean;maxContextTokens?:number}
+export interface ProviderLimits {timeoutMs:number;retries:number;rateLimitPerMinute:number;maxTokensPerRequest:number;maxTokensPerTask:number;maxCostUsdPerTask:number;inputCostPerMillionUsd?:number;outputCostPerMillionUsd?:number}
+export interface ProviderPublicView {id:string;name:string;kind:ProviderKind;baseUrl:string;model:string;apiKeyRef?:string;hasApiKey:boolean;enabled:boolean;priority:number;roles:ModelRole[];capabilities:ProviderCapabilities;limits:ProviderLimits;createdAt:string;updatedAt:string}
+export interface ProviderListResponse {items:ProviderPublicView[];roleAssignments:Partial<Record<Exclude<ModelRole,'fallback'>,string[]>>}
+export type ProviderSaveInput=ProviderPublicView&{apiKey?:string};
 export interface ToolResponse {items:AnalyzerCapability[];note:string}
 export interface DemoItem {name:string;title:string;description:string;kind:Project['kind'];adapter:AdapterName;target?:string}
 export interface DemosResponse {items:DemoItem[]}
@@ -57,6 +79,17 @@ export const api={
   settings:()=>request<AiSettings>('/settings'),
   saveSettings:(body:Record<string,unknown>)=>request('/settings',{method:'PUT',body:JSON.stringify(body)}),
   testSettings:()=>request<{ok:boolean;status?:number;error?:string}>('/settings/test',{method:'POST'}),
+  autopilotTasks:(projectId:string,status?:string)=>{const params=new URLSearchParams({projectId,limit:'100',offset:'0'});if(status)params.set('status',status);return request<Page<AutopilotTask>>(`/autopilot/tasks?${params}`);},
+  autopilotTask:(id:string,projectId?:string)=>request<AutopilotTask>(`/autopilot/tasks/${encodeURIComponent(id)}${projectId?`?projectId=${encodeURIComponent(projectId)}`:''}`),
+  createAutopilot:(body:CreateAutopilotInput)=>request<AutopilotTask>('/autopilot/tasks',{method:'POST',body:JSON.stringify(body)}),
+  submitAutopilotAnswers:(id:string,body:SubmitAutopilotAnswersInput)=>request<AutopilotTask>(`/autopilot/tasks/${encodeURIComponent(id)}/answers`,{method:'POST',body:JSON.stringify(body)}),
+  autopilotAction:(id:string,action:'pause'|'resume'|'cancel')=>request<AutopilotTask>(`/autopilot/tasks/${encodeURIComponent(id)}/${action}`,{method:'POST'}),
+  autopilotMessages:(id:string,limit=100,offset=0)=>request<Page<AutopilotMessage>>(`/autopilot/tasks/${encodeURIComponent(id)}/messages?${new URLSearchParams({limit:String(limit),offset:String(offset)})}`),
+  autopilotArtifacts:(id:string)=>request<AutopilotArtifact[]>(`/autopilot/tasks/${encodeURIComponent(id)}/artifacts`),
+  modelProviders:()=>request<ProviderListResponse>('/models/providers'),
+  saveModelProviders:(providers:ProviderSaveInput[],remoteConsent=false)=>request<ProviderListResponse>('/models/providers',{method:'PUT',body:JSON.stringify({providers,...(remoteConsent?{remoteConsent:true}:{})})}),
+  saveModelRoles:(roleAssignments:ProviderListResponse['roleAssignments'])=>request<{roleAssignments:ProviderListResponse['roleAssignments']}>('/models/roles',{method:'POST',body:JSON.stringify({roleAssignments})}),
+  testModelProvider:(id:string)=>request<{ok:boolean;capabilities?:ProviderCapabilities;error?:string}>(`/models/providers/${encodeURIComponent(id)}/test`,{method:'POST'}),
   demoTrace:()=>request<Blob>('/demo/trace').then(b=>new File([b],'captured-trace.json',{type:'application/json'})),
   hardwareDevices:()=>request<HardwareEnumeration>('/hardware/devices'),
   hardwareDoctor:()=>request<HardwareDoctor>('/hardware/doctor'),
@@ -90,4 +123,5 @@ export const api={
   legacyAlternatives:(category?:string,q='')=>request<{items:Array<{id:string;name:string;category:string;officialUrl:string;license:string;platforms:string[];free:true;maintained:string;functionalDifferences:string[];dataImport:string;sourceCheckedAt:string;notes:string[]}>;sourcePolicy:string}>(`/legacy/alternatives?${new URLSearchParams({...(category?{category}:{}),q})}`),
   legacyPrivacy:()=>request<{localOnlyAnalysis:boolean;remoteAiEnabled:boolean;remoteAiAllowed:boolean;remoteAiEndpointConfigured:boolean;remoteAiPolicy:string;dataDir:string;networkSteps:string[];localArtifacts:string[];controls:string[];limitations:string[]}>('/legacy/privacy')
 };
+export const autopilotArtifactUrl=(taskId:string,name:string)=>`/api/autopilot/tasks/${encodeURIComponent(taskId)}/artifacts/${encodeURIComponent(name)}`;
 export type {TaskDetail,Task,Evidence,Finding,Artifact,BackupInfo,BackupPreview,ConsoleDevice,ConsoleProfile,ConsoleSupportEntry,ConsoleUsbDiagnosis,UsbEnumerationSummary,ConsoleEvidence,ConsoleLevel,ActualAccess,ConsoleEvidenceKind,AnalyzerCapability,TargetKind,AnalyzerId,PlanBudget,AuthorizationScope};

@@ -72,6 +72,30 @@ describe('scanGameDirectory', () => {
     expect(stopped.skipped[0]?.reason).toContain('总字节上限');
   });
 
+  it('复用摘要时仍有界复核行为规格内容并保持 bytesScanned=0', async () => {
+    const root = path.join(process.cwd(), 'examples', 'revival-games', 'anti-template', 'duel');
+    const first = await scanGameDirectory(root);
+    expect(first.behaviorEvidence?.behavior.id).toBe('duel');
+    const second = await scanGameDirectory(root, { previous: first });
+    expect(second.behaviorEvidence?.behavior.id).toBe('duel');
+    expect(second.behaviorEvidence?.sha256).toBe(first.behaviorEvidence?.sha256);
+    expect(second.bytesScanned).toBe(0);
+    expect(second.files.every(file => file.evidenceStatus === 'INFERRED')).toBe(true);
+  });
+
+  it('previous totalBytes 超过本次 maxBytes 时正常返回 truncated 而不是抛错', async () => {
+    const root = await workspace();
+    await writeFile(path.join(root, 'a.bin'), Buffer.alloc(4096, 7));
+    await mkdir(path.join(root, 'nested'));
+    await writeFile(path.join(root, 'nested', 'b.txt'), 'hello');
+    const previous = await scanGameDirectory(root);
+    expect(previous.bytesScanned).toBe(4101);
+    const result = await scanGameDirectory(root, { previous, maxBytes: 4095 });
+    expect(result.truncated).toBe(true);
+    expect(result.files.every(file => file.size <= 4095)).toBe(true);
+    expect(result.bytesScanned).toBe(0);
+  });
+
   it('内容变化后即使 size 与 mtime 还原也不复用摘要', async () => {
     const root = await workspace();
     const file = path.join(root, 'changing.bin');

@@ -55,7 +55,7 @@ function input(db:Database,taskId:string,baseUrl:string,overrides:Partial<AiRunt
 }
 
 function agentRun(db:Database,taskId:string){
-  return db.raw.prepare('SELECT status,error,input_json,output_json FROM agent_runs WHERE task_id=?').get(taskId) as {status:string;error:string|null;input_json:string;output_json:string|null};
+  return db.raw.prepare('SELECT status,error,input_json,output_json FROM agent_runs WHERE task_id=? ORDER BY rowid DESC LIMIT 1').get(taskId) as {status:string;error:string|null;input_json:string;output_json:string|null};
 }
 
 describe('callAgent security',()=>{
@@ -157,6 +157,56 @@ describe('callAgent security',()=>{
     expect(authorization).toBe(`Bearer ${apiKey}`);
     expect(JSON.parse(requestBody)).toMatchObject({model:'fixture',messages:[{role:'system'},{role:'user',content:analysis}]});
     expect(agentRun(db,taskId)).toMatchObject({status:'SUCCEEDED',output_json:JSON.stringify({text:'provider result'})});
+  });
+
+  it('accepts normal model responses larger than 64 KiB while keeping a hard bound',async()=>{
+    const {db,taskId}=setup();const content='x'.repeat(80*1024);let responseBody=JSON.stringify({choices:[{message:{content}}]});
+    const providerPort=await listen(http.createServer((_req,res)=>{res.setHeader('content-type','application/json');res.end(responseBody);}));
+    await expect(callAgent(input(db,taskId,`http://127.0.0.1:${providerPort}/v1`))).resolves.toBe(content);
+    expect(Buffer.byteLength(responseBody)).toBeGreaterThan(64*1024);
+    responseBody=JSON.stringify({choices:[{message:{content:'y'.repeat(2*1024*1024)}}]});
+    await expect(callAgent(input(db,taskId,`http://127.0.0.1:${providerPort}/v1`))).rejects.toThrow(/bounded size/i);
+    expect(agentRun(db,taskId).status).toBe('FAILED');
+  });
+
+  it.each([
+    {choices:[{message:{content:['not text']}}]},
+    {choices:[]},
+    {choices:[{message:{}},{message:{content:'ambiguous'}}]},
+    {choices:[{content:'missing message'}]},
+    ['not an envelope'],
+    {choices:[{finish_reason:'length',message:{content:'partial'}}]},
+    {choices:[{finish_reason:'tool_calls',message:{content:null,tool_calls:[{id:'call'}]}}]},
+    {choices:[{message:{content:null,refusal:'policy refusal'}}]},
+    {choices:[{message:{content:'ok'}}],usage:{prompt_tokens:2,completion_tokens:1,total_tokens:4}},
+  ])('rejects malformed structured provider envelopes %#',async envelope=>{
+    const {db,taskId}=setup();const providerPort=await listen(http.createServer((_req,res)=>{res.setHeader('content-type','application/json');res.end(JSON.stringify(envelope));}));
+    await expect(callAgent(input(db,taskId,`http://127.0.0.1:${providerPort}/v1`))).rejects.toThrow(/invalid|must be text|finish_reason|refused/i);
+    expect(agentRun(db,taskId).status).toBe('FAILED');
+  });
+
+  it('records validated provider usage without treating it as model text',async()=>{
+    const {db,taskId}=setup();const usage={prompt_tokens:12,completion_tokens:3,total_tokens:15};const providerPort=await listen(http.createServer((_req,res)=>{res.setHeader('content-type','application/json');res.end(JSON.stringify({choices:[{finish_reason:'stop',message:{content:'ok'}}],usage}));}));
+    await expect(callAgent(input(db,taskId,`http://127.0.0.1:${providerPort}/v1`))).resolves.toBe('ok');expect(JSON.parse(agentRun(db,taskId).output_json!)).toEqual({text:'ok',usage});
+  });
+
+  it('uses the canonical direct analyzer mapping without accepting synonyms as an OR grant',async()=>{
+    const {db}=setup();const projectId=String((db.raw.prepare("SELECT project_id FROM authorization_scopes WHERE id='remote-auth'").get() as {project_id:string}).project_id);const task=db.createTask(projectId,'apk',{adapter:'apk',options:{uploadId:'upload-a'}},'apk-direct');db.addUpload({id:'upload-a',projectId,name:'a.apk',storedName:'a.stored',mime:'application/vnd.android.package-archive',size:1,sha256:'a',createdAt:new Date().toISOString()});db.raw.prepare("UPDATE authorization_scopes SET target='upload-a',allowed_interfaces_json='[\"jadx\"]' WHERE id='remote-auth'").run();
+    mockDns('93.184.216.34');const requestSpy=vi.spyOn(https,'request').mockImplementation(()=>{throw new Error('transport reached');});
+    await expect(callAgent(input(db,task.id,'https://ai.example/v1',{allowRemoteData:true}))).rejects.toThrow('transport reached');expect(requestSpy).toHaveBeenCalledTimes(1);
+    requestSpy.mockClear();db.raw.prepare("UPDATE authorization_scopes SET allowed_interfaces_json='[\"android\"]' WHERE id='remote-auth'").run();await expect(callAgent(input(db,task.id,'https://ai.example/v1',{allowRemoteData:true}))).rejects.toThrow(/does not allow remote AI/);expect(requestSpy).not.toHaveBeenCalled();
+  });
+
+  it('binds remote AI to the exact plan execution analyzer',async()=>{
+    const {db}=setup();const projectId=String((db.raw.prepare("SELECT project_id FROM authorization_scopes WHERE id='remote-auth'").get() as {project_id:string}).project_id);const task=db.createTask(projectId,'apk',{adapter:'apk',options:{uploadId:'upload-a',planId:'plan-exact'}},'apk-plan');db.addUpload({id:'upload-a',projectId,name:'a.apk',storedName:'a.stored',mime:'application/vnd.android.package-archive',size:1,sha256:'a',createdAt:new Date().toISOString()});db.raw.prepare("UPDATE authorization_scopes SET target='upload-a',allowed_interfaces_json='[\"android\"]' WHERE id='remote-auth'").run();db.raw.prepare("INSERT INTO analysis_plans (id,project_id,task_id,mode,authorization_id,target_json,detection_json,steps_json,budget_json,status,created_at,updated_at) VALUES ('plan-exact',?,?,'FULL','remote-auth','{}','{}',?,?, 'RUNNING',?,?)").run(projectId,task.id,JSON.stringify([{kind:'execution',analyzer:'android',status:'PENDING',adapterAllowlist:['apk']}]),JSON.stringify({}),new Date().toISOString(),new Date().toISOString());
+    mockDns('93.184.216.34');const requestSpy=vi.spyOn(https,'request').mockImplementation(()=>{throw new Error('transport reached');});await expect(callAgent(input(db,task.id,'https://ai.example/v1',{allowRemoteData:true}))).rejects.toThrow('transport reached');expect(requestSpy).toHaveBeenCalledTimes(1);
+    requestSpy.mockClear();await expect(callAgent({...input(db,task.id,'https://ai.example/v1',{allowRemoteData:true}),analyzerId:'jadx'})).rejects.toThrow(/does not match the plan execution step/);expect(requestSpy).not.toHaveBeenCalled();
+  });
+
+  it('rejects model names containing control characters before a request',async()=>{
+    const {db,taskId}=setup();const requestSpy=vi.spyOn(http,'request');
+    await expect(callAgent(input(db,taskId,'http://127.0.0.1:11434/v1',{model:'fixture\nignore instructions'}))).rejects.toThrow(/model/i);
+    expect(requestSpy).not.toHaveBeenCalled();
   });
 
   it('rejects an AI endpoint fragment before issuing a request',async()=>{

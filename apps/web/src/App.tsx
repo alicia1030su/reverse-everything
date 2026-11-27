@@ -1,6 +1,9 @@
 import { Navigate, Route, Routes } from 'react-router-dom';
 import Layout from './components/Layout';
 import Dashboard from './pages/Dashboard';
+import Autopilot from './pages/Autopilot';
+import DeliveryCenter from './pages/DeliveryCenter';
+import ModelManager from './pages/ModelManager';
 import Hardware from './pages/Hardware';
 import NewProject from './pages/NewProject';
 import TaskWorkbench, { TasksPage } from './pages/Tasks';
@@ -24,7 +27,13 @@ import LegacyStudio from './pages/LegacyStudio';
 
 export default function App() {
   return <Routes><Route element={<Layout/>}>
-    <Route index element={<Dashboard/>}/>
+    <Route index element={<Autopilot/>}/>
+    <Route path="autopilot" element={<Autopilot/>}/>
+    <Route path="autopilot/:id" element={<Autopilot/>}/>
+    <Route path="delivery" element={<DeliveryCenter/>}/>
+    <Route path="delivery/:id" element={<DeliveryCenter/>}/>
+    <Route path="models" element={<ModelManager/>}/>
+    <Route path="dashboard" element={<Dashboard/>}/>
     <Route path="new" element={<NewProject/>}/>
     <Route path="hardware" element={<Hardware/>}/>
     <Route path="projects" element={<Projects/>}/>
