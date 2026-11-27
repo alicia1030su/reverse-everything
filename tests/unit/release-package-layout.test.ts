@@ -1,4 +1,4 @@
-import { readFile } from 'node:fs/promises';
+import { readFile, readdir } from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { describe, expect, it } from 'vitest';
@@ -21,6 +21,19 @@ describe('Ghidra release package layout', () => {
     expect(source).toContain("'packages/console'");
     expect(source).toContain("'packages/planner'");
     expect(source).toContain("'packages/game-revival'");
+  });
+
+  it('copies Autopilot into the standalone server and declares every direct workspace import', async () => {
+    const source = await readFile('scripts/package-server.mjs', 'utf8');
+    const apiPackage = JSON.parse(await readFile('apps/api/package.json', 'utf8')) as { dependencies: Record<string, string> };
+    const apiSources = await readdir('apps/api/src', { recursive: true });
+    expect(source).toContain("'packages/autopilot'");
+    for (const file of apiSources.filter(file => String(file).endsWith('.ts'))) {
+      const text = await readFile(path.join('apps/api/src', String(file)), 'utf8');
+      for (const match of text.matchAll(/from '(@reverse\/[^']+)'/g)) {
+        expect(apiPackage.dependencies[match[1]], `${file} imports ${match[1]}`).toBe('0.0.8');
+      }
+    }
   });
 
   it('places the launcher at the path resolved by the desktop runtime adapter', async () => {
