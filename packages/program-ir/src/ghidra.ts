@@ -60,8 +60,10 @@ export function ghidraMetadataToProgram(metadata: GhidraProgramInput, id = `ghid
     const entry = address(raw.entry);
     if (byEntry.has(entry)) throw new Error(`Duplicate Ghidra function entry: ${entry}`);
     const functionEvidenceId = evidenceId(`${id}:function:${entry}`);
+    const bodyless = raw.blocks !== undefined && raw.blocks.length === 0 && !raw.external;
+    if (bodyless) limitations.add(`Ghidra function ${raw.name} at ${entry} has no analyzable control-flow blocks and was classified as external/unanalyzed`);
     const fn: FunctionIr = {
-      id: fnId(scope, entry), name: raw.name, entry, bodyStart: address(raw.body), thunk: raw.thunk, external: raw.external,
+      id: fnId(scope, entry), name: raw.name, entry, bodyStart: address(raw.body), thunk: raw.thunk, external: raw.external || bodyless,
       parameterIds: [], localIds: [], blockIds: [], calleeIds: [], callerIds: [], evidenceIds: [functionEvidenceId],
       ...(raw.signature !== undefined ? { signature: raw.signature } : {}),
       ...(raw.callingConvention !== undefined ? { callingConvention: raw.callingConvention } : {}),

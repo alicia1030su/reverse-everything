@@ -74,6 +74,15 @@ describe('Program IR', () => {
     expect(() => assertProgramIr(badFunction)).toThrow(/inconsistent ownership/);
   });
 
+  it('classifies bodyless Ghidra functions as unanalyzed instead of inventing CFG', async () => {
+    const metadata = await fixture();
+    metadata.functions.push({ name: 'external_stub', entry: '0x00105000', body: '0x00105000', thunk: false, external: false, blocks: [] });
+    const program = ghidraMetadataToProgram(metadata, 'fixture');
+    assertProgramIr(program);
+    expect(program.functions.find(fn => fn.name === 'external_stub')).toMatchObject({ external: true, blockIds: [] });
+    expect(program.limitations.join(' ')).toContain('no analyzable control-flow blocks');
+  });
+
   it('binds string references only by exact function entry', async () => {
     const metadata = await fixture();
     metadata.stringReferences[0]!.functionEntry = undefined;
