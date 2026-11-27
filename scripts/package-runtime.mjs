@@ -16,7 +16,7 @@ await mkdir(out,{recursive:true});
 await mkdir(path.join(out,'scripts'),{recursive:true});
 await copyExclusive(path.join(root,'scripts/ghidra-analyze-headless.mjs'),path.join(out,'scripts/ghidra-analyze-headless.mjs'));await copyExclusive(path.join(root,'scripts/symbolic_execute.py'),path.join(out,'scripts/symbolic_execute.py'));
 await mkdir(path.join(path.dirname(out),'scripts'),{recursive:true});
-await copyExclusive(path.join(root,'scripts/ghidra-analyze-headless.mjs'),path.join(path.dirname(out),'scripts/ghidra-analyze-headless.mjs'));await copyExclusive(path.join(root,'scripts/symbolic_execute.py'),path.join(path.dirname(out),'scripts/symbolic_execute.py'));
+await copyExclusive(path.join(root,'scripts/ghidra-analyze-headless.mjs'),path.join(path.dirname(out),'scripts/ghidra-analyze-headless.mjs'));await copyExclusive(path.join(root,'scripts/symbolic_execute.py'),path.join(path.dirname(out),'scripts/symbolic_execute.py'));await copyExclusive(path.join(root,'scripts/pidfd_cleanup.py'),path.join(path.dirname(out),'scripts/pidfd_cleanup.py'));
 const rootPackage=JSON.parse(await readFile(path.join(root,'package.json'),'utf8'));
 const npmVersion=rootPackage.devDependencies?.npm;
 if(typeof npmVersion!=='string'||!/^\d+\.\d+\.\d+$/.test(npmVersion))throw new Error('npm must be an exact-version devDependency');
