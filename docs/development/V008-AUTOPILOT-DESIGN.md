@@ -1,6 +1,6 @@
 # v0.0.8 Autopilot 产品定义与设计
 
-> 状态：开发中。基于 2026-11-27 当前工作树；未完成项保持 `UNVERIFIED`。
+> 状态：v0.0.8 已正式发布。基于冻结 Commit `d2334ee267098e30f44b72c80f975e520abbc47c`；未完成项保持 `PARTIAL` 或 `UNVERIFIED`。
 
 ## 1. 背景
 
@@ -52,7 +52,7 @@ v0.0.7 已具备真实分析器、持久化工作流、证据和恢复基础，�
 | F-13 | 真实模型闭环 | 模型意图/规划进入主链 | P1 | 核心 | US-10 |
 | F-14 | 长期记忆与多智能体 | 跨任务上下文与角色隔离 | P2 | 核心 | — |
 
-P0 为 9/14，未出现全 P0。F-13 已具备 Provider 基础但未完成主链集成，不能标记完成。
+P0 为 9/14。F-13 真实模型主链集成保持 BLOCKED（V008-003）；F-14 长期记忆与完整多智能体为 PARTIAL，不得标记完成。
 
 ## 5. 核心流程与异常分支
 
@@ -126,4 +126,4 @@ P0 为 9/14，未出现全 P0。F-13 已具备 Provider 基础但未完成主链
 - API：`apps/api/src/autopilot-routes.ts`、`model-routes.ts`。
 - Web：`apps/web/src/pages/Autopilot.tsx`、`DeliveryCenter.tsx`、`ModelManager.tsx`。
 - 入口：`apps/cli/src/cli.ts`、`apps/cli/src/tools.ts`、`skills/reverse-everything/SKILL.md`。
-- 定向测试：2026-11-27 Windows，4 个文件、34 项通过；详见 [V008-TEST-RESULTS.md](V008-TEST-RESULTS.md)。
+- 定向与分平台测试：Ubuntu 906 passed / 7 skipped，Windows 905 passed / 8 skipped，完整 E2E 32/32；正式候选 `45986134905`、发行 `45994026211` 均通过。详见 [V008-TEST-RESULTS.md](V008-TEST-RESULTS.md)。

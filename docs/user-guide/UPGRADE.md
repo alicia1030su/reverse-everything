@@ -1,6 +1,6 @@
 # 升级与回滚指南
 
-当前正式版：**v0.0.7 / Schema 6**。v0.0.8 开发目标为 Schema 7，尚未发布。升级前必须备份整个 `data/`；数据库迁移不是数据备份的替代品。
+当前正式版：**v0.0.8 / Schema 7**。v0.0.8 已通过 Windows v0.0.7→v0.0.8 覆盖升级、Schema 7 迁移、用户数据/项目保留及 Game/Legacy smoke。升级前必须备份整个 `data/`；数据库迁移不是数据备份的替代品。
 
 ## 通用升级步骤
 
@@ -22,12 +22,13 @@
 - 验证旧项目与上传仍可读取；已有 V5 游戏任务可继续查看证据和产物。不要把旧档案自动视为具有 V5 行为证据。
 - v0.0.7 正式候选已通过 Windows v0.0.6→v0.0.7 覆盖升级、Schema 6 迁移、用户数据/项目保留及 Game/Legacy smoke。
 
-## v0.0.7 → v0.0.8（Schema 6 → 7，开发中）
+## v0.0.7 → v0.0.8（Schema 6 → 7）
 
-- v0.0.8 计划新增 Autopilot 任务、消息和步骤结果表，目标 `schemaVersion=7`；以最终发布版本的实际值为准。
-- 旧分析任务、项目、上传、证据和设置应保持兼容；新增表不应要求用户重建旧项目。
-- 升级后除通用 smoke 外，还需验证旧任务可打开、历史产物可下载、备份可验证，以及新 Autopilot 任务可创建、恢复和取消。
-- Schema 7 尚在开发，未完成候选升级验收前不得把本步骤标为已验证。
+- v0.0.7 使用 Schema 6；v0.0.8 使用 Schema 7。
+- Schema 7 新增 `autopilot_tasks`、`autopilot_messages`、`autopilot_step_results` 与 `autopilot_artifacts`，旧分析任务、项目、上传、证据和设置保持兼容。
+- 启动后确认产品版本为 `0.0.8`、`schemaVersion=7`。
+- 验证旧任务可打开、历史产物可下载、备份可验证，以及新 Autopilot 任务可创建、恢复和取消。
+- v0.0.8 正式候选已通过 Windows v0.0.7→v0.0.8 覆盖安装、Schema 7 迁移、用户数据/项目保留、Game Revival 与 Legacy 独立启动 smoke。
 
 ## 回滚
 
@@ -46,4 +47,4 @@
 
 ## 历史：v0.0.4 → v0.0.5（Schema 3 → 4）
 
-v0.0.5 引入 `console_profiles`、`analysis_plans`、`authorization_scopes`、`tool_installations`、`demo_runs` 和 `project_deletion_intents`，升级后预期版本 `0.0.5`、Schema 4。该节仅用于旧环境迁移；从 v0.0.5 及以后版本升级应按当前章节连续迁移到 Schema 6，不要停留在旧预期。
+v0.0.5 引入 `console_profiles`、`analysis_plans`、`authorization_scopes`、`tool_installations`、`demo_runs` 和 `project_deletion_intents`，升级后预期版本 `0.0.5`、Schema 4。该节仅用于旧环境迁移；从 v0.0.5 及以后版本升级应按当前章节连续迁移到 Schema 7，不要停留在旧预期。

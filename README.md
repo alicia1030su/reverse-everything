@@ -2,33 +2,32 @@
 
 **Autopilot 自然语言驱动的本地逆向与兼容重建工作台 · v0.0.8**
 
-当前稳定版：v0.0.7。v0.0.8 为开发候选，尚未发布。
+当前稳定版：**v0.0.8**，已于 2026-11-27 正式发布。
 
 [![CI](https://github.com/alicia1030su/reverse-everything/actions/workflows/ci.yml/badge.svg)](https://github.com/alicia1030su/reverse-everything/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
-[![Release](https://img.shields.io/badge/release-v0.0.7-blue.svg)](https://github.com/alicia1030su/reverse-everything/releases/tag/v0.0.7)
-[![v0.0.8 development](https://img.shields.io/badge/release-v0.0.8-development-orange.svg)](#v008-开发候选把目标交给-autopilot)
+[![Release](https://img.shields.io/badge/release-v0.0.8-blue.svg)](https://github.com/alicia1030su/reverse-everything/releases/tag/v0.0.8)
 [English](README.en.md)
 
 ![逆向万物横幅](docs/assets/banner.svg)
 
-## v0.0.8 开发候选：把目标交给 Autopilot
+## v0.0.8：把目标交给 Autopilot
 
 用自然语言说出你想完成的事，例如“分析这个旧软件并生成兼容重建方案”或“重建这个网站并交付可部署产物”。Autopilot 会先补齐必要信息，展示**目标契约**与**执行计划**，在你明确确认后执行真实分析、构建、测试和独立规则验收，最后交付带 SHA-256、教程和验收报告的工件。
 
-**默认规则型、默认 local-only，不需要 API Key。** Provider V4 模型管理已经提供多角色配置、能力探测、预算和故障切换，但真实远程模型尚未接入完整 Autopilot 主链；真实 Key 端到端验收仍为 `UNVERIFIED`，不得把 Mock 或规则型结果称为真实模型能力。v0.0.8 尚未发布，当前稳定版仍是 v0.0.7。
+**默认规则型、默认 local-only，不需要 API Key。** Provider V4 模型管理已经提供多角色配置、能力探测、预算和故障切换，但真实远程模型尚未接入完整 Autopilot 主链；正式候选的真实 Key 端到端验收如实记录为 `BLOCKED / MISSING_API_KEY`，不得把 Mock 或规则型结果称为真实模型能力。v0.0.8 已正式发布，当前稳定版为 v0.0.8。
 
 真实流程：描述目标 → 回答动态问题 → 确认授权/预算/验收契约 → 确认依赖计划 → 执行真实步骤 → 在交付中心复核工件与限制。详见 [Autopilot 指南](docs/AUTOPILOT.md) 与 [新手快速开始](docs/BEGINNER-QUICKSTART.md)。
 
-### 界面截图占位（待真实 E2E 生成）
+### 界面截图占位（尚未生成）
 
-以下为文档占位，不是已生成截图，不得用于宣称视觉或端到端验收已通过：
+Autopilot 的真实 Web/Electron E2E 已通过；以下仅为尚未生成的文档截图占位，不得冒充实际截图：
 
 ```text
-[待真实 E2E 生成] Autopilot 自然语言首页：/autopilot
-[待真实 E2E 生成] 目标契约与执行计划确认：/autopilot/:id
-[待真实 E2E 生成] 交付中心与独立验收：/delivery/:id
-[待真实 E2E 生成] Provider V4 模型管理：/models
+[待生成截图] Autopilot 自然语言首页：/autopilot
+[待生成截图] 目标契约与执行计划确认：/autopilot/:id
+[待生成截图] 交付中心与独立验收：/delivery/:id
+[待生成截图] Provider V4 模型管理：/models
 ```
 
 生成后须记录固定 Commit、浏览器/视口、任务 ID 与真实验收状态，并替换本占位。
@@ -196,7 +195,7 @@ reverse-everything mcp http --port 4174
 
 - API：`http://127.0.0.1:4173/api/v1`；兼容 `/api`。
 - OpenAPI：运行时 `GET /api/openapi.json`。
-- MCP：stdio 与 Streamable HTTP 共用 API。v0.0.7 基线共 **44 个工具**；v0.0.8 开发树新增 10 个 `autopilot_*` 工具，总计 54 个。`create_task` 的 adapter 包含 `legacy`，游戏工具仍为 `list_game_profiles`、`save_game_profile`、`scan_game_directory`、`create_game_server_spec`、`list_game_rebuilds`、`create_game_rebuild`、`get_game_rebuild`。
+- MCP：stdio 与 Streamable HTTP 共用 API。v0.0.7 基线共 **44 个工具**；v0.0.8 新增 10 个 `autopilot_*` 工具，总计 54 个。`create_task` 的 adapter 包含 `legacy`，游戏工具仍为 `list_game_profiles`、`save_game_profile`、`scan_game_directory`、`create_game_server_spec`、`list_game_rebuilds`、`create_game_rebuild`、`get_game_rebuild`。
 - Skill：`skills/reverse-everything`，优先使用 MCP，否则使用 CLI/API。
 
 所有入口共用后端授权、Schema、预算和结构化错误。清理、设备打开、实时捕获、刷写、驱动安装和任意宿主任意命令执行不暴露给 MCP。
@@ -215,15 +214,15 @@ reverse-everything mcp http --port 4174
 
 ## 下载
 
-当前稳定版 v0.0.7 已于 2026-11-26 正式发布。以下资产固定指向 [v0.0.7 Release](https://github.com/alicia1030su/reverse-everything/releases/tag/v0.0.7)，不会随 Latest 变化；正式发行 Run 为 `45912292229`。
+当前稳定版 v0.0.8 已于 2026-11-27 正式发布。以下资产固定指向 [v0.0.8 Release](https://github.com/alicia1030su/reverse-everything/releases/tag/v0.0.8)，不会随 Latest 变化；正式发行 Run 为 `45994026211`。
 
 | 平台 / 形态 | 文件 |
 |---|---|
-| Windows 安装包 | [Reverse-Everything-Setup-0.0.7-win-x64.exe](https://github.com/alicia1030su/reverse-everything/releases/download/v0.0.7/Reverse-Everything-Setup-0.0.7-win-x64.exe) |
-| Windows Portable | [Reverse-Everything-Portable-0.0.7-win-x64.zip](https://github.com/alicia1030su/reverse-everything/releases/download/v0.0.7/Reverse-Everything-Portable-0.0.7-win-x64.zip) |
-| CLI | [reverse-everything-cli-0.0.7.tgz](https://github.com/alicia1030su/reverse-everything/releases/download/v0.0.7/reverse-everything-cli-0.0.7.tgz) |
-| Server | [reverse-everything-server-0.0.7.tar.gz](https://github.com/alicia1030su/reverse-everything/releases/download/v0.0.7/reverse-everything-server-0.0.7.tar.gz) |
-| Skill | [reverse-everything-skill-0.0.7.zip](https://github.com/alicia1030su/reverse-everything/releases/download/v0.0.7/reverse-everything-skill-0.0.7.zip) |
+| Windows 安装包 | [Reverse-Everything-Setup-0.0.8-win-x64.exe](https://github.com/alicia1030su/reverse-everything/releases/download/v0.0.8/Reverse-Everything-Setup-0.0.8-win-x64.exe) |
+| Windows Portable | [Reverse-Everything-Portable-0.0.8-win-x64.zip](https://github.com/alicia1030su/reverse-everything/releases/download/v0.0.8/Reverse-Everything-Portable-0.0.8-win-x64.zip) |
+| CLI | [reverse-everything-cli-0.0.8.tgz](https://github.com/alicia1030su/reverse-everything/releases/download/v0.0.8/reverse-everything-cli-0.0.8.tgz) |
+| Server | [reverse-everything-server-0.0.8.tar.gz](https://github.com/alicia1030su/reverse-everything/releases/download/v0.0.8/reverse-everything-server-0.0.8.tar.gz) |
+| Skill | [reverse-everything-skill-0.0.8.zip](https://github.com/alicia1030su/reverse-everything/releases/download/v0.0.8/reverse-everything-skill-0.0.8.zip) |
 
 下载 `SHA256SUMS.txt` 后运行 `sha256sum -c SHA256SUMS.txt` 验证资产。Windows 安装包未签名，可能触发 SmartScreen；不伪造代码签名。
 
@@ -239,7 +238,7 @@ npm run validate:skill
 npm run version:check
 ```
 
-历史基线与 v0.0.6 门禁以 [V006 测试结果](docs/development/V006-TEST-RESULTS.md) 和 [V007 基线核实](docs/development/V007-BASELINE.md) 为准。v0.0.7 冻结 Commit 的分平台结果见 [V007 测试结果](docs/development/V007-TEST-RESULTS.md)：Ubuntu 784 passed / 7 skipped，Windows 783 passed / 8 skipped；E2E Ubuntu 28 passed / 1 skipped、Windows 29 passed。未运行的检查不标为通过。
+v0.0.8 冻结 Commit 的分平台结果见 [V008 测试结果](docs/development/V008-TEST-RESULTS.md)：Ubuntu 906 passed / 7 skipped，Windows 905 passed / 8 skipped；完整 E2E 32/32。正式候选 Run `45986134905` 与原子发行 Run `45994026211` 均通过，15 个公开资产已复核 SHA-256。未运行的检查不标为通过。
 
 - [PRD](docs/PRD.md) · [架构](docs/ARCHITECTURE.md) · [安全模型](docs/SECURITY-MODEL.md) · [路线图](docs/ROADMAP.md)
 - [老软件](docs/LEGACY-SOFTWARE.md) · [独立重建](docs/SOFTWARE-RECONSTRUCTION.md) · [数据恢复](docs/DATA-RECOVERY.md) · [本地隐私](docs/LOCAL-PRIVACY.md) · [许可诊断](docs/LICENSE-DIAGNOSTICS.md) · [游戏兼容](docs/GAME-COMPATIBILITY.md)

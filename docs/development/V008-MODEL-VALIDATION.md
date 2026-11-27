@@ -1,6 +1,6 @@
 # v0.0.8 模型验证报告
 
-> 日期：2026-11-27。结论：Provider V4 的规则/Mock 测试通过；真实远程模型端到端验收 `UNVERIFIED`。
+> 日期：2026-11-27。结论：Provider V4 的规则/Mock 测试通过；真实远程模型端到端验收 `BLOCKED / MISSING_API_KEY`，正式发行证据见 Release 资产 `v008-model-validation.json` 对应的 `real-model-validation` 工件。
 
 ## 验证分层
 
@@ -13,7 +13,7 @@
 | 本地真实模型 | 本机 Ollama 等端点实测 | UNVERIFIED | 未提供固定模型与服务日志 |
 | 真实远程模型 | 真实 Key + 真实端点 + 完整 Autopilot 任务 | UNVERIFIED / BLOCKED | V008-003 |
 
-2026-11-27 Windows 定向运行：Autopilot 28/28、Provider 21/21（单元 17 + API 4）。全量 Vitest 901 passed / 9 skipped / 0 failed。这些结果不是真实模型证据。
+2026-11-27 最终分平台运行：Ubuntu 906 passed / 7 skipped，Windows 905 passed / 8 skipped，完整 E2E 32/32。正式候选 Run `45986134905` 与发行 Run `45994026211` 均记录了 `status=BLOCKED`、`error.code=MISSING_API_KEY`、`realModelCalled=false`。这些结果不是真实模型证据。
 
 ## Provider V4 已验证行为
 
@@ -38,14 +38,14 @@
 
 | 字段 | 值 |
 |---|---|
-| 验收日期 / Commit | UNVERIFIED |
-| Provider / 端点 / 模型 | UNVERIFIED |
-| 数据共享同意记录 | UNVERIFIED |
-| 任务 ID / 原始目标 | UNVERIFIED |
+| 验收日期 / Commit | 2026-11-27 / `d2334ee267098e30f44b72c80f975e520abbc47c` |
+| Provider / 端点 / 模型 | openai-compatible；端点与模型未配置 |
+| 数据共享同意记录 | 未发生真实模型调用 |
+| 任务 ID / 原始目标 | 未执行真实模型任务 |
 | 意图与计划结果 | UNVERIFIED |
 | 工具调用证据 | UNVERIFIED |
-| Token / 费用 / 耗时 | UNVERIFIED |
-| 独立验收状态 | UNVERIFIED |
-| 限制与失败分支 | UNVERIFIED |
+| Token / 费用 / 耗时 | 0 / 0 / 0；未调用 |
+| 独立验收状态 | BLOCKED：`MISSING_API_KEY` |
+| 限制与失败分支 | `realModelCalled=false`；不以 Mock 或规则型替代 |
 
 无真实 Key 时保持 `BLOCKED`，不得以 Mock 或规则型结果关闭 V008-003。
