@@ -497,14 +497,14 @@ export async function verifyPublicAssets(release, expected) {
 }
 
 async function publish(repo, tag, dir, commit, requestedReleaseId, coreGate) {
+  const { manifest, manifestSha256, expected } = await candidate(dir, tag, commit);
   if (tag === 'v0.0.9') {
     if (!coreGate?.report || !coreGate?.evidenceDir) throw new Error('v0.0.9 publish requires --core-gate-report and --core-gate-evidence-dir');
     const report = JSON.parse(await readFile(path.resolve(coreGate.report), 'utf8'));
     if (report.commit !== commit) throw new Error('v0.0.9 core acceptance commit does not match the release commit');
-    const errors = await verifyV009CoreGateEvidence(report, path.resolve(coreGate.evidenceDir));
+    const errors = await verifyV009CoreGateEvidence(report, path.resolve(coreGate.evidenceDir), { manifestSha256 });
     if (errors.length) throw new Error('v0.0.9 core gate failed:\n- ' + errors.join('\n- '));
   }
-  const { manifest, manifestSha256, expected } = await candidate(dir, tag, commit);
   const state = await loadState(dir, tag, repo, commit, manifestSha256);
   const releaseId = requestedReleaseId ?? state?.releaseId;
   let release = await getRelease(repo, tag, releaseId);

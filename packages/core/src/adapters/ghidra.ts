@@ -143,7 +143,7 @@ public class ExportMetadata extends GhidraScript {
   }
   private String variable(Variable variable, String kind, int parameterIndex) {
     if (variable == null) return "null";
-    return "{\"name\":" + q(variable.getName()) + ",\"dataType\":" + q(variable.getDataType() == null ? "UNKNOWN" : variable.getDataType().getName()) + ",\"kind\":" + q(kind) + ",\"storage\":" + q(variable.getStorage() == null ? "UNKNOWN" : variable.getStorage().toString()) + (parameterIndex >= 0 ? ",\"parameterIndex\":" + parameterIndex : "") + "}";
+    return "{\"name\":" + q(variable.getName()) + ",\"dataType\":" + q(variable.getDataType() == null ? "UNKNOWN" : variable.getDataType().getName()) + ",\"kind\":" + q(kind) + ",\"storage\":" + q(variable.getVariableStorage() == null ? "UNKNOWN" : variable.getVariableStorage().toString()) + (parameterIndex >= 0 ? ",\"parameterIndex\":" + parameterIndex : "") + "}";
   }
   private String instruction(Instruction instruction) {
     StringBuilder pcode = new StringBuilder("[");

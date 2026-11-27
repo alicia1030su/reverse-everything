@@ -16,9 +16,9 @@ export function assertProgramIr(program: ProgramIr, options: { allowPartial?: bo
   if (program.schemaVersion !== 1) throw new ProgramIrError('Unsupported Program IR schema');
   const partial = options.allowPartial === true;
   if (!program.id) throw new ProgramIrError('Program id is required');
-  if (!partial) {
+  if (!partial && !program.provenance) throw new ProgramIrError('Program provenance is required');
+  if (program.provenance) {
     const provenance = program.provenance;
-    if (!provenance) throw new ProgramIrError('Program provenance is required');
     if (!/^[a-f0-9]{64}$/i.test(provenance.inputSha256 ?? '')) throw new ProgramIrError('Program inputSha256 is invalid');
     if (!provenance.analyzer || !provenance.analyzerVersion || !provenance.environment) throw new ProgramIrError('Program analyzer provenance is incomplete');
     if (!provenance.generatedAt || !Number.isFinite(Date.parse(provenance.generatedAt))) throw new ProgramIrError('Program generatedAt is invalid');

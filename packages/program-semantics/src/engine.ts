@@ -31,19 +31,27 @@ function validateGrounding(program: ProgramIr, functionId: string, evidence: Evi
     });
     if (!cited.some(item => /^(?:instruction|block|variable|call|xref):/.test(item.locator))) throw new Error('Semantic claims must cite fine-grained structural evidence, not only function identity');
   }
+  const allowedKinds = new Set(['iteration', 'memory-copy', 'memory-initialization', 'file-io', 'network-io', 'cryptographic-primitive', 'parsing', 'data-flow', 'control-flow', 'call-graph', 'state-machine', 'other']);
   const claimPatterns: Record<string, RegExp> = {
-    'network-io': /\b(?:socket|connect|send|recv|WSAStartup|getaddrinfo)\b/i,
-    'file-io': /\b(?:fopen|fread|fwrite|CreateFileA?|ReadFile|WriteFile)\b/i,
-    'cryptographic-primitive': /\b(?:AES|SHA1|SHA256|MD5|RC4|EVP_|BCrypt)\w*\b/i,
-    'memory-copy': /\b(?:memcpy|memmove)\b/i,
-    'memory-initialization': /\bmemset\b/i,
-    'parsing': /\b(?:strtol|strtoul|sscanf|parse|decode)\w*\b/i,
-    'iteration': /\b(?:for|while|do)\s*\(/i,
+    'network-io': /\b(?:socket|connect|send|recv|WSAStartup|getaddrinfo|network|exfiltrat\w*)\b/i,
+    'file-io': /\b(?:fopen|fread|fwrite|CreateFileA?|ReadFile|WriteFile|file\s+io)\b/i,
+    'cryptographic-primitive': /\b(?:AES|SHA1|SHA256|MD5|RC4|EVP_|BCrypt|cryptograph\w*)\b/i,
+    'memory-copy': /\b(?:memcpy|memmove|memory\s+copy)\b/i,
+    'memory-initialization': /\b(?:memset|memory\s+initializ\w*)\b/i,
+    'parsing': /\b(?:strtol|strtoul|sscanf|parse|decode|parsing)\w*\b/i,
+    'iteration': /\b(?:for|while|do|loop|iterat\w*)\b/i,
   };
   const structuralText = [fn.pseudocode ?? '', ...program.instructions.filter(instruction => instruction.functionId === fn.id).flatMap(instruction => [instruction.mnemonic, ...(instruction.pcode ?? [])]), ...program.calls.filter(call => call.callerId === fn.id).map(call => program.functions.find(candidate => candidate.id === call.calleeId)?.name ?? '')].join('\n');
   for (const behavior of output.behaviors) {
-    const pattern = claimPatterns[behavior.kind];
-    if (pattern && !pattern.test(structuralText)) throw new Error(`Semantic behavior ${behavior.kind} is not supported by function structure`);
+    if (!allowedKinds.has(behavior.kind)) throw new Error(`Unsupported semantic behavior kind: ${behavior.kind}`);
+    for (const [kind, pattern] of Object.entries(claimPatterns)) {
+      if (pattern.test(behavior.description) && !pattern.test(structuralText)) throw new Error(`Semantic behavior claim ${kind} is not supported by function structure`);
+    }
+  }
+  for (const hypothesis of output.hypotheses) {
+    for (const [kind, pattern] of Object.entries(claimPatterns)) {
+      if (pattern.test(hypothesis.summary) && !pattern.test(structuralText)) throw new Error(`Semantic hypothesis claim ${kind} is not supported by function structure`);
+    }
   }
 }
 
