@@ -366,32 +366,33 @@ def analyze(request: dict, worker_sha256: str, started_at: str, started: float) 
     while manager.active:
         if time.monotonic() >= deadline:
             raise TimeoutError("symbolic analysis deadline exceeded")
-        if states_explored >= max_states or len(manager.active) + states_explored > max_states:
+        if states_explored >= max_states:
             truncated = True
             break
+        stepping = len(manager.active)
         manager.step()
         newly_found = [state for state in manager.active if reached_target(state)]
         if newly_found:
             found_ids = {id(state) for state in newly_found}
             manager.active = [state for state in manager.active if id(state) not in found_ids]
-            manager.stashes["found"] = newly_found
-        states_explored += len(manager.active) + len(newly_found) + len(manager.deadended)
+        newly_deadended = list(manager.stashes.get("deadended", []))
+        manager.stashes["deadended"] = []
+        states_explored += stepping
         if time.monotonic() >= deadline:
             raise TimeoutError("symbolic analysis deadline exceeded")
-        manager.stashes["found"] = []
         for found_state in newly_found:
             if len(paths) >= max_paths:
                 truncated = True
                 break
-            record(found_state, True, f"path-target-{len(solved_inputs) + 1}")
-        if truncated:
-            break
-    if not manager.active:
-        for found_state in manager.deadended:
+            record(found_state, True, f"path-target-{len(paths) + 1}")
+        for dead_state in newly_deadended:
             if len(paths) >= max_paths:
                 truncated = True
                 break
-            record(found_state, False, f"path-deadend-{len(paths) + 1}")
+            reached = reached_target(dead_state)
+            record(dead_state, reached, f"path-{'target' if reached else 'deadend'}-{len(paths) + 1}")
+        if truncated:
+            break
     limitations = [
         "Only stdin-backed symbolic input is supported; filesystem, network, environment and argv contents are not symbolic.",
         "Target reachability is established at a function call/address; native execution verifies expected stdout rather than instruction-level coverage.",
