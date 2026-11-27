@@ -25,7 +25,7 @@ int main(void) {
     puts("REJECT_SMALL");
     return 3;
   }
-  if (value == 0x1337u && ((value * 3u + 7u) & 0xffu) == 0xc6u) {
+  if (value == 0x1337u && ((value * 3u + 7u) & 0xffu) == 0xacu) {
     mark_target(value);
     printf("TARGET:0x%lx\n", (unsigned long)value);
     return 0;
