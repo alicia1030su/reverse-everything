@@ -118,6 +118,11 @@ def constrain_concrete(state, symbolic_bytes: list, concrete: bytes) -> None:
             state.solver.add(byte == concrete[index])
 
 
+def symbol_address(project, name: str) -> int | None:
+    symbol = project.loader.find_symbol(name)
+    return symbol.rebased_addr if symbol is not None else None
+
+
 def bounded_constraint(expression: str) -> str:
     if len(expression) <= MAX_CONSTRAINT_CHARS:
         return expression
@@ -258,27 +263,38 @@ def analyze(request: dict, worker_sha256: str, started_at: str, started: float) 
     target = request["target"]
     entry_spec = request["entry"]
     entry_symbol = entry_spec.get("function")
-    if not entry_symbol and project.kb.functions.function(name="main") is not None:
-        entry_symbol = "main"
     if entry_spec.get("address"):
         entry = int(entry_spec["address"], 16)
     elif entry_symbol:
-        fn = project.kb.functions.function(name=entry_symbol)
-        if fn is None:
-            raise RequestError(f"entry function not found: {entry_symbol}")
-        entry = fn.addr
+        entry = symbol_address(project, entry_symbol)
+        if entry is None:
+            fn = project.kb.functions.function(name=entry_symbol)
+            if fn is None:
+                raise RequestError(f"entry function not found: {entry_symbol}")
+            entry = fn.addr
     else:
-        entry = project.entry
+        entry = symbol_address(project, "main")
+        if entry is None:
+            fn = project.kb.functions.function(name="main")
+            entry = fn.addr if fn is not None else project.entry
 
     target_address = int(target["address"], 16) if target.get("address") else None
     target_function = None
     if target.get("function"):
         matches = list(project.kb.functions.get_by_name(target["function"]))
-        if len(matches) != 1:
-            raise RequestError(f"target function must resolve uniquely: {target['function']}")
-        target_function = matches[0]
+        if len(matches) == 1:
+            target_function = matches[0]
+        else:
+            resolved = symbol_address(project, target["function"])
+            if resolved is None:
+                raise RequestError(f"target function must resolve uniquely: {target['function']}")
+            target_function = project.kb.functions.function(addr=resolved, create=True)
+            if target_function is None:
+                raise RequestError(f"target function could not be created: {target['function']}")
         if target_address is None:
             target_address = target_function.addr
+        elif target_address != target_function.addr:
+            raise RequestError("target address does not match the resolved target function")
 
     def reached_target(state) -> bool:
         if state.addr == target_address:

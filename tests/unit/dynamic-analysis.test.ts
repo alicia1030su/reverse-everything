@@ -8,7 +8,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { GdbMiClient, GdbMiError, quoteMiArgument, type GdbMiClientOptions } from '@reverse/dynamic-analysis';
 import { DynamicAnalysisEngine } from '@reverse/dynamic-analysis';
-import { MiLineDecoder, MiProtocolError, parseMiLine } from '@reverse/dynamic-analysis';
+import { MiLineDecoder, parseMiLine } from '@reverse/dynamic-analysis';
 import type { ProgramIr } from '@reverse/program-ir';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -51,17 +51,16 @@ describe('GDB MI parser', () => {
     expect(parseMiLine('~"hello\\n"')).toEqual({ kind: 'stream', channel: 'console', value: 'hello\n' });
     expect(parseMiLine('dynamic-v009-counter=43')).toEqual({ kind: 'raw', value: 'dynamic-v009-counter=43' });
   });
-  it('handles chunk boundaries and rejects malformed or oversized records', () => {
+  it('handles chunk boundaries, preserves ambiguous inferior text and rejects oversized records', () => {
     const decoder = new MiLineDecoder(256);
     expect(decoder.push('1^do')).toEqual([]);
     expect(decoder.push('ne\n*stopped\n')).toHaveLength(2);
-    expect(() => parseMiLine('"unterminated')).toThrow(MiProtocolError);
-    expect(() => parseMiLine('1^done,value={x="y"} garbage')).toThrow(MiProtocolError);
-    expect(() => parseMiLine('9999999999999^done')).toThrow(MiProtocolError);
+    for (const line of ['"unterminated', '1^done,value={x="y"} garbage', '9999999999999^done', '\u0000bad', '~not-mi', '@not-mi', '123', '^done', '*hello', '=unknown']) {
+      expect(parseMiLine(line)).toEqual({ kind: 'raw', value: line });
+    }
     expect(() => new MiLineDecoder(8).push('123456789')).toThrow(/限额/);
-    expect(() => parseMiLine('\u0000bad')).toThrow(MiProtocolError);
-    expect(() => new MiLineDecoder().push('"unterminated\n')).toThrow(/record="\\"unterminated"/);
-    expect(() => new MiLineDecoder().push(`1^done,value="${'x'.repeat(600)}\n`)).toThrow(/\.\.\.\[truncated\]/);
+    expect(new MiLineDecoder().push('"unterminated\n')).toEqual([{ kind: 'raw', value: '"unterminated' }]);
+    expect(new MiLineDecoder().push(`1^done,value="${'x'.repeat(600)}\n`)).toEqual([{ kind: 'raw', value: `1^done,value="${'x'.repeat(600)}` }]);
   });
 });
 
@@ -139,10 +138,10 @@ describe('GDB MI client', () => {
     expect(client.bytes).toBe(bytesAtFailure);
     expect(client.bytes).toBeLessThan(16_384);
   });
-  it('fails closed on malformed MI output', async () => {
-    const client = fakeClient('malformed');
+  it('fails closed by command timeout on malformed MI output without crashing the host', async () => {
+    const client = fakeClient('malformed', { timeoutMs: 100 });
     await client.start();
-    await expect(client.execute('-file-exec-and-symbols', 'x')).rejects.toThrow(/解析/);
+    await expect(client.execute('-file-exec-and-symbols', 'x')).rejects.toThrow(/超时/);
     await client.close();
     expect(client.exited).toBe(true);
   });
@@ -202,6 +201,24 @@ describe('DynamicAnalysisEngine', () => {
     expect(result.events.find((event) => event.type === 'exit')?.data).toEqual({ reason: 'exited-normally' });
     expect(result.events.filter((event) => event.type === 'breakpoint')).toHaveLength(1);
     expect(JSON.stringify(result.events.find((event) => event.type === 'output')?.data)).toContain('non-MI debugger diagnostic');
+  });
+  it('preserves ambiguous inferior stdout and target stderr without inventing MI records', async () => {
+    const root = await temporaryRoot(); const child = path.join(root, 'child'); await mkdir(child);
+    const binary = path.join(root, 'sample'); await writeFile(binary, 'fake binary');
+    const engine = new DynamicAnalysisEngine({ isolationRoot: root, networkIsolation: 'none', clientFactory: (options) => fakeClient('ambiguous-output', options) });
+    const result = await engine.analyze({ binaryPath: binary, cwd: child, authorized: true });
+    expect(result.status, result.error).toBe('completed');
+    const outputs = result.events.filter((event) => event.type === 'output').map((event) => event.data);
+    expect(outputs).toEqual(expect.arrayContaining([
+      { channel: 'inferior-raw', text: '~not-mi' },
+      { channel: 'inferior-raw', text: '@not-mi' },
+      { channel: 'inferior-raw', text: '123' },
+      { channel: 'inferior-raw', text: '^done' },
+      { channel: 'inferior-raw', text: '*hello' },
+      { channel: 'inferior-raw', text: '=unknown' },
+      { channel: 'inferior-stderr', text: 'worker stderr\n' },
+    ]));
+    expect(result.limitations.join(' ')).toContain('best-effort 分流');
   });
   it.skipIf(process.platform === 'win32')('preserves executable permission on the private snapshot', async () => {
     const root = await temporaryRoot(); const child = path.join(root, 'child'); await mkdir(child);
