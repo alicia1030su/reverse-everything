@@ -49,6 +49,8 @@ describe('GDB MI parser', () => {
     expect(() => parseMiLine('9999999999999^done')).toThrow(MiProtocolError);
     expect(() => new MiLineDecoder(8).push('123456789')).toThrow(/限额/);
     expect(() => parseMiLine('\u0000bad')).toThrow(MiProtocolError);
+    expect(() => new MiLineDecoder().push('"unterminated\n')).toThrow(/record="\\"unterminated"/);
+    expect(() => new MiLineDecoder().push(`${'x'.repeat(600)}bad\n`)).toThrow(/\.\.\.\[truncated\]/);
   });
 });
 

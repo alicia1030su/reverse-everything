@@ -33,7 +33,18 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends gcc binutils
-          python3 -m pip install --disable-pip-version-check angr==9.2.160 z3-solver==4.13.0.0 bitstring==4.4.0
+          # angr 9.2.160 assigns CParser.clex.filename; pycparser 3.x made it read-only.
+          python3 -m pip install --disable-pip-version-check angr==9.2.160 pycparser==2.23 z3-solver==4.13.0.0 bitstring==4.4.0
+      - name: Check angr parser compatibility
+        run: |
+          python3 - <<'PY'
+          import angr
+          import pycparser
+          parser = pycparser.CParser()
+          parser.clex.filename = "preflight.c"
+          parser.clex.reset_lineno()
+          print(f"angr={angr.__version__} pycparser={pycparser.__version__}")
+          PY
       - run: npm ci --no-audit --no-fund
       - name: Build symbolic execution package
         run: npm run build -w @reverse/symbolic-execution

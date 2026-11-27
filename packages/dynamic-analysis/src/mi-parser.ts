@@ -134,6 +134,17 @@ export function parseMiLine(line: string): MiRecord {
   return { kind, ...(token === undefined ? {} : { token }), status, value };
 }
 
+function parsePhysicalLine(line: string): MiRecord {
+  try { return parseMiLine(line); }
+  catch (error) {
+    if (error instanceof MiProtocolError) {
+      const excerpt = line.length > 512 ? `${line.slice(0, 512)}...[truncated]` : line;
+      throw new MiProtocolError(`${error.message}; record=${JSON.stringify(excerpt)}`);
+    }
+    throw error;
+  }
+}
+
 /** Incremental UTF-8-safe line decoder with an explicit maximum buffered line. */
 export class MiLineDecoder {
   private readonly decoder = new TextDecoder('utf-8', { fatal: false });
@@ -148,9 +159,9 @@ export class MiLineDecoder {
     const lines = this.buffer.split(/\r?\n/);
     this.buffer = lines.pop() ?? '';
     this.resetBytes();
-    return lines.filter((line) => line.length > 0).map((line) => parseMiLine(line));
+    return lines.filter((line) => line.length > 0).map((line) => parsePhysicalLine(line));
   }
-  end(): MiRecord[] { const records = this.buffer ? [parseMiLine(this.buffer)] : []; this.buffer = ''; this.reset(); return records; }
+  end(): MiRecord[] { const records = this.buffer ? [parsePhysicalLine(this.buffer)] : []; this.buffer = ''; this.reset(); return records; }
   private resetBytes(): void { this.bytes = Buffer.byteLength(this.buffer); }
   private reset(): void { this.buffer = ''; this.bytes = 0; }
 }
