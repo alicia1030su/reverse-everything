@@ -20,7 +20,7 @@ readline.createInterface({ input: process.stdin }).on('line', (line) => {
   const id = Number(number);
   if (mode === 'malformed') { process.stdout.write('"unterminated\n(gdb) '); return; }
   if (mode === 'hang' || mode === 'flood') { /* Deliberately never respond to the command. */ }
-  else if (command === '-file-exec-and-symbolic') { process.stderr.write('warning: non-MI debugger diagnostic\n'); process.stdout.write(`${id}^done,value={}\n(gdb) `); }
+  else if (command === '-file-exec-and-symbols') { process.stderr.write('warning: non-MI debugger diagnostic\n'); process.stdout.write(`${id}^done,value={}\n(gdb) `); }
   else if (command === '-exec-arguments') { argumentsReceived = true; process.stdout.write(`${id}^done\n(gdb) `); }
   else if (command === '-break-insert') process.stdout.write(`${id}^done,bkpt={number="1",addr="0x0000000000401136",type="breakpoint"}\n(gdb) `);
   else if (command === '-exec-run') {

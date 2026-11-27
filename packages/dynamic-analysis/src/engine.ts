@@ -134,7 +134,7 @@ export class DynamicAnalysisEngine {
       await client.start();
       await client.execute('-interpreter-exec', 'console', 'set auto-load off');
       addEvent({ type: 'start', data: { binaryPath, binarySha256: binaryHash } });
-      await client.execute('-file-exec-and-symbolic', binaryPath);
+      await client.execute('-file-exec-and-symbols', binaryPath);
       if ((request.args ?? []).length > 0) await client.execute('-exec-arguments', ...request.args!);
       for (const breakpoint of request.breakpoints ?? []) await client.execute('-break-insert', breakpoint);
       const inferProgramFunction = (frame?: DynamicFrame, address?: string): Record<string, unknown> | undefined => {
