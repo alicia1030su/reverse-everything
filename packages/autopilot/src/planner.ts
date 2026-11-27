@@ -3,8 +3,8 @@ import { AutopilotError } from './types.js';
 
 export interface PlanOptions { version?: number; now?: string }
 
-function step(id: string, goal: string, title: string, kind: AutopilotStep['kind'], tool: string, dependsOn: string[], expectedOutput: string, acceptance: string, contract: GoalContract, inputRefs: string[] = []): AutopilotStep {
-  return { id, goal, title, kind, tool, dependsOn, inputRefs, expectedOutput, acceptance, budget: { timeoutMs: contract.budget.timeoutMs, maxDiskMB: contract.budget.maxDiskMB }, retries: Math.min(2, contract.budget.maxRepairAttempts), status: 'PENDING', attempt: 0, outputRefs: [] };
+function step(id: string, goal: string, title: string, kind: AutopilotStep['kind'], tool: string, dependsOn: string[], expectedOutput: string, acceptance: string, contract: GoalContract, inputRefs: string[] = [], toolInput?: AutopilotStep['toolInput']): AutopilotStep {
+  return { id, goal, title, kind, tool, dependsOn, inputRefs, ...(toolInput ? { toolInput } : {}), expectedOutput, acceptance, budget: { timeoutMs: contract.budget.timeoutMs, maxDiskMB: contract.budget.maxDiskMB }, retries: Math.min(2, contract.budget.maxRepairAttempts), status: 'PENDING', attempt: 0, outputRefs: [] };
 }
 
 function isDeployment(contract: GoalContract, intent: AutopilotIntent): boolean {
@@ -34,8 +34,13 @@ export function createAutopilotPlan(intentOrInput: AutopilotIntent | { intent: A
   else if (intent.kind === 'resume-project') addAnalysis('project', 'file', '识别现有工程与可复用工件');
   else if (intent.kind === 'software-rebuild') {
     addAnalysis('file', 'file', '静态识别软件材料');
+    if (intent.requiredCapabilities.includes('ghidra')) addAnalysis('ghidra', 'ghidra', '执行授权二进制的结构化静态分析');
     if (/android|安卓|apk/i.test(`${intent.finalPurpose} ${intent.targetPlatform}`)) addAnalysis('apk', 'apk', '静态分析 Android 应用材料');
   } else addAnalysis('file', 'file', '识别未知材料');
+  if (intent.kind === 'software-rebuild' && intent.requiredCapabilities.includes('ghidra')) {
+    const id = 'query-program-ir'; analysisIds.push(id);
+    steps.push(step(id, '形成可查询的程序模型', '查询 Program IR 并保存证据报告', 'analyze', 'program-ir:query', ['analyze-ghidra'], 'Program IR 查询报告', '报告绑定真实 Program IR 哈希并保留证据与限制', contract, ['analyze-ghidra'], { operation: 'stats' }));
+  }
   if (intent.objectives.length > 1 && analysisIds.length === 1) {
     const base = steps[0]!;
     for (let index = 1; index < Math.min(4, intent.objectives.length); index++) {

@@ -35,6 +35,14 @@ describe('Program IR', () => {
     expect(query.searchData('ABC')[0]?.address).toBe('0x103000');
   });
 
+  it('finds every cycle edge across strongly connected components without crossing components', async () => {
+    const base = ghidraMetadataToProgram(await fixture(), 'scc-fixture');
+    const block = (id: string, successorIds: string[]) => ({ id, functionId: 'fn', start: id, end: id, instructionIds: [], successorIds, predecessorIds: [], evidenceIds: [] });
+    const blocks = [block('a', ['b']), block('b', ['c']), block('c', ['a', 'd']), block('d', ['e']), block('e', ['d']), block('f', ['f']), block('g', [])];
+    const edges = new ProgramQuery({ ...base, blocks }).backEdges().map(edge => `${edge.source.id}->${edge.target.id}`).sort();
+    expect(edges).toEqual(['a->b', 'b->c', 'c->a', 'd->e', 'e->d', 'f->f']);
+  });
+
   it('marks rule-based semantics as inference and supplies a falsification test', async () => {
     const base = ghidraMetadataToProgram(await fixture(), 'fixture');
     const program = { ...base, hypotheses: inferSemanticHypotheses(base) };

@@ -66,18 +66,45 @@ export class ProgramQuery {
     return fn.blockIds.filter(id => seen.has(id)).map(id => this.blocks.get(id)!);
   }
   backEdges(): Array<{ source: BasicBlockIr; target: BasicBlockIr }> {
-    const result: Array<{ source: BasicBlockIr; target: BasicBlockIr }> = [];
-    for (const source of this.program.blocks) for (const targetId of source.successorIds) {
-      const target = this.blocks.get(targetId);
-      if (!target) continue;
-      const seen = new Set<string>(); const queue = [target.id];
-      for (let index = 0; index < queue.length; index++) {
-        const current = queue[index]!;
-        if (current === source.id) { result.push({ source, target }); break; }
-        if (seen.has(current)) continue;
-        seen.add(current);
-        for (const next of this.blocks.get(current)?.successorIds ?? []) if (!seen.has(next)) queue.push(next);
+    // An edge is on a cycle exactly when both endpoints share a strongly
+    // connected component. Iterative Kosaraju keeps this O(V+E) and avoids
+    // recursion limits on large functions.
+    const nodes = this.program.blocks;
+    const index = new Map(nodes.map((block, position) => [block.id, position]));
+    const adjacency = nodes.map(block => block.successorIds.flatMap(id => {
+      const target = index.get(id); return target === undefined ? [] : [target];
+    }));
+    const reverse: number[][] = nodes.map(() => []);
+    for (let source = 0; source < adjacency.length; source++) for (const target of adjacency[source]!) reverse[target]!.push(source);
+    const visited = new Uint8Array(nodes.length); const finish: number[] = [];
+    for (let start = 0; start < nodes.length; start++) {
+      if (visited[start]) continue;
+      visited[start] = 1;
+      const stack: Array<{ node: number; next: number }> = [{ node: start, next: 0 }];
+      while (stack.length) {
+        const frame = stack[stack.length - 1]!;
+        const next = adjacency[frame.node]![frame.next++];
+        if (next === undefined) { finish.push(frame.node); stack.pop(); continue; }
+        if (visited[next]) continue;
+        visited[next] = 1; stack.push({ node: next, next: 0 });
       }
+    }
+    const component = new Int32Array(nodes.length).fill(-1); let componentId = 0;
+    for (let position = finish.length - 1; position >= 0; position--) {
+      const start = finish[position]!;
+      if (component[start] !== -1) continue;
+      component[start] = componentId;
+      const stack = [start];
+      while (stack.length) {
+        const current = stack.pop()!;
+        for (const previous of reverse[current]!) if (component[previous] === -1) { component[previous] = componentId; stack.push(previous); }
+      }
+      componentId++;
+    }
+    const result: Array<{ source: BasicBlockIr; target: BasicBlockIr }> = [];
+    for (const source of nodes) for (const targetId of source.successorIds) {
+      const target = this.blocks.get(targetId);
+      if (target && component[index.get(source.id)!] === component[index.get(target.id)!]) result.push({ source, target });
     }
     return result;
   }
