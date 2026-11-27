@@ -257,7 +257,9 @@ def analyze(request: dict, worker_sha256: str, started_at: str, started: float) 
         raise RequestError("Wave 2 supports amd64 binaries only")
     target = request["target"]
     entry_spec = request["entry"]
-    entry_symbol = entry_spec.get("function") or ("main" if "main" in project.kb.functions.function_names else None)
+    entry_symbol = entry_spec.get("function")
+    if not entry_symbol and project.kb.functions.function(name="main") is not None:
+        entry_symbol = "main"
     if entry_spec.get("address"):
         entry = int(entry_spec["address"], 16)
     elif entry_symbol:
