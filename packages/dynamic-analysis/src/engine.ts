@@ -162,7 +162,6 @@ export class DynamicAnalysisEngine {
           if (record.kind !== 'stream' || record.channel !== 'console') return;
           const match = /^\s*(0x[0-9a-f]+)\s+(0x[0-9a-f]+)\s+(0x[0-9a-f]+)\s+(.+)$/i.exec(record.value.trim());
           if (!match) return;
-          const from = BigInt(match[1]!); const to = BigInt(match[2]!);
           const size = BigInt(match[3]!);
           const remainder = match[4]!.trim();
           const first = remainder.split(/\s+/, 1)[0]!;
