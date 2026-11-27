@@ -23,5 +23,6 @@
 | V008-017 | P1 | Tron 原客户端 E2E 在服务端重启前卡死于 `close()` | Socket.IO `io.close()` 回调等待 HTTP server 关闭，活跃连接又阻塞该回调 | 先启动关闭并强制断开所有 HTTP 连接，再等待 Socket.IO 关闭；Tron 原客户端刷新/重启用例单独重跑 1/1 通过 | VERIFIED |
 | V008-018 | P1 | 干净 CI 构建因 workspace 拓扑顺序错误失败 | 根 build 先构建 `@reverse/workflow`，但其类型依赖 `@reverse/planner`；本机旧 dist 掩盖问题 | 调整根 build 与 tsconfig references 顺序，补 workflow 依赖声明与构建拓扑回归；清除全部 dist 后从零构建通过 | VERIFIED |
 | V008-019 | P1 | Legacy API 响应泄露本机绝对路径 | 任务 options、直接路径证据 source/content、Legacy profile sourcePath 与重建工件包含绝对路径；Linux JSON 正斜杠使现有断言失败 | API 统一递归脱敏绝对路径并覆盖 SSE/事件/证据检索；Legacy 公开分析仅保留 basename，恢复执行从受控输入重新解析；强化跨平台回归 | VERIFIED |
+| V008-020 | P1 | Linux 候选演示包使用 GNU tar 解包 ZIP，导致冻结验收失败 | Release Run `45967220100` 的 `package:demos` 在首个干净解包步骤报 `tar: This does not look like a tar archive`；Windows tar 支持 ZIP 掩盖了缺陷 | 改用仓库固定依赖 `7zip-bin` 的跨平台 7-Zip 解包；新增真实 ZIP 创建/解包回归；完整演示包默认安装/测试/启动验收通过 | VERIFIED |
 
 > 本表在 Phase 0 独立审计后追加全部可复现缺陷；不得用删除测试或降低断言关闭缺陷。V008-003 为外部凭证阻塞的 OPEN P2，不影响 P0/P1 清零判定，但不得宣称真实远程模型已验证。

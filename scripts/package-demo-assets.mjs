@@ -6,9 +6,9 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { analyzeLegacySoftware, createReconstructionSpec, generateReconstructionProject, writeReconstructionProject } from '../packages/legacy-revival/dist/index.js';
 import { zipDirectory } from '../apps/api/dist/game-archive.js';
+import { extractZip } from './extract-zip.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const TAR = process.platform === 'win32' ? path.join(process.env.SystemRoot ?? 'C:/Windows', 'System32', 'tar.exe') : 'tar';
 const { version } = JSON.parse(await readFile(path.join(ROOT, 'package.json'), 'utf8'));
 await mkdir(path.join(ROOT, 'dist'), { recursive: true });
 const stage = await mkdtemp(path.join(ROOT, 'dist/demos-'));
@@ -65,7 +65,7 @@ await writeFile(path.join(legacyRoot, 'DEMO-EVIDENCE.json'), JSON.stringify(lega
 const legacyZip = path.join(release, `reverse-everything-legacy-demo-${version}.zip`);
 await writeFile(legacyZip, await zipDirectory(legacyRoot, { maxTotalBytes: 32 * 1024 * 1024 }));
 const cleanLegacyRoot = await mkdtemp(path.join(stage, 'clean-legacy-'));
-await run(TAR, ['-xf', path.relative(ROOT, legacyZip), '-C', cleanLegacyRoot], ROOT);
+await extractZip(legacyZip, cleanLegacyRoot);
 await run(process.platform === 'win32' ? 'npm.cmd' : 'npm', ['install', '--ignore-scripts', '--no-audit', '--no-fund'], cleanLegacyRoot, 180_000);
 await run(process.platform === 'win32' ? 'npm.cmd' : 'npm', ['test'], cleanLegacyRoot, 120_000);
 const cleanLegacyPort = await freePort();
@@ -140,7 +140,7 @@ await writeFile(gameZip, await zipDirectory(gameRoot, { maxTotalBytes: 32 * 1024
 // Validate the exact archived bytes, not the staging tree: clean extraction,
 // package-default installation/start scripts and the retained original clients.
 const cleanRoot = await mkdtemp(path.join(stage, 'clean-game-'));
-await run(TAR, ['-xf', path.relative(ROOT, gameZip), '-C', cleanRoot], ROOT);
+await extractZip(gameZip, cleanRoot);
 await run(process.platform === 'win32' ? 'npm.cmd' : 'npm', ['install', '--ignore-scripts', '--no-audit', '--no-fund'], cleanRoot, 180_000);
 const chrome = 'C:/Program Files/Google/Chrome/Application/chrome.exe';
 await run(process.platform === 'win32' ? 'npm.cmd' : 'npm', ['test'], cleanRoot, 120_000, { ...process.env, ...(existsSync(chrome) ? { PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH: chrome } : {}) });
