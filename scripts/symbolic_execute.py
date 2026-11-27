@@ -320,7 +320,7 @@ def analyze(request: dict, worker_sha256: str, started_at: str, started: float) 
     string_address = argv - ((len(binary_string) + 15) & ~15)
     state.memory.store(argv, claripy.BVV(string_address, project.arch.bits), endness=project.arch.memory_endness)
     state.memory.store(argv + project.arch.bytes, claripy.BVV(0, project.arch.bits), endness=project.arch.memory_endness)
-    state.memory.store(string_address, claripy.BVV(binary_string), endness=project.arch.memory_endness)
+    state.memory.store(string_address, claripy.BVV(int.from_bytes(binary_string, "little"), len(binary_string) * 8), endness=project.arch.memory_endness)
     constrain_concrete(state, symbolic_bytes, concrete)
     manager = project.factory.simulation_manager(state)
     paths: list[dict] = []
