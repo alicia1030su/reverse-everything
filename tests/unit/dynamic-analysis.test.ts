@@ -65,7 +65,7 @@ describe('GDB MI parser', () => {
 });
 
 describe('inferior process identity planning', () => {
-  const group = { leaderPid: 100, leaderStartTicks: 10, members: new Map([[100, 10], [101, 20]]) };
+  const group = { leaderPid: 100, leaderStartTicks: 10, members: new Map([[100, 10], [101, 20]]), membersComplete: true };
 
   it('allows a group kill only while the original leader identity is valid', () => {
     expect(planInferiorCleanup(group, { pid: 100, pgid: 100, startTicks: 10 }, [])).toEqual({ killGroupPids: [100], killMemberPids: [], unresolved: false });
@@ -83,6 +83,10 @@ describe('inferior process identity planning', () => {
 
   it('treats a fully exited group as resolved', () => {
     expect(planInferiorCleanup(group, undefined, [])).toEqual({ killGroupPids: [], killMemberPids: [], unresolved: false });
+  });
+
+  it('does not mistake an incomplete member snapshot for an empty group', () => {
+    expect(planInferiorCleanup({ ...group, membersComplete: false }, undefined, [])).toEqual({ killGroupPids: [], killMemberPids: [], unresolved: true });
   });
 });
 

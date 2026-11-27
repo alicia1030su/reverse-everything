@@ -9,6 +9,8 @@ export interface InferiorGroupIdentity {
   leaderStartTicks: number;
   /** Recorded group members: PID -> Linux process start ticks. */
   members: ReadonlyMap<number, number>;
+  /** False when /proc enumeration failed and the member snapshot is incomplete. */
+  membersComplete: boolean;
 }
 
 export interface InferiorCleanupPlan {
@@ -37,6 +39,7 @@ export function planInferiorCleanup(
     && currentLeader.pgid === group.leaderPid) {
     return { killGroupPids: [group.leaderPid], killMemberPids: [], unresolved: false };
   }
+  if (!group.membersComplete) return { killGroupPids: [], killMemberPids: [], unresolved: true };
 
   const killMemberPids: number[] = [];
   let unresolved = false;
