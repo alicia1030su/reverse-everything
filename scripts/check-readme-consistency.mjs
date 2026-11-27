@@ -50,7 +50,7 @@ for (const file of ['README.md', 'README.en.md']) {
   else stableRelease = stable;
   if (stable === version) {
     if (!/releases\/tag\/v\d+\.\d+\.\d+/.test(text)) errors.push(`${file}: published release link is missing`);
-    if (!/45912292229/.test(text)) errors.push(`${file}: official release run evidence is missing`);
+    if (!/45994026211/.test(text)) errors.push(`${file}: official release run evidence is missing`);
   }
   for (const download of downloads) {
     const pinned = download.match(/releases\/download\/v(\d+\.\d+\.\d+)\//)?.[1];
@@ -67,7 +67,7 @@ const contracts = await readFile(path.join(root, 'packages/contracts/src/index.t
 const schema = contracts.match(/SCHEMA_VERSION\s*=\s*(\d+)/)?.[1];
 if (!schema) errors.push('packages/contracts/src/index.ts: SCHEMA_VERSION not found');
 const upgrade = await readFile(path.join(root, 'docs/user-guide/UPGRADE.md'), 'utf8');
-const releasedSchemas = { '0.0.7': '6' };
+const releasedSchemas = { '0.0.7': '6', '0.0.8': '7' };
 const releasedSchema = releasedSchemas[stableRelease];
 if (!releasedSchema) errors.push(`Update releasedSchemas with the verified Schema for stable v${stableRelease}`);
 if (releasedSchema && !upgrade.split('\n').slice(0, 5).join('\n').includes(`Schema ${releasedSchema}`)) errors.push(`docs/user-guide/UPGRADE.md: released Schema ${releasedSchema} is not documented`);

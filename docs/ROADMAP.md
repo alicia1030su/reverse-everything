@@ -66,11 +66,17 @@
 - `tasks create` 与 MCP `create_task` 支持 `legacy`，MCP 仍为 44 工具。
 - 不以内部客户端、文件生成或 Docker/L7 冒充真实商业游戏原客户端兼容；未完成的真实兼容保持 `BLOCKED`。
 
-## v0.0.8：安全研究
+## v0.0.8：Autopilot 自然语言工作台（已发布）
 
-- 经验证的 SBOM 漏洞匹配、更多 CWE/OWASP 规则、SARIF 质量、授权范围与复测。
+2026-11-27 正式发布；annotated Tag object `79da5c63649ede8001457ae80dbe6c9b0a7335fc` 解引用 Commit `d2334ee267098e30f44b72c80f975e520abbc47c`，正式发行 Run `45994026211`，15 个公开资产复验通过。
 
-## v0.0.9：多 Agent 协同
+- 自然语言目标、动态需求发现、目标契约、依赖计划与持久化 Autopilot 编排。
+- Web/Desktop 默认首页升级为 Autopilot，并新增交付中心与 Provider V4 模型管理。
+- REST/CLI/MCP stdio/HTTP/Skill 全入口共享核心；MCP 总计 54 个工具。
+- Schema 7、暂停/恢复/取消、租约续期、受限重规划、工具注册与独立规则验收。
+- 交付包包含教程、验收报告、manifest 与 SHA-256；真实远程模型保持 `BLOCKED / MISSING_API_KEY`。
+
+## v0.0.9：安全研究与多 Agent 协同
 
 - 更多专业角色共享结构化状态、多模型路由与预算。
 

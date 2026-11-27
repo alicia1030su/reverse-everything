@@ -27,5 +27,6 @@
 | V008-021 | P2 | 报告页 E2E 标题选择器在 Windows 可访问性树中匹配两个标题 | PR #21 CI Run `45970023110` 的 `web-v005.spec.ts:92` strict mode violation：`分析报告` 同时匹配 `通俗分析报告` | 页面主标题断言增加 `exact: true`，保留原可见性与后续视图切换/导出断言；目标用例单独重跑 1/1 | VERIFIED |
 | V008-022 | P2 | Windows 慢速 runner 上重建取消测试的 mock 信号等待仍为默认 1 秒 | 主线 CI Run `45974788337` 的 `game-revival.test.ts:134` 在文件写入后尚未进入 mock 即超时 | 等待上限统一为 10 秒；保留取消、输出清理、数据库可用与关闭后禁写断言；目标用例重跑 1/1 | VERIFIED |
 | V008-023 | P1 | 独立 Server 包缺少 Autopilot 工作区包，干净安装后 API 无法启动 | Release Run `45979697375` 的干净 Server smoke 报 `ERR_MODULE_NOT_FOUND: @reverse/autopilot`；API 清单也未声明该直接依赖 | Server 归档加入 `packages/autopilot`；API 清单补齐全部直接 `@reverse/*` 依赖并同步锁文件；新增打包拓扑回归；干净安装与健康检查通过 | VERIFIED |
+| V008-024 | P2 | Draft 创建成功后的即时 Release ID 查询偶发返回空值，阻止上传但未重复创建 | 正式发行 Run `45994026211` 首次 `tag-draft` 在 `Draft Release verified` 后查询 ID 失败 | 续跑失败作业；`ensure-draft` 复用同一 Draft `460554844`，未创建重复 Release；上传、公开与复验随后全部通过 | VERIFIED |
 
 > 本表在 Phase 0 独立审计后追加全部可复现缺陷；不得用删除测试或降低断言关闭缺陷。V008-003 为外部凭证阻塞的 OPEN P2，不影响 P0/P1 清零判定，但不得宣称真实远程模型已验证。
