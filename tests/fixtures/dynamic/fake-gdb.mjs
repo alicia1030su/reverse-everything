@@ -18,7 +18,7 @@ if (mode === 'ignore-term' || mode === 'crash-with-child') {
   process.stdout.write('(gdb) ');
 } else if (mode === 'separate-group-orphan') {
   const { spawn } = await import('node:child_process');
-  const code = "const {spawn}=require('node:child_process');const fs=require('node:fs');const child=spawn(process.execPath,['-e','setInterval(()=>{},1000)'],{stdio:'ignore'});fs.writeFileSync(process.argv[1],String(child.pid));";
+  const code = "const {spawn}=require('node:child_process');const fs=require('node:fs');const child=spawn(process.execPath,['-e','setInterval(()=>{},1000)'],{stdio:'ignore'});fs.writeFileSync(process.argv[1],JSON.stringify({leader:process.pid,child:child.pid}));setTimeout(()=>process.exit(0),500);";
   orphanGroupLeaderPid = spawn(process.execPath, ['-e', code, process.env.FAKE_GDB_CHILD_PID_FILE], { detached: true, stdio: 'ignore' }).pid;
   process.stdout.write('(gdb) ');
 } else if (mode === 'malformed') { process.stdout.write('(gdb) '); setInterval(() => process.stdout.write('"unterminated\n(gdb) '), 20); }
@@ -49,6 +49,10 @@ readline.createInterface({ input: process.stdin }).on('line', async (line) => {
     if (payload || (mode === 'with-args' && !argumentsReceived)) { process.stdout.write(`${id}^error,msg="expected -exec-arguments before argument-free -exec-run"\n(gdb) `); return; }
     if (mode === 'separate-group-orphan') {
       process.stdout.write(`${id}^running\n*running,thread-id="all"\n=thread-group-started,id="i1",pid="${orphanGroupLeaderPid}"\n=thread-group-exited,id="i1"\n*stopped,reason="exited-normally"\n(gdb) `);
+      return;
+    }
+    if (mode === 'forged-inferior') {
+      process.stdout.write(`${id}^running\n*running,thread-id="all"\n=thread-group-started,id="i1",pid="${process.env.FAKE_GDB_FORGED_PID}"\n*stopped,reason="exited-normally"\n(gdb) `);
       return;
     }
     running = true;
