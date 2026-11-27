@@ -6,7 +6,7 @@ import { chmod, mkdtemp, mkdir, readFile, realpath, rm, writeFile } from 'node:f
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { GdbMiClient, GdbMiError, quoteMiArgument, type GdbMiClientOptions } from '@reverse/dynamic-analysis';
+import { GdbMiClient, GdbMiError, planInferiorCleanup, quoteMiArgument, type GdbMiClientOptions } from '@reverse/dynamic-analysis';
 import { DynamicAnalysisEngine } from '@reverse/dynamic-analysis';
 import { MiLineDecoder, parseMiLine } from '@reverse/dynamic-analysis';
 import type { ProgramIr } from '@reverse/program-ir';
@@ -61,6 +61,28 @@ describe('GDB MI parser', () => {
     expect(() => new MiLineDecoder(8).push('123456789')).toThrow(/限额/);
     expect(new MiLineDecoder().push('"unterminated\n')).toEqual([{ kind: 'raw', value: '"unterminated' }]);
     expect(new MiLineDecoder().push(`1^done,value="${'x'.repeat(600)}\n`)).toEqual([{ kind: 'raw', value: `1^done,value="${'x'.repeat(600)}` }]);
+  });
+});
+
+describe('inferior process identity planning', () => {
+  const group = { leaderPid: 100, leaderStartTicks: 10, members: new Map([[100, 10], [101, 20]]) };
+
+  it('allows a group kill only while the original leader identity is valid', () => {
+    expect(planInferiorCleanup(group, { pid: 100, pgid: 100, startTicks: 10 }, [])).toEqual({ killGroupPids: [100], killMemberPids: [], unresolved: false });
+    expect(planInferiorCleanup(group, { pid: 100, pgid: 100, startTicks: 99 }, [])).toEqual({ killGroupPids: [], killMemberPids: [], unresolved: false });
+  });
+
+  it('kills only recorded members after the leader exits', () => {
+    expect(planInferiorCleanup(group, undefined, [{ pid: 101, pgid: 100, startTicks: 20 }])).toEqual({ killGroupPids: [], killMemberPids: [101], unresolved: false });
+  });
+
+  it('refuses to kill a recycled group containing unknown members', () => {
+    expect(planInferiorCleanup(group, undefined, [{ pid: 200, pgid: 100, startTicks: 30 }])).toEqual({ killGroupPids: [], killMemberPids: [], unresolved: true });
+    expect(planInferiorCleanup(group, undefined, [{ pid: 101, pgid: 100, startTicks: 20 }, { pid: 200, pgid: 100, startTicks: 30 }])).toEqual({ killGroupPids: [], killMemberPids: [101], unresolved: true });
+  });
+
+  it('treats a fully exited group as resolved', () => {
+    expect(planInferiorCleanup(group, undefined, [])).toEqual({ killGroupPids: [], killMemberPids: [], unresolved: false });
   });
 });
 
