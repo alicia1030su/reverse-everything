@@ -42,7 +42,7 @@ async function snapshotBinary(binaryPath: string, maxBytes: number): Promise<{ d
         callback(null, chunk);
       },
     });
-    await pipeline(source.createReadStream({ autoClose: false }), meter, createWriteStream(snapshotPath, { flags: 'wx', mode: 0o600 }));
+    await pipeline(source.createReadStream({ autoClose: false }), meter, createWriteStream(snapshotPath, { flags: 'wx', mode: 0o600 | (stat.mode & 0o111) }));
     return { directory, snapshotPath, sha256: hash.digest('hex') };
   } catch (error) {
     await rm(directory, { recursive: true, force: true }).catch(() => undefined);

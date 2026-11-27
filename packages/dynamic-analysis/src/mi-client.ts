@@ -1,6 +1,6 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { EventEmitter } from 'node:events';
-import { MiLineDecoder, type MiRecord, type MiValue } from './mi-parser.js';
+import { asRecord, MiLineDecoder, type MiRecord, type MiValue } from './mi-parser.js';
 
 export interface GdbMiClientOptions {
   executable?: string;
@@ -59,6 +59,8 @@ export class GdbMiClient extends EventEmitter {
   private limitReached = false;
   private closed = false;
   private closePromise?: Promise<void>;
+  private cleanupPromise?: Promise<void>;
+  private readonly inferiorPids = new Map<string, number>();
   private commandTimeoutMs: number;
   private readonly signal: AbortSignal | undefined;
   private readonly abortListener: () => void;
@@ -95,12 +97,15 @@ export class GdbMiClient extends EventEmitter {
       rejectStartup(new GdbMiError(`GDB 启动失败: ${error.message}`, 'GDB_SPAWN_FAILED'));
       this.failAll(new GdbMiError(`GDB 进程错误: ${error.message}`, 'GDB_PROCESS_ERROR'));
       this.closed = true;
+      this.cleanupPromise = this.killTree();
       this.emit('exit');
     });
     child.on('close', () => {
       rejectStartup(new GdbMiError('GDB 在启动期间退出', 'GDB_START_EXITED'));
       this.failAll(new GdbMiError('GDB 在命令完成前退出', 'GDB_EXITED'));
       this.closed = true;
+      // The debugger may have crashed while its inferior is still running.
+      this.cleanupPromise = this.killTree();
       this.emit('exit');
     });
     const prompt = new Promise<void>((resolve, reject) => {
@@ -156,6 +161,12 @@ export class GdbMiClient extends EventEmitter {
   private handleRecord(record: MiRecord): void {
     this.options.onRecord?.(record);
     this.emit('record', record);
+    if (record.kind === 'notify' && (record.status === 'thread-group-started' || record.status === 'thread-group-exited')) {
+      const value = asRecord(record.value);
+      const id = typeof value?.id === 'string' ? value.id : undefined;
+      if (id && record.status === 'thread-group-exited') this.inferiorPids.delete(id);
+      if (id && record.status === 'thread-group-started' && typeof value?.pid === 'string' && /^\d+$/.test(value.pid)) this.inferiorPids.set(id, Number(value.pid));
+    }
     if (record.kind === 'result' && record.status === 'exit') {
       for (const waiter of this.exitWaiters) { clearTimeout(waiter.timer); waiter.resolve(); }
       this.exitWaiters.clear();
@@ -227,7 +238,7 @@ export class GdbMiClient extends EventEmitter {
 
   close(reason = new GdbMiError('GDB 已关闭', 'GDB_CLOSED'), force = false): Promise<void> {
     if (this.closePromise) return this.closePromise;
-    if (this.closed) return Promise.resolve();
+    if (this.closed) return this.cleanupPromise ?? Promise.resolve();
     this.closed = true;
     this.signal?.removeEventListener('abort', this.abortListener);
     this.failAll(reason);
@@ -237,7 +248,8 @@ export class GdbMiClient extends EventEmitter {
 
   private async closeInternal(force: boolean): Promise<void> {
     const child = this.child;
-    if (!child || child.exitCode !== null || child.signalCode !== null) return;
+    if (!child) return;
+    if (child.exitCode !== null || child.signalCode !== null) { await this.killTree(); return; }
     if (force) {
       await this.killTree();
       if (child.exitCode === null && child.signalCode === null) await new Promise<void>((resolve) => child.once('close', resolve));
@@ -255,14 +267,19 @@ export class GdbMiClient extends EventEmitter {
   private async killTree(): Promise<void> {
     const child = this.child;
     if (!child?.pid) return;
+    const inferiorPids = [...this.inferiorPids.values()];
     if (process.platform === 'win32') {
-      await new Promise<void>((resolve) => {
-        const killer = spawn('taskkill', ['/pid', String(child.pid), '/T', '/F'], { stdio: 'ignore' });
-        killer.once('error', () => { try { child.kill('SIGKILL'); } catch { /* already reaped */ } resolve(); });
-        killer.once('close', resolve);
-      });
+      const pids = [...new Set([child.pid, ...inferiorPids])];
+      for (const pid of pids) {
+        await new Promise<void>((resolve) => {
+          const killer = spawn('taskkill', ['/pid', String(pid), '/T', '/F'], { stdio: 'ignore' });
+          killer.once('error', () => { try { child.kill('SIGKILL'); } catch { /* already reaped */ } resolve(); });
+          killer.once('close', resolve);
+        });
+      }
       return;
     }
     try { process.kill(-child.pid, 'SIGKILL'); } catch { try { child.kill('SIGKILL'); } catch { /* already reaped */ } }
+    for (const pid of inferiorPids) { try { process.kill(pid, 'SIGKILL'); } catch { /* already reaped */ } }
   }
 }

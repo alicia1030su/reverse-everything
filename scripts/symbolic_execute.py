@@ -9,6 +9,7 @@ import hashlib
 import json
 import os
 import platform
+import signal
 import subprocess
 import sys
 import tempfile
@@ -25,6 +26,24 @@ LIMITS = {
 MAX_CONSTRAINT_CHARS = 4_000
 MAX_CONSTRAINTS = 512
 MAX_HISTORY = 4_096
+_ACTIVE_NATIVE_PROC: subprocess.Popen | None = None
+
+
+def install_native_signal_handlers() -> None:
+    """Ensure a terminated worker cannot leave its separate native process group behind."""
+    if os.name != "posix":
+        return
+
+    def terminate(signum, _frame):
+        proc = _ACTIVE_NATIVE_PROC
+        if proc is not None:
+            try:
+                os.killpg(proc.pid, 9)
+            except ProcessLookupError:
+                pass
+        raise SystemExit(128 + signum)
+
+    signal.signal(signal.SIGTERM, terminate)
 
 
 class RequestError(ValueError):
@@ -127,6 +146,8 @@ def execute_binary(binary: str, data: bytes, expected: str | None, timeout: floa
         kwargs = {"start_new_session": True} if os.name == "posix" else {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP}
         with open(name, "rb") as input_stream:
             proc = subprocess.Popen([binary, *(args or [])], stdin=input_stream, stdout=subprocess.PIPE, stderr=subprocess.PIPE, **kwargs)
+        global _ACTIVE_NATIVE_PROC
+        _ACTIVE_NATIVE_PROC = proc
         captured = {"stdout": bytearray(), "stderr": bytearray()}
         truncated = {"stdout": False, "stderr": False}
 
@@ -178,6 +199,8 @@ def execute_binary(binary: str, data: bytes, expected: str | None, timeout: floa
     finally:
         if proc is not None and proc.poll() is None:
             kill_process_tree(proc)
+        if proc is not None and _ACTIVE_NATIVE_PROC is proc:
+            _ACTIVE_NATIVE_PROC = None
         Path(name).unlink(missing_ok=True)
 
 
@@ -343,6 +366,7 @@ def analyze(request: dict, worker_sha256: str, started_at: str, started: float) 
 
 
 def main() -> int:
+    install_native_signal_handlers()
     started_at = __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat()
     started = time.monotonic()
     worker_sha256 = digest(Path(__file__).resolve())
