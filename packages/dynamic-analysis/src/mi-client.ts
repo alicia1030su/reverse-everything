@@ -172,11 +172,12 @@ export class GdbMiClient extends EventEmitter {
   private handleRecord(record: MiRecord): void {
     this.options.onRecord?.(record);
     this.emit('record', record);
-    if (record.kind === 'notify' && (record.status === 'thread-group-started' || record.status === 'thread-group-exited')) {
+    if (record.kind === 'notify' && record.status === 'thread-group-started') {
       const value = asRecord(record.value);
       const id = typeof value?.id === 'string' ? value.id : undefined;
-      if (id && record.status === 'thread-group-exited') this.inferiorPids.delete(id);
-      if (id && record.status === 'thread-group-started' && typeof value?.pid === 'string' && /^\d+$/.test(value.pid)) this.inferiorPids.set(id, Number(value.pid));
+      // Retain the inferior PID/PGID after thread-group-exited: descendants
+      // may survive in a separate process group after the direct child exits.
+      if (id && typeof value?.pid === 'string' && /^\d+$/.test(value.pid)) this.inferiorPids.set(id, Number(value.pid));
     }
     if (record.kind === 'result' && record.status === 'exit') {
       for (const waiter of this.exitWaiters) { clearTimeout(waiter.timer); waiter.resolve(); }
@@ -262,8 +263,11 @@ export class GdbMiClient extends EventEmitter {
     if (!child) return;
     if (child.exitCode !== null || child.signalCode !== null) { await this.killTree(); return; }
     if (force) {
+      const closed = child.exitCode === null && child.signalCode === null
+        ? new Promise<void>((resolve) => child.once('close', resolve))
+        : Promise.resolve();
       await this.killTree();
-      if (child.exitCode === null && child.signalCode === null) await new Promise<void>((resolve) => child.once('close', resolve));
+      await closed;
       return;
     }
     await new Promise<void>((resolve) => {
@@ -275,7 +279,8 @@ export class GdbMiClient extends EventEmitter {
     });
   }
 
-  private async posixTargetsAlive(groupId: number, inferiorPids: number[]): Promise<boolean> {
+  private async posixTargetsAlive(groupIds: number[], inferiorPids: number[]): Promise<boolean> {
+    const groups = new Set(groupIds);
     const inferior = new Set(inferiorPids);
     if (process.platform === 'linux') {
       try {
@@ -290,13 +295,13 @@ export class GdbMiClient extends EventEmitter {
             const fields = stat.slice(end + 2).trim().split(/\s+/);
             const state = fields[0];
             const group = Number(fields[2]);
-            if (state !== 'Z' && (group === groupId || inferior.has(pid))) return true;
+            if (state !== 'Z' && (groups.has(group) || inferior.has(pid))) return true;
           } catch { /* process exited while being inspected */ }
         }
         return false;
       } catch { /* fall back to signal probes when /proc is unavailable */ }
     }
-    try { process.kill(-groupId, 0); return true; } catch { /* group is gone */ }
+    for (const group of groups) { try { process.kill(-group, 0); return true; } catch { /* group is gone */ } }
     for (const pid of inferiorPids) { try { process.kill(pid, 0); return true; } catch { /* process is gone */ } }
     return false;
   }
@@ -318,11 +323,14 @@ export class GdbMiClient extends EventEmitter {
       }
       return;
     }
+    const groupIds = [child.pid, ...inferiorPids];
     try { process.kill(-child.pid, 'SIGKILL'); } catch { try { child.kill('SIGKILL'); } catch { /* already reaped */ } }
-    for (const pid of inferiorPids) { try { process.kill(pid, 'SIGKILL'); } catch { /* already reaped */ } }
+    for (const pid of inferiorPids) {
+      try { process.kill(-pid, 'SIGKILL'); } catch { try { process.kill(pid, 'SIGKILL'); } catch { /* already reaped */ } }
+    }
     const deadline = Date.now() + 2_000;
     do {
-      if (!await this.posixTargetsAlive(child.pid, inferiorPids)) { this.cleanupComplete = true; return; }
+      if (!await this.posixTargetsAlive(groupIds, inferiorPids)) { this.cleanupComplete = true; return; }
       await new Promise(resolve => setTimeout(resolve, 20));
     } while (Date.now() < deadline);
     this.cleanupComplete = false;

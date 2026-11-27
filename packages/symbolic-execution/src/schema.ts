@@ -22,6 +22,9 @@ function optionalText(value: unknown, max = 16_384): value is string | undefined
 function integer(value: unknown, min: number, max: number): value is number {
   return typeof value === 'number' && Number.isInteger(value) && value >= min && value <= max;
 }
+function optionalCount(value: unknown): value is number | undefined {
+  return value === undefined || integer(value, 0, Number.MAX_SAFE_INTEGER);
+}
 function strings(value: unknown, maxItems: number, maxChars: number): value is string[] {
   return Array.isArray(value) && value.length <= maxItems && value.every(item => typeof item === 'string' && item.length <= maxChars);
 }
@@ -62,7 +65,14 @@ export function validateSymbolicResult(value: unknown, maxOutputBytes: number): 
     if (!record(path) || !text(path.id, 256) || !text(path.targetAddress, 64) || typeof path.satisfiable !== 'boolean' || typeof path.reachedTarget !== 'boolean' || !integer(path.statesExplored, 0, SYMBOLIC_LIMITS.maxStates)) throw new Error('Invalid symbolic path');
     if (!strings(path.addressHistory, SYMBOLIC_LIMITS.maxAddressHistory, 64)) throw new Error('Invalid path address history');
     if (!Array.isArray(path.constraints) || path.constraints.length > SYMBOLIC_LIMITS.maxConstraintsPerPath) throw new Error('Invalid path constraints');
-    for (const constraint of path.constraints) if (!record(constraint) || !text(constraint.expression, SYMBOLIC_LIMITS.maxConstraintChars) || !optionalText(constraint.address, 64)) throw new Error('Invalid symbolic constraint');
+    for (const constraint of path.constraints) if (!record(constraint) || !text(constraint.expression, SYMBOLIC_LIMITS.maxConstraintChars) || !optionalText(constraint.address, 64) || (constraint.truncated !== undefined && typeof constraint.truncated !== 'boolean')) throw new Error('Invalid symbolic constraint');
+    for (const flag of ['constraintsTruncated', 'historyTruncated']) if (path[flag] !== undefined && typeof path[flag] !== 'boolean') throw new Error('Invalid symbolic truncation flag');
+    for (const key of ['constraintCount', 'constraintsIncluded', 'constraintsOmitted', 'constraintChars', 'constraintCharsTotal', 'historyCount', 'historyIncluded', 'historyOmitted', 'historyChars', 'historyCharsTotal']) if (!optionalCount(path[key])) throw new Error(`Invalid symbolic truncation count: ${key}`);
+    if (path.constraintsIncluded !== undefined && path.constraintsIncluded !== path.constraints.length) throw new Error('Included constraint count is inconsistent');
+    if (path.historyIncluded !== undefined && path.historyIncluded !== path.addressHistory.length) throw new Error('Included history count is inconsistent');
+    if (typeof path.constraintCount === 'number' && typeof path.constraintsIncluded === 'number' && typeof path.constraintsOmitted === 'number' && path.constraintCount !== path.constraintsIncluded + path.constraintsOmitted) throw new Error('Constraint omission count is inconsistent');
+    if (typeof path.historyCount === 'number' && typeof path.historyIncluded === 'number' && typeof path.historyOmitted === 'number' && path.historyCount !== path.historyIncluded + path.historyOmitted) throw new Error('History omission count is inconsistent');
+    if (value.status === 'completed' && (path.constraintsTruncated === true || path.historyTruncated === true || path.constraints.some(constraint => record(constraint) && constraint.truncated === true))) throw new Error('Completed analysis cannot contain truncated evidence');
   }
   const pathIds = new Set<string>();
   for (const path of value.paths) {

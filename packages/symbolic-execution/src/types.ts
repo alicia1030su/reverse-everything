@@ -27,6 +27,7 @@ export interface SymbolicAnalysisRequest {
 export interface SymbolicConstraint {
   expression: string;
   address?: string;
+  truncated?: boolean;
 }
 
 export interface SymbolicExecution {
@@ -45,6 +46,18 @@ export interface SymbolicPath {
   targetAddress: string;
   addressHistory: string[];
   constraints: SymbolicConstraint[];
+  constraintsTruncated?: boolean;
+  constraintCount?: number;
+  constraintsIncluded?: number;
+  constraintsOmitted?: number;
+  constraintChars?: number;
+  constraintCharsTotal?: number;
+  historyTruncated?: boolean;
+  historyCount?: number;
+  historyIncluded?: number;
+  historyOmitted?: number;
+  historyChars?: number;
+  historyCharsTotal?: number;
   satisfiable: boolean;
   reachedTarget: boolean;
   statesExplored: number;

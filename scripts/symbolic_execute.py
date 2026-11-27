@@ -130,6 +130,41 @@ def bounded_constraint(expression: str) -> str:
     return expression[:MAX_CONSTRAINT_CHARS - len(marker)] + marker
 
 
+def constraint_evidence(constraints: list[str]) -> tuple[list[dict], dict]:
+    included: list[dict] = []
+    included_chars = 0
+    for raw in constraints[:MAX_CONSTRAINTS]:
+        expression = bounded_constraint(raw)
+        if included_chars + len(expression) > 65_536:
+            break
+        item = {"expression": expression}
+        if len(raw) > MAX_CONSTRAINT_CHARS:
+            item["truncated"] = True
+        included.append(item)
+        included_chars += len(expression)
+    omitted = len(constraints) - len(included)
+    return included, {
+        "constraintsTruncated": omitted > 0 or any(item.get("truncated") for item in included),
+        "constraintCount": len(constraints),
+        "constraintsIncluded": len(included),
+        "constraintsOmitted": omitted,
+        "constraintChars": included_chars,
+        "constraintCharsTotal": sum(len(item) for item in constraints),
+    }
+
+
+def history_evidence(addresses: list[int]) -> tuple[list[str], dict]:
+    included = [hex(address) for address in addresses[:MAX_HISTORY]]
+    return included, {
+        "historyTruncated": len(included) < len(addresses),
+        "historyCount": len(addresses),
+        "historyIncluded": len(included),
+        "historyOmitted": len(addresses) - len(included),
+        "historyChars": sum(len(item) for item in included),
+        "historyCharsTotal": sum(len(hex(address)) for address in addresses),
+    }
+
+
 def posix_group_alive(group_id: int) -> bool:
     if sys.platform.startswith("linux"):
         try:
@@ -327,19 +362,16 @@ def analyze(request: dict, worker_sha256: str, started_at: str, started: float) 
     solved_inputs: list[dict] = []
     states_explored = 0
     truncated = False
+    evidence_truncated = False
     max_paths = request["maxPaths"]
     max_states = request["maxStates"]
 
     def record(found_state, reached: bool, path_id: str) -> None:
-        constraints = []
-        constraint_chars = 0
-        for constraint in list(found_state.solver.constraints)[:MAX_CONSTRAINTS]:
-            expression = bounded_constraint(str(constraint))
-            if constraint_chars + len(expression) > 65_536:
-                break
-            constraint_chars += len(expression)
-            constraints.append({"expression": expression})
-        history = [hex(item) for item in list(found_state.history.bbl_addrs)[:MAX_HISTORY]]
+        nonlocal evidence_truncated
+        constraints, constraint_meta = constraint_evidence([str(item) for item in found_state.solver.constraints])
+        history, history_meta = history_evidence(list(found_state.history.bbl_addrs))
+        if constraint_meta["constraintsTruncated"] or history_meta["historyTruncated"]:
+            evidence_truncated = True
         satisfiable = found_state.solver.satisfiable()
         paths.append({
             "id": path_id,
@@ -349,6 +381,8 @@ def analyze(request: dict, worker_sha256: str, started_at: str, started: float) 
             "satisfiable": satisfiable,
             "reachedTarget": reached,
             "statesExplored": states_explored,
+            **constraint_meta,
+            **history_meta,
         })
         if reached and satisfiable and len(solved_inputs) < max_paths:
             model = found_state.solver.eval(claripy.Concat(*symbolic_bytes), cast_to=bytes)
@@ -403,11 +437,13 @@ def analyze(request: dict, worker_sha256: str, started_at: str, started: float) 
         limitations.append("Unspecified input bytes are unconstrained and may produce arbitrary models.")
     if truncated or len(paths) >= max_paths:
         limitations.append("Path/state budget was reached; exploration is not exhaustive.")
+    if evidence_truncated:
+        limitations.append("Constraint or address-history evidence was truncated; see per-path truncation metadata.")
     if any(not item["execution"]["verified"] for item in solved_inputs):
         limitations.append("One or more solved inputs did not reproduce the expected output during native execution.")
     return {
         "schemaVersion": 1,
-        "status": "partial" if truncated or len(paths) >= max_paths or any(not item["execution"]["verified"] for item in solved_inputs) else "completed",
+        "status": "partial" if truncated or evidence_truncated or len(paths) >= max_paths or any(not item["execution"]["verified"] for item in solved_inputs) else "completed",
         "paths": paths,
         "solvedInputs": solved_inputs,
         "solver": {"name": "angr/claripy/Z3", "version": z3.get_version_string()},

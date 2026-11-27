@@ -184,6 +184,14 @@ state=State(); module.constrain_concrete(state, [1,2,3], b"\\x09")
 assert state.solver.items == [False]
 value=module.bounded_constraint("x"*5000)
 assert len(value) == 4000 and value.endswith("...[truncated]")
+included, meta = module.constraint_evidence(["x"*5000 for _ in range(513)])
+assert len(included) == 16 and included[0]["truncated"] is True
+assert meta["constraintsTruncated"] is True and meta["constraintCount"] == 513
+assert meta["constraintsIncluded"] == 16 and meta["constraintsOmitted"] == 497
+assert meta["constraintChars"] == 64000 and meta["constraintCharsTotal"] == 513*5000
+history, hmeta = module.history_evidence(list(range(4097)))
+assert len(history) == 4096 and hmeta["historyTruncated"] is True
+assert hmeta["historyCount"] == 4097 and hmeta["historyOmitted"] == 1
 print("ok")`;
     expect(execFileSync('python3', ['-c', script, worker], { encoding: 'utf8' }).trim()).toBe('ok');
   });
@@ -201,5 +209,14 @@ print("ok")`;
     return engine.analyze(request('schema-source')).then(result => {
       expect(() => validateSymbolicResult({ ...result, solvedInputs: [{ ...result.solvedInputs[0]!, execution: { ...result.solvedInputs[0]!.execution, verified: false } }] }, 10_000)).toThrow('verified');
     });
+  });
+
+  it('requires partial status when path evidence is truncated', async () => {
+    const engine = new SymbolicExecutionEngine({ pythonExecutable: 'python3', workerPath });
+    const result = await engine.analyze(request('schema-source'));
+    const path = { ...result.paths[0]!, constraintsTruncated: true, constraintCount: 1, constraintsIncluded: 1, constraintsOmitted: 0, constraintChars: 1, constraintCharsTotal: 1 };
+    expect(() => validateSymbolicResult({ ...result, paths: [path] }, 10_000)).toThrow('truncated evidence');
+    expect(() => validateSymbolicResult({ ...result, status: 'partial', paths: [path] }, 10_000)).not.toThrow();
+    expect(() => validateSymbolicResult({ ...result, status: 'partial', paths: [{ ...path, constraintsOmitted: 1 }] }, 10_000)).toThrow('omission count');
   });
 });
