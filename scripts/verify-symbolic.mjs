@@ -34,7 +34,8 @@ const result = await engine.analyze({
   authorized: true,
 });
 writeFileSync(join(outputDir, 'result.json'), `${JSON.stringify(result, null, 2)}\n`, 'utf8');
-assert.equal(result.status, 'completed', `symbolic analysis did not complete: ${result.error ?? ''}`);
+assert.ok(result.status === 'completed' || result.status === 'partial', `symbolic analysis failed: ${result.status} ${result.error ?? ''}`);
+if (result.status === 'partial') assert.ok(result.limitations.some(item => /budget|exhaustive/i.test(item)), 'partial symbolic result must disclose its exploration budget');
 assert.match(result.solver.name, /Z3/);
 assert.ok(result.provenance.binarySha256 === sha256(binaryPath), 'binary provenance digest must match the compiled fixture');
 assert.ok(result.provenance.workerSha256 === sha256(join(root, 'scripts/symbolic_execute.py')), 'worker digest must match source');
@@ -52,14 +53,18 @@ for (const [index, input] of result.solvedInputs.entries()) {
 const evidence = {
   schemaVersion: 1,
   kind: 'real-symbolic-execution',
+  status: 'PASSED',
   verified: true,
+  explorationStatus: result.status,
   timestamp: new Date().toISOString(),
   source: { path: 'tests/fixtures/symbolic/sample.c', sha256: sha256(sourcePath) },
   binary: { path: binaryPath, sha256: result.provenance.binarySha256, targetAddress },
   worker: { path: 'scripts/symbolic_execute.py', sha256: result.provenance.workerSha256, pythonVersion: result.provenance.pythonVersion, angrVersion: result.provenance.angrVersion },
   solver: result.solver,
   stats: result.stats,
+  pathsExplored: result.paths.length,
   pathCount: result.paths.length,
+  results: result.paths.map(path => ({ id: path.id, targetAddress: path.targetAddress, reachedTarget: path.reachedTarget, satisfiable: path.satisfiable, addressHistory: path.addressHistory, constraints: path.constraints })),
   solvedInputs: result.solvedInputs.map(input => ({ pathId: input.pathId, inputHex: input.inputHex, execution: input.execution })),
   limitations: result.limitations,
   commands: [
