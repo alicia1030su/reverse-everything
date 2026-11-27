@@ -300,7 +300,7 @@ def analyze(request: dict, worker_sha256: str, started_at: str, started: float) 
         if state.addr == target_address:
             return True
         if target_function is not None:
-            frame = state.callstack.func_address
+            frame = state.callstack.current_function_address
             return frame == target_function.addr
         return False
 
