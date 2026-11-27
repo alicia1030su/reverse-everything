@@ -74,6 +74,7 @@ export class GdbMiClient extends EventEmitter {
   private cleanupComplete = true;
   private readonly inferiorCandidates = new Map<string, number>();
   private readonly inferiorGroups = new Map<number, InferiorGroupIdentity>();
+  private gdbGroup?: InferiorGroupIdentity;
   private readonly inferiorValidations = new Set<Promise<void>>();
   private commandTimeoutMs: number;
   private readonly signal: AbortSignal | undefined;
@@ -142,9 +143,11 @@ export class GdbMiClient extends EventEmitter {
       startupFailure.finally(cleanup).catch(() => undefined);
     });
     await Promise.race([prompt, startupFailure]);
+    await this.captureGdbGroup();
   }
 
-  private async readProcStat(pid: number): Promise<ProcStat | undefined> {
+  /** Returns null only for ENOENT; undefined means the observation failed. */
+  private async readProcStat(pid: number): Promise<ProcStat | null | undefined> {
     try {
       const stat = await readFile(`/proc/${pid}/stat`, 'utf8');
       const end = stat.lastIndexOf(')');
@@ -155,7 +158,10 @@ export class GdbMiClient extends EventEmitter {
       const startTicks = Number(fields[19]);
       if (!fields[0] || !Number.isSafeInteger(ppid) || !Number.isSafeInteger(pgid) || !Number.isSafeInteger(startTicks)) return undefined;
       return { ppid, pgid, startTicks };
-    } catch { return undefined; }
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
+      return undefined;
+    }
   }
 
   private async isDescendantOfGdb(pid: number): Promise<boolean> {
@@ -180,9 +186,24 @@ export class GdbMiClient extends EventEmitter {
       if (!/^\d+$/.test(entry)) continue;
       const pid = Number(entry);
       const stat = await this.readProcStat(pid);
+      if (stat === undefined) return undefined;
       if (stat?.pgid === pgid) members.push({ pid, pgid: stat.pgid, startTicks: stat.startTicks });
     }
     return members;
+  }
+
+  private async captureGdbGroup(): Promise<void> {
+    if (process.platform !== 'linux' || !this.child?.pid) return;
+    const leader = await this.readProcStat(this.child.pid);
+    if (!leader) return;
+    const members = new Map<number, number>();
+    const currentMembers = await this.readProcGroupMembers(this.child.pid);
+    if (currentMembers) {
+      for (const member of currentMembers) {
+        if (member.pid !== this.child.pid && await this.isDescendantOfGdb(member.pid)) members.set(member.pid, member.startTicks);
+      }
+    }
+    this.gdbGroup = { leaderPid: this.child.pid, leaderStartTicks: leader.startTicks, pgid: this.child.pid, gdbPid: this.child.pid, members, membersComplete: currentMembers !== undefined };
   }
 
   private async captureInferiorGroup(pid: number): Promise<void> {
@@ -435,13 +456,14 @@ export class GdbMiClient extends EventEmitter {
       }
       return;
     }
-    const groups = [...this.inferiorGroups.values()];
+    const groups = [...(this.gdbGroup ? [this.gdbGroup] : []), ...this.inferiorGroups.values()];
     const killedMemberPids: number[] = [];
     let unresolved = false;
     for (const group of groups) {
       const currentMembers = await this.readProcGroupMembers(group.pgid);
       if (currentMembers === undefined) { unresolved = true; continue; }
       const currentLeader = await this.readProcStat(group.leaderPid);
+      if (currentLeader === undefined) { unresolved = true; continue; }
       if (currentLeader?.startTicks === group.leaderStartTicks && currentLeader.pgid === group.pgid) {
         for (const member of currentMembers) {
           if (member.pid === group.gdbPid || group.members.has(member.pid)) continue;
