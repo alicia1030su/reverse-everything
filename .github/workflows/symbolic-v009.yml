@@ -1,0 +1,66 @@
+name: Symbolic V009 Real Verification
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    paths:
+      - 'packages/symbolic-execution/**'
+      - 'scripts/symbolic_execute.py'
+      - 'scripts/verify-symbolic.mjs'
+      - 'tests/fixtures/symbolic/**'
+      - 'tests/unit/symbolic-execution.test.ts'
+      - '.github/workflows/symbolic-v009.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Install native toolchain and pinned symbolic solver
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends gcc binutils
+          # angr 9.2.160 assigns CParser.clex.filename; pycparser 3.x made it read-only.
+          python3 -m pip install --disable-pip-version-check angr==9.2.160 pycparser==2.23 z3-solver==4.13.0.0 bitstring==4.4.0
+      - name: Check angr parser compatibility
+        run: |
+          python3 - <<'PY'
+          import angr
+          import pycparser
+          parser = pycparser.CParser()
+          parser.clex.filename = "preflight.c"
+          parser.clex.reset_lineno()
+          print(f"angr={angr.__version__} pycparser={pycparser.__version__}")
+          PY
+      - run: npm ci --no-audit --no-fund
+      - name: Build symbolic execution package
+        run: npm run build -w @reverse/symbolic-execution
+      - name: Python syntax checks
+        run: python3 -m py_compile scripts/symbolic_execute.py tests/fixtures/symbolic/fake_worker.py
+      - name: Test worker process contract
+        run: npx vitest run tests/unit/symbolic-execution.test.ts
+      - name: Verify real angr/Z3 against compiled C fixture
+        run: node scripts/verify-symbolic.mjs
+        env:
+          SYMBOLIC_VERIFY_OUTPUT_DIR: ${{ github.workspace }}/artifacts/symbolic-v009
+      - name: Upload symbolic evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: symbolic-v009
+          path: artifacts/symbolic-v009
+          if-no-files-found: warn
+          retention-days: 14

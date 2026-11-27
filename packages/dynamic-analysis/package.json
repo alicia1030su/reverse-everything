@@ -1,0 +1,22 @@
+{
+  "name": "@reverse/dynamic-analysis",
+  "version": "0.0.8",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@reverse/program-ir": "0.0.8"
+  },
+  "devDependencies": {
+    "typescript": "5.9.3",
+    "@types/node": "22.18.6"
+  }
+}
