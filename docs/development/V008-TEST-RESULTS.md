@@ -16,7 +16,7 @@ npx vitest run --reporter=json --outputFile=artifacts/v008-vitest.json
 |---|---:|
 | Test suites | 182 passed / 0 failed |
 | Tests | 910 total |
-| Passed | 901 |
+| Passed | 902 |
 | Failed | 0 |
 | Skipped | 9 |
 | Todo | 0 |
@@ -47,7 +47,7 @@ Tron 用例曾在完整运行中暴露 `close()` 卡死；修复为先强制断�
 | `npm run typecheck` | PASS |
 | `npm run lint` | PASS（0 errors；本地含未提交审计目录 warning） |
 | `npm run docs:check` | PASS（114 links / 95 Markdown） |
-| `npm run defects:check` | PASS（64 entries，无 OPEN/IN_PROGRESS P0/P1） |
+| `npm run defects:check` | PASS（66 entries，无 OPEN/IN_PROGRESS P0/P1） |
 | `npm run version:check` | PASS（22 files） |
 | `npm run validate:skill` | PASS |
 | `npm run check:secrets` | PASS（1156 text files） |

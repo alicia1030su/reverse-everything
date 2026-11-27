@@ -9,6 +9,7 @@ import { createAnalysisPlan, detectTarget, PlannerError, validatePlan, type Anal
 import { hashFile } from '@reverse/evidence';
 import type { Database, WorkflowEngine } from '@reverse/workflow';
 import { normalizeInputTarget } from '@reverse/workflow';
+import { publicTask } from './security.js';
 
 interface ResearchOptions { db: Database; engine: WorkflowEngine; dataDir: string; resourceDir: string }
 interface PlanRow { id: string; projectId: string; taskId: string | null; mode: string; target: TargetDetection; detection: TargetDetection; authorizationId: string | null; uploadId: string | null; inputHash: string | null; steps: PlanStep[]; budget: PlanBudget; status: string; createdAt: string; updatedAt: string }
@@ -135,7 +136,7 @@ export function registerResearchRoutes(app: FastifyInstance, options: ResearchOp
   app.get<{ Params: { id: string } }>('/api/plans/:id', async req => ({ plan: requirePlan(db, req.params.id) }));
   app.post<{ Params: { id: string } }>('/api/plans/:id/execute', async req => {
     const row = requirePlan(db, req.params.id), current = project(db, row.projectId);
-    if (row.taskId) { const existing = db.getTask(row.taskId); if (existing) return { task: existing }; throw new AppError('CONFLICT', 'Plan is bound to a missing task', 409); }
+    if (row.taskId) { const existing = db.getTask(row.taskId); if (existing) return { task: publicTask(existing) }; throw new AppError('CONFLICT', 'Plan is bound to a missing task', 409); }
     if (!row.authorizationId || (row.uploadId ? !row.inputHash : !current.target)) throw new AppError('CONFLICT', 'Plan has no persisted authorization and input binding', 409);
     const upload = row.uploadId ? db.uploads(current.id).find(item => item.id === row.uploadId) : undefined;
     if (row.uploadId && (!upload || upload.sha256 !== row.inputHash)) throw new AppError('CONFLICT', 'Bound upload is missing or changed', 409);
@@ -149,7 +150,7 @@ export function registerResearchRoutes(app: FastifyInstance, options: ResearchOp
     let task;
     try { task = await engine.create(row.projectId, { adapter: ADAPTER_BY_ANALYZER[analyzer], options: { planId: row.id, planUpdatedAt: row.updatedAt, ...(row.uploadId ? { uploadId: row.uploadId } : {}), mode: row.mode, aiV3: row.mode === 'agent' } }); }
     catch (error) { if (error instanceof Error && /changed after it was read|already bound|missing or already bound/i.test(error.message)) throw new AppError('CONFLICT', 'Analysis plan changed or was already bound before task creation', 409); throw error; }
-    db.raw.prepare("UPDATE analysis_plans SET task_id=?,status='RUNNING',updated_at=? WHERE id=?").run(task.id, new Date().toISOString(), row.id); return { task };
+    db.raw.prepare("UPDATE analysis_plans SET task_id=?,status='RUNNING',updated_at=? WHERE id=?").run(task.id, new Date().toISOString(), row.id); return { task: publicTask(task) };
   });
 
   app.get('/api/tools', async () => ({ items: await analyzerCapabilities(), note: 'Large tools require explicit user confirmation and official sources; this endpoint never installs software automatically' }));

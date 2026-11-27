@@ -25,7 +25,7 @@ v0.0.8 新增 `@reverse/autopilot` 统一调度层，并接入 Web、REST、CLI�
 
 | 门禁 | 结果 |
 |---|---|
-| 全量 Vitest | 901 passed / 9 skipped / 0 failed；182 suites |
+| 全量 Vitest | 902 passed / 9 skipped / 0 failed；182 suites |
 | 完整 Playwright E2E | 32/32 passed |
 | build / typecheck / lint | PASS |
 | docs / defects / version / Skill / secrets / licenses / audit | PASS |

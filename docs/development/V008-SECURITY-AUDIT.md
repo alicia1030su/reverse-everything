@@ -30,6 +30,7 @@
 | MCP 最小暴露 | 不暴露清理、设备打开、刷写、任意命令 | `apps/cli/src/tools.ts` |
 | MCP 下载写入 | 默认不写盘；显式 destination 仅限 stdio 允许根，拒绝越界/symlink/覆盖，`wx` 独占创建 | `apps/cli/src/tools.ts`、`tests/unit/mcp-download-safety.test.ts` |
 | MCP 下载边界 | 默认不写盘；显式 destination 仅允许根目录内独占创建，拒绝符号链接与 HTTP 保存 | `apps/cli/src/tools.ts`、`tests/unit/mcp-download-safety.test.ts` |
+| API 路径脱敏 | 任务选项、证据 source/locator/content、SSE 与事件历史递归移除本机绝对路径；Legacy 公开分析仅保留 basename | `apps/api/src/security.ts`、`apps/api/src/server.ts`、`tests/integration/api-safety.test.ts` |
 | 租约续期 | Autopilot run/deliver 使用 CAS heartbeat，续租失败立即中止且禁止成功 | `packages/autopilot/src/engine.ts`、`tests/unit/autopilot.test.ts` |
 
 ## 测试证据

@@ -48,7 +48,7 @@ export const legacyAdapter=defineAdapter({
   validateInput:async ctx=>{if(ctx.options.path!==undefined){if(ctx.upload)throw new Error('Legacy path input cannot be combined with an upload');await allowedLegacyPath(ctx.options.path);}},
   detect:async ctx=>{const source=await sourcePath(ctx);const analysis=await analyzeLegacySoftware(source,{signal:ctx.signal});return{adapter:'legacy',confidence:analysis.profile.evidenceStatus==='EVIDENCE'?0.9:0.2,format:analysis.profile.formats.join(',')||'unknown',details:{name:analysis.profile.name,architecture:analysis.profile.architecture},limitations:analysis.profile.limitations};},
   prepare:async ctx=>({sourcePath:await sourcePath(ctx),execution:'disabled'}),
-  analyze:async ctx=>analyzeLegacySoftware(await sourcePath(ctx),{signal:ctx.signal}),
+  analyze:async ctx=>{const analysis=await analyzeLegacySoftware(await sourcePath(ctx),{signal:ctx.signal});return {...analysis,profile:{...analysis.profile,sourcePath:path.basename(analysis.profile.sourcePath)}};},
   extractEvidence:async ctx=>{
     const analysis=output<LegacyAnalysis>(ctx,'ANALYZE');await ctx.evidence('EVIDENCE','Legacy software profile','legacy-static','profile',analysis.profile);await ctx.evidence('INFERENCE','Compatibility and license diagnostics','legacy-rules','compatibility',analysis.profile.compatibility);await ctx.evidence('VERIFIED','Local privacy boundary','legacy-privacy','privacy',analysis.privacy);await ctx.writeArtifact('legacy-profile.json',JSON.stringify(analysis,null,2),'application/json');return{evidenceCount:3,artifacts:['legacy-profile.json']};
   },
@@ -57,7 +57,7 @@ export const legacyAdapter=defineAdapter({
     if(ctx.options.recover===true){
       const outputDir=path.join(ctx.dataDir,'tasks',ctx.taskId,'recovered-data');
       try{
-        const result=await recoverLegacyData(analysis.profile.sourcePath,{outputDir,signal:ctx.signal});
+        const result=await recoverLegacyData(await sourcePath(ctx),{outputDir,signal:ctx.signal});
         const entries=[] as {name:string;content:string|Uint8Array;mime:string}[];
         for(const file of result.files){
           if(!/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(file.name)||file.size>32*1024*1024+1)throw new Error('Recovered artifact metadata is invalid');
@@ -75,7 +75,7 @@ export const legacyAdapter=defineAdapter({
     if(!input||typeof input!=='object'||Array.isArray(input))return{reconstructed:false,reason:'No independent reconstruction requested'};
     const value=input as Record<string,unknown>;const kind=value.kind;if(kind!=='ini-editor'&&kind!=='csv-viewer'&&kind!=='text-tool'&&kind!=='data-converter')throw new Error('Unsupported reconstruction kind');
     const requirements=value.requirements;if(!Array.isArray(requirements)||requirements.length<1||requirements.length>32||requirements.some(item=>typeof item!=='string'||!item.trim()||item.length>500))throw new Error('requirements must contain 1-32 bounded strings');
-    const spec=createReconstructionSpec({kind,name:typeof value.name==='string'?value.name:analysis.profile.name,requirements:requirements as string[],profile:analysis.profile});const project=generateReconstructionProject(spec);const destination=path.join(ctx.dataDir,'tasks',ctx.taskId,'reconstruction');const files=await writeReconstructionProject(project,destination);await ctx.writeArtifact('reconstruction.json',JSON.stringify({spec,files,outputPath:destination},null,2),'application/json');return{spec,files,outputPath:destination};
+    const spec=createReconstructionSpec({kind,name:typeof value.name==='string'?value.name:analysis.profile.name,requirements:requirements as string[],profile:analysis.profile});const project=generateReconstructionProject(spec);const destination=path.join(ctx.dataDir,'tasks',ctx.taskId,'reconstruction');const files=await writeReconstructionProject(project,destination);await ctx.writeArtifact('reconstruction.json',JSON.stringify({spec,files,managedPath:path.relative(ctx.dataDir,destination).split(path.sep).join('/')},null,2),'application/json');return{spec,files,outputPath:destination};
   },
   validate:async ctx=>{
     const analysis=output<LegacyAnalysis>(ctx,'ANALYZE');const reconstruction=ctx.stageOutputs.RECONSTRUCT as {outputPath?:string;spec?:LegacyReconstructionSpec}|undefined;const checks:Array<{name:string;passed:boolean;detail:string}>=[{name:'read-only source analysis',passed:analysis.profile.evidenceStatus==='EVIDENCE',detail:analysis.profile.formats.join(',')||'UNKNOWN'},{name:'original execution disabled',passed:true,detail:'No target process was started'}];
