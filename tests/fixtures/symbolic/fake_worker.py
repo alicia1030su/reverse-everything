@@ -44,6 +44,16 @@ if mode == "invalid-json":
 if mode == "invalid-schema":
     print(json.dumps({"schemaVersion": 1, "status": "completed"}))
     raise SystemExit(0)
+if mode == "worker-error":
+    print(json.dumps({
+        "schemaVersion": 1, "status": "error", "paths": [], "solvedInputs": [],
+        "solver": {"name": "angr/Z3", "version": "unavailable"},
+        "stats": {"statesExplored": 0, "pathsFound": 0, "elapsedMs": 1},
+        "limitations": ["No completed symbolic path evidence is claimed."],
+        "provenance": {"binaryPath": request["binaryPath"], "binarySha256": "0" * 64, "workerSha256": "0" * 64, "pythonVersion": "test-double", "angrVersion": "test-double", "requestedAt": "2026-01-01T00:00:00+00:00", "completedAt": "2026-01-01T00:00:01+00:00"},
+        "error": "deterministic worker diagnostic",
+    }))
+    raise SystemExit(0)
 worker_sha = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
 result = {
     "schemaVersion": 1,

@@ -185,6 +185,10 @@ export class SymbolicExecutionEngine {
           try {
             const result = validateSymbolicResult(JSON.parse(stdout) as unknown, this.maxOutputBytes);
             if (result.provenance.binaryPath !== snapshot.snapshotPath) throw new Error('Worker returned evidence for a different binary snapshot');
+            // Error/timeout results intentionally carry zero digests because no
+            // completed evidence exists. Preserve the worker's diagnostic instead
+            // of masking it as a digest mismatch.
+            if (result.status === 'error' || result.status === 'timeout' || result.status === 'cancelled' || result.status === 'unauthorized') { finish(result); return; }
             if (result.provenance.binarySha256 !== snapshot.sha256) throw new Error(`Worker binary digest does not match the private snapshot (expected=${snapshot.sha256}, actual=${result.provenance.binarySha256}, path=${snapshot.snapshotPath})`);
             if (result.solvedInputs.some(input => input.inputHex.length !== request.input.sizeBytes * 2)) throw new Error('Solved input size does not match the request');
             result.stats.elapsedMs = Math.max(result.stats.elapsedMs, Date.now() - Date.parse(startedAt));
