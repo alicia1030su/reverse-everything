@@ -58,6 +58,7 @@ export class GdbMiClient extends EventEmitter {
   private stderrTail = '';
   private limitReached = false;
   private closed = false;
+  private closePromise?: Promise<void>;
   private commandTimeoutMs: number;
   private readonly signal: AbortSignal | undefined;
   private readonly abortListener: () => void;
@@ -66,7 +67,7 @@ export class GdbMiClient extends EventEmitter {
     super();
     this.commandTimeoutMs = options.timeoutMs ?? 15_000;
     this.signal = options.signal;
-    this.abortListener = () => { this.failPending(new GdbMiError('动态分析已取消', 'GDB_CANCELLED')); void this.close(); };
+    this.abortListener = () => { const error = new GdbMiError('动态分析已取消', 'GDB_CANCELLED'); this.failAll(error); void this.close(error, true); };
     this.signal?.addEventListener('abort', this.abortListener, { once: true });
   }
 
@@ -114,6 +115,7 @@ export class GdbMiClient extends EventEmitter {
   }
 
   private consumeStderr(chunk: string): void {
+    if (this.limitReached) return;
     const bytes = Buffer.byteLength(chunk);
     this.stderrBytes += bytes;
     this.stderrTail = (this.stderrTail + chunk).slice(-65_536);
@@ -127,12 +129,14 @@ export class GdbMiClient extends EventEmitter {
     if (this.outputBytes <= max) return true;
     this.limitReached = true;
     this.options.onLimit?.('output', max);
-    this.failAll(new GdbMiError('GDB 输出超过限额', 'GDB_OUTPUT_LIMIT'));
-    void this.close();
+    const error = new GdbMiError('GDB 输出超过限额', 'GDB_OUTPUT_LIMIT');
+    this.failAll(error);
+    void this.close(error, true);
     return false;
   }
 
   private consume(chunk: string): void {
+    if (this.limitReached) return;
     chunk = chunk.replace(/\(gdb\) ?/g, '');
     if (!chunk) return;
     const bytes = Buffer.byteLength(chunk);
@@ -141,9 +145,9 @@ export class GdbMiClient extends EventEmitter {
     let records: MiRecord[];
     try { records = this.decoder.push(chunk); }
     catch (error) {
-      this.failPending(new GdbMiError(`MI 解析失败: ${(error as Error).message}`, 'GDB_PROTOCOL_ERROR'));
-      this.failStopped(new GdbMiError('MI 解析失败', 'GDB_PROTOCOL_ERROR'));
-      void this.close();
+      const failure = new GdbMiError(`MI 解析失败: ${(error as Error).message}`, 'GDB_PROTOCOL_ERROR');
+      this.failAll(failure);
+      void this.close(failure, true);
       return;
     }
     for (const record of records) this.handleRecord(record);
@@ -186,8 +190,9 @@ export class GdbMiClient extends EventEmitter {
     return new Promise<MiValue | undefined>((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pending.delete(token);
-        reject(new GdbMiError(`GDB 命令超时: ${command}`, 'GDB_COMMAND_TIMEOUT'));
-        void this.close();
+        const error = new GdbMiError(`GDB 命令超时: ${command}`, 'GDB_COMMAND_TIMEOUT');
+        reject(error);
+        void this.close(error);
       }, this.commandTimeoutMs);
       this.pending.set(token, { resolve, reject, timer });
       try { this.child?.stdin.write(this.commandInput(command, args)); }
@@ -198,7 +203,7 @@ export class GdbMiClient extends EventEmitter {
   waitForStop(timeoutMs = this.commandTimeoutMs): Promise<Extract<MiRecord, { kind: 'notify' }>> {
     if (this.closed || this.limitReached) return Promise.reject(new GdbMiError('GDB 不可用', 'GDB_UNAVAILABLE'));
     return new Promise((resolve, reject) => {
-      const waiter: StoppedWaiter = { resolve, reject, timer: setTimeout(() => { this.stoppedWaiters.delete(waiter); reject(new GdbMiError('等待 GDB 停止事件超时', 'GDB_STOP_TIMEOUT')); void this.close(); }, timeoutMs) };
+      const waiter: StoppedWaiter = { resolve, reject, timer: setTimeout(() => { this.stoppedWaiters.delete(waiter); const error = new GdbMiError('等待 GDB 停止事件超时', 'GDB_STOP_TIMEOUT'); reject(error); void this.close(error); }, timeoutMs) };
       this.stoppedWaiters.add(waiter);
     });
   }
@@ -206,7 +211,7 @@ export class GdbMiClient extends EventEmitter {
   waitForExit(): Promise<void> {
     if (this.closed) return Promise.reject(new GdbMiError('GDB 不可用', 'GDB_UNAVAILABLE'));
     return new Promise((resolve, reject) => {
-      const waiter = { resolve, reject, timer: setTimeout(() => { this.exitWaiters.delete(waiter); reject(new GdbMiError('等待 inferior 退出超时', 'GDB_EXIT_TIMEOUT')); void this.close(); }, this.commandTimeoutMs) };
+      const waiter = { resolve, reject, timer: setTimeout(() => { this.exitWaiters.delete(waiter); const error = new GdbMiError('等待 inferior 退出超时', 'GDB_EXIT_TIMEOUT'); reject(error); void this.close(error); }, this.commandTimeoutMs) };
       this.exitWaiters.add(waiter);
     });
   }
@@ -220,28 +225,44 @@ export class GdbMiClient extends EventEmitter {
     this.exitWaiters.clear();
   }
 
-  async close(): Promise<void> {
-    if (this.closed) return;
+  close(reason = new GdbMiError('GDB 已关闭', 'GDB_CLOSED'), force = false): Promise<void> {
+    if (this.closePromise) return this.closePromise;
+    if (this.closed) return Promise.resolve();
     this.closed = true;
     this.signal?.removeEventListener('abort', this.abortListener);
-    this.failAll(new GdbMiError('GDB 已关闭', 'GDB_CLOSED'));
+    this.failAll(reason);
+    this.closePromise = this.closeInternal(force);
+    return this.closePromise;
+  }
+
+  private async closeInternal(force: boolean): Promise<void> {
     const child = this.child;
     if (!child || child.exitCode !== null || child.signalCode !== null) return;
+    if (force) {
+      await this.killTree();
+      if (child.exitCode === null && child.signalCode === null) await new Promise<void>((resolve) => child.once('close', resolve));
+      return;
+    }
     await new Promise<void>((resolve) => {
-      let settled = false;
-      const finish = (): void => { if (!settled) { settled = true; clearTimeout(timer); resolve(); } };
-      const timer = setTimeout(() => { this.killTree(); finish(); }, 750);
-      child.once('close', finish);
+      let killing: Promise<void> | undefined;
+      const timer = setTimeout(() => { killing = this.killTree(); void killing.finally(resolve); }, 750);
+      child.once('close', () => { clearTimeout(timer); if (killing) void killing.finally(resolve); else resolve(); });
       // Try graceful MI exit, then force kill if the process does not cooperate.
-      try { child.stdin.write('0-gdb-exit\n'); } catch { this.killTree(); finish(); }
+      try { child.stdin.write('0-gdb-exit\n'); } catch { clearTimeout(timer); killing = this.killTree(); void killing.finally(resolve); }
     });
   }
 
-  private killTree(): void {
-    if (!this.child?.pid) return;
-    try {
-      if (process.platform === 'win32') spawn('taskkill', ['/pid', String(this.child.pid), '/T', '/F'], { stdio: 'ignore' });
-      else process.kill(-this.child.pid, 'SIGKILL');
-    } catch { try { this.child.kill('SIGKILL'); } catch { /* already reaped */ } }
+  private async killTree(): Promise<void> {
+    const child = this.child;
+    if (!child?.pid) return;
+    if (process.platform === 'win32') {
+      await new Promise<void>((resolve) => {
+        const killer = spawn('taskkill', ['/pid', String(child.pid), '/T', '/F'], { stdio: 'ignore' });
+        killer.once('error', () => { try { child.kill('SIGKILL'); } catch { /* already reaped */ } resolve(); });
+        killer.once('close', resolve);
+      });
+      return;
+    }
+    try { process.kill(-child.pid, 'SIGKILL'); } catch { try { child.kill('SIGKILL'); } catch { /* already reaped */ } }
   }
 }

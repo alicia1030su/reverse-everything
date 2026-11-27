@@ -1,4 +1,11 @@
 import { spawn as nodeSpawn, spawn as spawnTaskkill, type ChildProcessWithoutNullStreams } from 'node:child_process';
+import { createHash } from 'node:crypto';
+import { createWriteStream } from 'node:fs';
+import { chmod, mkdtemp, open, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { Transform } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
 import { fileURLToPath } from 'node:url';
 import { validateSymbolicRequest, validateSymbolicResult } from './schema.js';
 import type { SymbolicAnalysisRequest, SymbolicAnalysisResult, SymbolicEngineOptions } from './types.js';
@@ -16,11 +23,41 @@ function localResult(request: SymbolicAnalysisRequest, status: SymbolicAnalysisR
   };
 }
 
+async function snapshotBinary(binaryPath: string, maxBytes: number): Promise<{ directory: string; snapshotPath: string; sha256: string }> {
+  const directory = await mkdtemp(path.join(tmpdir(), 'reverse-symbolic-'));
+  await chmod(directory, 0o700).catch(() => undefined);
+  const source = await open(binaryPath, 'r');
+  try {
+    const stat = await source.stat();
+    if (!stat.isFile()) throw new Error('Symbolic binaryPath must identify a regular file');
+    if (stat.size > maxBytes) throw new Error(`Symbolic binary exceeds ${maxBytes} bytes`);
+    const snapshotPath = path.join(directory, 'sample');
+    const hash = createHash('sha256');
+    let bytes = 0;
+    const meter = new Transform({
+      transform(chunk: Buffer, _encoding, callback) {
+        bytes += chunk.length;
+        if (bytes > maxBytes) { callback(new Error(`Symbolic binary exceeds ${maxBytes} bytes`)); return; }
+        hash.update(chunk);
+        callback(null, chunk);
+      },
+    });
+    await pipeline(source.createReadStream({ autoClose: false }), meter, createWriteStream(snapshotPath, { flags: 'wx', mode: 0o600 }));
+    return { directory, snapshotPath, sha256: hash.digest('hex') };
+  } catch (error) {
+    await rm(directory, { recursive: true, force: true }).catch(() => undefined);
+    throw error;
+  } finally {
+    await source.close();
+  }
+}
+
 export class SymbolicExecutionEngine {
   private readonly pythonExecutable: string;
   private readonly workerPath: string;
   private readonly maxOutputBytes: number;
   private readonly maxRequestBytes: number;
+  private readonly maxBinaryBytes: number;
   private readonly spawnProcess: NonNullable<SymbolicEngineOptions['spawn']>;
 
   constructor(options: SymbolicEngineOptions = {}) {
@@ -28,6 +65,7 @@ export class SymbolicExecutionEngine {
     this.workerPath = options.workerPath ?? DEFAULT_WORKER;
     this.maxOutputBytes = options.maxOutputBytes ?? 2_097_152;
     this.maxRequestBytes = options.maxRequestBytes ?? 16_384;
+    this.maxBinaryBytes = options.maxBinaryBytes ?? 256 * 1024 * 1024;
     this.spawnProcess = options.spawn ?? nodeSpawn;
   }
 
@@ -41,108 +79,113 @@ export class SymbolicExecutionEngine {
       throw error;
     }
     if (signal?.aborted) return localResult(request, 'cancelled');
-    const payload = JSON.stringify({ ...request, timeoutMs: request.timeoutMs ?? 30_000, maxPaths: request.maxPaths ?? 32, maxStates: request.maxStates ?? 10_000 });
-    if (Buffer.byteLength(payload, 'utf8') > this.maxRequestBytes) throw new Error('Symbolic request exceeds the bounded JSON budget');
-
-    return new Promise<SymbolicAnalysisResult>((resolve, reject) => {
-      let child: ChildProcessWithoutNullStreams;
-      try {
-        child = this.spawnProcess(this.pythonExecutable, [this.workerPath], { windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] }) as ChildProcessWithoutNullStreams;
-      } catch (error) {
-        reject(new Error(`Unable to spawn symbolic worker: ${error instanceof Error ? error.message : String(error)}`));
-        return;
-      }
-      let stdout = '';
-      let stderr = '';
-      let outputBytes = 0;
-      let outputExceeded = false;
-      let settled = false;
-      let timedOut = false;
-      let killTimer: NodeJS.Timeout | undefined;
-      const timeoutMs = request.timeoutMs ?? 30_000;
-
-      const finish = (result: SymbolicAnalysisResult): void => {
-        if (settled) return;
-        settled = true;
-        clearTimeout(timer);
-        if (killTimer) clearTimeout(killTimer);
-        signal?.removeEventListener('abort', onAbort);
-        resolve(result);
-      };
-      const terminate = (): void => {
-        if (child.killed) return;
-        try {
-          if (process.platform === 'win32' && child.pid) {
-            const killer = spawnTaskkill('taskkill', ['/pid', String(child.pid), '/T', '/F'], { windowsHide: true, stdio: 'ignore' });
-            killer.on('error', () => { try { child.kill('SIGKILL'); } catch { /* close still completes */ } });
-            killer.unref();
-          } else child.kill('SIGTERM');
-        } catch { /* close/error still completes the promise */ }
-        killTimer = setTimeout(() => {
-          try { child.kill('SIGKILL'); } catch { /* process may already have exited */ }
-        }, 1_000);
-        killTimer.unref();
-      };
-      const timer = setTimeout(() => {
-        timedOut = true;
-        terminate();
-      }, timeoutMs);
-      const onAbort = (): void => { terminate(); };
-      signal?.addEventListener('abort', onAbort, { once: true });
-
-      child.stdout.setEncoding('utf8');
-      child.stderr.setEncoding('utf8');
-      child.stdout.on('data', (chunk: string) => {
-        if (settled || outputExceeded) return;
-        outputBytes += Buffer.byteLength(chunk, 'utf8');
-        if (outputBytes > this.maxOutputBytes) {
-          outputExceeded = true;
-          terminate();
-          return;
-        }
-        stdout += chunk;
-      });
-      child.stderr.on('data', (chunk: string) => {
-        if (stderr.length < 65_536) stderr += chunk.slice(0, 65_536 - stderr.length);
-      });
-      child.on('error', error => {
-        if (settled) return;
-        settled = true;
-        clearTimeout(timer);
-        if (killTimer) clearTimeout(killTimer);
-        signal?.removeEventListener('abort', onAbort);
-        reject(new Error(`Symbolic worker process error: ${error.message}`));
-      });
-      child.on('close', (code, terminationSignal) => {
-        if (settled) return;
-        if (outputBytes > this.maxOutputBytes) {
-          finish(localResult(request, 'error', `Symbolic worker output exceeded ${this.maxOutputBytes} bytes`));
-          return;
-        }
-        if (signal?.aborted) {
-          finish(localResult(request, 'cancelled'));
-          return;
-        }
-        if (timedOut) {
-          finish(localResult(request, 'timeout', `Symbolic worker exceeded ${timeoutMs} ms and was terminated`));
-          return;
-        }
-        if (code !== 0 || terminationSignal !== null) {
-          finish(localResult(request, 'error', `Symbolic worker exited with code ${String(code)} signal ${String(terminationSignal)}: ${stderr.trim().slice(0, 2_000)}`));
-          return;
-        }
-        try {
-          const result = validateSymbolicResult(JSON.parse(stdout) as unknown, this.maxOutputBytes);
-          if (result.provenance.binaryPath !== request.binaryPath) throw new Error('Worker returned evidence for a different binary');
-          if (result.solvedInputs.some(input => input.inputHex.length !== request.input.sizeBytes * 2)) throw new Error('Solved input size does not match the request');
-          result.stats.elapsedMs = Math.max(result.stats.elapsedMs, Date.now() - Date.parse(startedAt));
-          finish(result);
-        } catch (error) {
-          finish(localResult(request, 'error', `Invalid symbolic worker response: ${error instanceof Error ? error.message : String(error)}`));
-        }
-      });
-      child.stdin.on('error', () => { /* A worker failure is reported through close/error. */ });
-      child.stdin.end(payload, 'utf8');
+    const snapshot = await snapshotBinary(request.binaryPath, this.maxBinaryBytes);
+    const workerRequest = { ...request, binaryPath: snapshot.snapshotPath, timeoutMs: request.timeoutMs ?? 30_000, maxPaths: request.maxPaths ?? 32, maxStates: request.maxStates ?? 10_000 };
+    const payload = JSON.stringify(workerRequest);
+    if (Buffer.byteLength(payload, 'utf8') > this.maxRequestBytes) {
+      await rm(snapshot.directory, { recursive: true, force: true });
+      throw new Error('Symbolic request exceeds the bounded JSON budget');
+    }
+    const withSnapshot = (result: SymbolicAnalysisResult): SymbolicAnalysisResult => ({
+      ...result,
+      provenance: { ...result.provenance, binaryPath: request.binaryPath, binarySnapshotPath: snapshot.snapshotPath },
     });
+    try {
+      return await new Promise<SymbolicAnalysisResult>((resolve, reject) => {
+        let child: ChildProcessWithoutNullStreams;
+        try {
+          child = this.spawnProcess(this.pythonExecutable, [this.workerPath], { windowsHide: true, detached: process.platform !== 'win32', stdio: ['pipe', 'pipe', 'pipe'] }) as ChildProcessWithoutNullStreams;
+        } catch (error) {
+          reject(new Error(`Unable to spawn symbolic worker: ${error instanceof Error ? error.message : String(error)}`));
+          return;
+        }
+        let stdout = '';
+        let stderr = '';
+        let outputBytes = 0;
+        let outputExceeded = false;
+        let settled = false;
+        let timedOut = false;
+        let terminating = false;
+        let killTimer: NodeJS.Timeout | undefined;
+        const timeoutMs = workerRequest.timeoutMs;
+
+        const finish = (result: SymbolicAnalysisResult): void => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
+          if (killTimer) clearTimeout(killTimer);
+          signal?.removeEventListener('abort', onAbort);
+          resolve(result);
+        };
+        const forceKill = (): void => {
+          try {
+            if (process.platform !== 'win32' && child.pid) process.kill(-child.pid, 'SIGKILL');
+            else child.kill('SIGKILL');
+          } catch { try { child.kill('SIGKILL'); } catch { /* close still completes */ } }
+        };
+        const terminate = (): void => {
+          if (terminating) return;
+          terminating = true;
+          try {
+            if (process.platform === 'win32' && child.pid) {
+              const killer = spawnTaskkill('taskkill', ['/pid', String(child.pid), '/T', '/F'], { windowsHide: true, stdio: 'ignore' });
+              killer.on('error', forceKill);
+              killer.on('close', forceKill);
+            } else if (child.pid) {
+              try { process.kill(-child.pid, 'SIGTERM'); } catch { child.kill('SIGTERM'); }
+            } else child.kill('SIGTERM');
+          } catch { forceKill(); }
+          killTimer = setTimeout(forceKill, 1_000);
+        };
+        const timer = setTimeout(() => { timedOut = true; terminate(); }, timeoutMs);
+        const onAbort = (): void => { terminate(); };
+        signal?.addEventListener('abort', onAbort, { once: true });
+
+        child.stdout.setEncoding('utf8');
+        child.stderr.setEncoding('utf8');
+        child.stdout.on('data', (chunk: string) => {
+          if (settled || outputExceeded) return;
+          outputBytes += Buffer.byteLength(chunk, 'utf8');
+          if (outputBytes > this.maxOutputBytes) { outputExceeded = true; terminate(); return; }
+          stdout += chunk;
+        });
+        child.stderr.on('data', (chunk: string) => { if (stderr.length < 65_536) stderr += chunk.slice(0, 65_536 - stderr.length); });
+        child.on('error', error => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
+          if (killTimer) clearTimeout(killTimer);
+          signal?.removeEventListener('abort', onAbort);
+          reject(new Error(`Symbolic worker process error: ${error.message}`));
+        });
+        child.on('close', (code, terminationSignal) => {
+          if (settled) return;
+          if (outputExceeded || outputBytes > this.maxOutputBytes) {
+            finish(localResult(request, 'error', `Symbolic worker output exceeded ${this.maxOutputBytes} bytes`));
+            return;
+          }
+          if (signal?.aborted) { finish(localResult(request, 'cancelled')); return; }
+          if (timedOut) { finish(localResult(request, 'timeout', `Symbolic worker exceeded ${timeoutMs} ms and was terminated`)); return; }
+          if (code !== 0 || terminationSignal !== null) {
+            finish(localResult(request, 'error', `Symbolic worker exited with code ${String(code)} signal ${String(terminationSignal)}: ${stderr.trim().slice(0, 2_000)}`));
+            return;
+          }
+          try {
+            const result = validateSymbolicResult(JSON.parse(stdout) as unknown, this.maxOutputBytes);
+            if (result.provenance.binaryPath !== snapshot.snapshotPath) throw new Error('Worker returned evidence for a different binary snapshot');
+            if (result.provenance.binarySha256 !== snapshot.sha256) throw new Error('Worker binary digest does not match the private snapshot');
+            if (result.solvedInputs.some(input => input.inputHex.length !== request.input.sizeBytes * 2)) throw new Error('Solved input size does not match the request');
+            result.stats.elapsedMs = Math.max(result.stats.elapsedMs, Date.now() - Date.parse(startedAt));
+            finish(result);
+          } catch (error) {
+            finish(localResult(request, 'error', `Invalid symbolic worker response: ${error instanceof Error ? error.message : String(error)}`));
+          }
+        });
+        child.stdin.on('error', () => { /* A worker failure is reported through close/error. */ });
+        child.stdin.end(payload, 'utf8');
+      }).then(withSnapshot);
+    } finally {
+      await rm(snapshot.directory, { recursive: true, force: true }).catch(() => undefined);
+    }
   }
 }

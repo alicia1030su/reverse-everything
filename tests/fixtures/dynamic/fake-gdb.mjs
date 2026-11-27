@@ -6,7 +6,16 @@ if (args.join(' ') !== '--quiet --nx --interpreter=mi2') {
   process.exit(90);
 }
 const mode = process.env.FAKE_GDB_MODE ?? 'normal';
-if (mode === 'malformed') { process.stdout.write('(gdb) '); setInterval(() => process.stdout.write('"unterminated\n(gdb) '), 20); }
+if (mode === 'ignore-term') {
+  process.on('SIGTERM', () => {});
+  if (process.env.FAKE_GDB_CHILD_PID_FILE) {
+    const { spawn } = await import('node:child_process');
+    const { writeFileSync } = await import('node:fs');
+    const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'ignore' });
+    writeFileSync(process.env.FAKE_GDB_CHILD_PID_FILE, String(child.pid));
+  }
+  process.stdout.write('(gdb) ');
+} else if (mode === 'malformed') { process.stdout.write('(gdb) '); setInterval(() => process.stdout.write('"unterminated\n(gdb) '), 20); }
 else if (mode === 'hang') process.stdout.write('(gdb) ');
 else if (mode === 'flood') { process.stdout.write('(gdb) '); setInterval(() => process.stdout.write('~"' + 'x'.repeat(1024) + '"\n'), 2); }
 else process.stdout.write('=thread-group-added,id="i1"\n(gdb) \n');
@@ -19,7 +28,7 @@ readline.createInterface({ input: process.stdin }).on('line', (line) => {
   const [, number, command, payload] = match;
   const id = Number(number);
   if (mode === 'malformed') { process.stdout.write('"unterminated\n(gdb) '); return; }
-  if (mode === 'hang' || mode === 'flood') { /* Deliberately never respond to the command. */ }
+  if (mode === 'hang' || mode === 'flood' || mode === 'ignore-term') { /* Deliberately never respond to the command. */ }
   else if (command === '-file-exec-and-symbols') { process.stderr.write('warning: non-MI debugger diagnostic\n'); process.stdout.write(`${id}^done,value={}\n(gdb) `); }
   else if (command === '-exec-arguments') { argumentsReceived = true; process.stdout.write(`${id}^done\n(gdb) `); }
   else if (command === '-break-insert') process.stdout.write(`${id}^done,bkpt={number="1",addr="0x0000000000401136",type="breakpoint"}\n(gdb) `);

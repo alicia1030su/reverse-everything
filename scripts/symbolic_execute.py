@@ -12,6 +12,7 @@ import platform
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 from pathlib import Path
 
@@ -92,38 +93,91 @@ def digest(path: Path) -> str:
     return sha.hexdigest()
 
 
-def execute_binary(binary: str, data: bytes, expected: str | None, timeout: float) -> dict:
-    started = time.monotonic()
+def kill_process_tree(proc: subprocess.Popen) -> None:
+    """Kill the native sample and its descendants, then reap the direct child."""
+    if os.name == "posix":
+        try:
+            os.killpg(proc.pid, 9)
+        except ProcessLookupError:
+            pass
+    else:
+        try:
+            subprocess.run(["taskkill", "/pid", str(proc.pid), "/T", "/F"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=3, check=False)
+        except (OSError, subprocess.TimeoutExpired):
+            try:
+                proc.kill()
+            except ProcessLookupError:
+                pass
+    try:
+        proc.wait(timeout=3)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        proc.wait(timeout=3)
+
+
+def execute_binary(binary: str, data: bytes, expected: str | None, timeout: float, args: list[str] | None = None) -> dict:
+    """Execute with bounded streaming capture; output overflow kills the process tree."""
+    output_limit = 65_536
+    overflow = threading.Event()
     with tempfile.NamedTemporaryFile(prefix="symbolic-input-", delete=False) as stream:
         stream.write(data)
         name = stream.name
+    proc = None
     try:
         kwargs = {"start_new_session": True} if os.name == "posix" else {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP}
         with open(name, "rb") as input_stream:
-            proc = subprocess.Popen([binary], stdin=input_stream, stdout=subprocess.PIPE, stderr=subprocess.PIPE, **kwargs)
+            proc = subprocess.Popen([binary, *(args or [])], stdin=input_stream, stdout=subprocess.PIPE, stderr=subprocess.PIPE, **kwargs)
+        captured = {"stdout": bytearray(), "stderr": bytearray()}
+        truncated = {"stdout": False, "stderr": False}
+
+        def pump(stream_name: str, stream) -> None:
+            stream_object = captured[stream_name]
+            while True:
+                chunk = stream.read(8192)
+                if not chunk:
+                    break
+                remaining = output_limit - len(stream_object)
+                if len(chunk) > remaining:
+                    stream_object.extend(chunk[:max(0, remaining)])
+                    truncated[stream_name] = True
+                    overflow.set()
+                    kill_process_tree(proc)
+                    break
+                stream_object.extend(chunk)
+
+        readers = [threading.Thread(target=pump, args=(stream_name, getattr(proc, stream_name)), daemon=True) for stream_name in ("stdout", "stderr")]
+        for reader in readers:
+            reader.start()
+        timed_out = False
         try:
-            stdout, stderr = proc.communicate(timeout=max(0.01, timeout))
+            proc.wait(timeout=max(0.01, timeout))
         except subprocess.TimeoutExpired:
-            if os.name == "posix":
+            timed_out = True
+            kill_process_tree(proc)
+        if os.name == "posix":
+            # The direct child may have exited while descendants still hold inherited pipes.
+            try:
                 os.killpg(proc.pid, 9)
-            else:
-                proc.kill()
-            stdout, stderr = proc.communicate(timeout=2)
-            return {
-                "exitCode": None,
-                "stdout": stdout[:65_536].decode("utf-8", errors="replace"),
-                "stderr": stderr[:65_536].decode("utf-8", errors="replace"),
-                "verified": False,
-                "timedOut": True,
-            }
+            except ProcessLookupError:
+                pass
+        for reader in readers:
+            reader.join(timeout=3)
+        stdout = bytes(captured["stdout"])
+        stderr = bytes(captured["stderr"])
+        output_exceeded = overflow.is_set()
         return {
             "exitCode": proc.returncode,
-            "stdout": stdout[:65_536].decode("utf-8", errors="replace"),
-            "stderr": stderr[:65_536].decode("utf-8", errors="replace"),
-            "verified": proc.returncode == 0 and expected is not None and expected in stdout,
-            "timedOut": False,
+            "stdout": stdout.decode("utf-8", errors="replace"),
+            "stderr": stderr.decode("utf-8", errors="replace"),
+            "stdoutTruncated": truncated["stdout"],
+            "stderrTruncated": truncated["stderr"],
+            "outputLimitExceeded": output_exceeded,
+            "verified": not timed_out and not output_exceeded and proc.returncode == 0 and expected is not None and expected.encode("utf-8") in stdout,
+            "timedOut": timed_out,
         }
     finally:
+        if proc is not None and proc.poll() is None:
+            kill_process_tree(proc)
         Path(name).unlink(missing_ok=True)
 
 
@@ -136,7 +190,7 @@ def analyze(request: dict, worker_sha256: str, started_at: str, started: float) 
     if not binary.is_file():
         raise RequestError("binaryPath is not a regular file")
     project = angr.Project(str(binary), auto_load_libs=False)
-    if project.arch.name != "amd64":
+    if project.arch.name.lower() != "amd64":
         raise RequestError("Wave 2 supports amd64 binaries only")
     target = request["target"]
     entry_spec = request["entry"]
@@ -270,7 +324,7 @@ def analyze(request: dict, worker_sha256: str, started_at: str, started: float) 
         limitations.append("One or more solved inputs did not reproduce the expected output during native execution.")
     return {
         "schemaVersion": 1,
-        "status": "partial" if truncated or len(paths) >= max_paths else "completed",
+        "status": "partial" if truncated or len(paths) >= max_paths or any(not item["execution"]["verified"] for item in solved_inputs) else "completed",
         "paths": paths,
         "solvedInputs": solved_inputs,
         "solver": {"name": "angr/claripy/Z3", "version": z3.get_version_string()},

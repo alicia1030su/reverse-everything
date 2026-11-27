@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { EventEmitter } from 'node:events';
 import { PassThrough } from 'node:stream';
 import type { ChildProcessWithoutNullStreams } from 'node:child_process';
-import { mkdtemp, mkdir, realpath, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -111,9 +111,11 @@ describe('GDB MI client', () => {
     const client = fakeClient('flood', { maxOutputBytes: 512 });
     await client.start();
     await expect(client.execute('-file-exec-and-symbols', 'x')).rejects.toThrow(/限额|不可用|关闭|退出/);
+    const bytesAtFailure = client.bytes;
     await client.close();
     expect(client.truncated).toBe(true);
-    expect(client.bytes).toBeLessThan(4096);
+    expect(client.bytes).toBe(bytesAtFailure);
+    expect(client.bytes).toBeLessThan(16_384);
   });
   it('fails closed on malformed MI output', async () => {
     const client = fakeClient('malformed');
@@ -122,6 +124,23 @@ describe('GDB MI client', () => {
     await client.close();
     expect(client.exited).toBe(true);
   });
+  it.skipIf(process.platform === 'win32')('force-kills an uncooperative GDB tree and settles pending commands', async () => {
+    const root = await temporaryRoot();
+    const marker = path.join(root, 'child.pid');
+    const client = new GdbMiClient({ executable: process.execPath, timeoutMs: 5_000, spawnProcess: (_command, args, options) => spawn(process.execPath, [fakeGdb, ...args], { ...options, env: { ...options.env, FAKE_GDB_MODE: 'ignore-term', FAKE_GDB_CHILD_PID_FILE: marker } }) });
+    await client.start();
+    const pending = client.execute('-file-exec-and-symbols', 'x');
+    const rejected = expect(pending).rejects.toThrow(/关闭/);
+    const started = Date.now();
+    await client.close();
+    await rejected;
+    expect(Date.now() - started).toBeLessThan(5_000);
+    const pid = Number(await readFile(marker, 'utf8'));
+    await new Promise(resolve => setTimeout(resolve, 100));
+    let alive = true;
+    try { process.kill(pid, 0); } catch { alive = false; }
+    expect(alive).toBe(false);
+  }, 10_000);
 });
 
 describe('DynamicAnalysisEngine', () => {
@@ -155,12 +174,23 @@ describe('DynamicAnalysisEngine', () => {
     expect(result.events.find((event) => event.type === 'register')?.registers).toMatchObject({ rip: '0x401136' });
     expect(JSON.stringify(result.events.find((event) => event.type === 'stack')), JSON.stringify(result.events.find((event) => event.type === 'breakpoint'))).toContain('fn-main');
     expect(result.provenance.binarySha256).toMatch(/^[0-9a-f]{64}$/);
+    expect(result.provenance.binaryPath).toBe(await realpath(binary));
+    expect(path.basename(result.provenance.binarySnapshotPath ?? '')).toBe('sample');
+    expect(result.limitations.join(' ')).toContain('不限制样本的文件系统、进程或系统调用');
     expect(result.provenance.cwd).not.toBe(child);
     expect(result.timeline.at(-2)?.type).toBe('exit');
     expect(result.timeline.at(-1)?.type).toBe('output');
     expect(result.events.find((event) => event.type === 'exit')?.data).toEqual({ reason: 'exited-normally' });
     expect(result.events.filter((event) => event.type === 'breakpoint')).toHaveLength(1);
     expect(JSON.stringify(result.events.find((event) => event.type === 'output')?.data)).toContain('non-MI debugger diagnostic');
+  });
+  it('rejects oversized binaries before starting GDB', async () => {
+    const root = await temporaryRoot(); const child = path.join(root, 'child'); await mkdir(child);
+    const binary = path.join(root, 'sample'); await writeFile(binary, 'too large');
+    const engine = new DynamicAnalysisEngine({ isolationRoot: root, maxBinaryBytes: 4, gdbPath: 'definitely-not-a-gdb' });
+    const result = await engine.analyze({ binaryPath: binary, cwd: child, authorized: true });
+    expect(result.status).toBe('rejected');
+    expect(result.error).toContain('超过 4 字节限额');
   });
   it('bounds event count', async () => {
     const root = await temporaryRoot(); const child = path.join(root, 'child'); await mkdir(child);

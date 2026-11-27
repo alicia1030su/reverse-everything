@@ -35,6 +35,9 @@ export interface SymbolicExecution {
   stderr: string;
   verified: boolean;
   timedOut: boolean;
+  stdoutTruncated?: boolean;
+  stderrTruncated?: boolean;
+  outputLimitExceeded?: boolean;
 }
 
 export interface SymbolicPath {
@@ -64,6 +67,7 @@ export interface SymbolicAnalysisResult {
   limitations: string[];
   provenance: {
     binaryPath: string;
+    binarySnapshotPath?: string;
     binarySha256: string;
     workerSha256: string;
     pythonVersion: string;
@@ -79,6 +83,8 @@ export interface SymbolicEngineOptions {
   workerPath?: string;
   maxOutputBytes?: number;
   maxRequestBytes?: number;
+  /** Maximum binary size copied into the private analysis snapshot. */
+  maxBinaryBytes?: number;
   /** Injected for deterministic worker-process tests. */
   spawn?: typeof import('node:child_process').spawn;
 }
