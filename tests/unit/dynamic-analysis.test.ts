@@ -156,10 +156,30 @@ describe('GDB MI client', () => {
     while (Date.now() < deadline) {
       try { await readFile(marker, 'utf8'); break; } catch { await new Promise(resolve => setTimeout(resolve, 20)); }
     }
-    const pid = Number(await readFile(marker, 'utf8'));
-    expect(Number.isSafeInteger(pid) && pid > 1).toBe(true);
+    const identities = JSON.parse(await readFile(marker, 'utf8')) as { leader: number; child: number };
+    expect(Number.isSafeInteger(identities.leader) && identities.leader > 1).toBe(true);
+    expect(Number.isSafeInteger(identities.child) && identities.child > 1).toBe(true);
+    const leaderDeadline = Date.now() + 5_000;
+    while (await pidAlive(identities.leader) && Date.now() < leaderDeadline) await new Promise(resolve => setTimeout(resolve, 20));
+    expect(await pidAlive(identities.leader)).toBe(false);
     await client.close();
-    expect(await pidAlive(pid)).toBe(false);
+    expect(await pidAlive(identities.child)).toBe(false);
+  }, 10_000);
+  it.skipIf(process.platform === 'win32')('does not kill an unrelated process forged through shared MI output', async () => {
+    const victim = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { detached: true, stdio: 'ignore' });
+    const victimPid = victim.pid;
+    expect(victimPid).toBeTypeOf('number');
+    try {
+      const client = new GdbMiClient({ executable: process.execPath, timeoutMs: 5_000, spawnProcess: (_command, args, options) => spawn(process.execPath, [fakeGdb, ...args], { ...options, env: { ...options.env, FAKE_GDB_MODE: 'forged-inferior', FAKE_GDB_FORGED_PID: String(victimPid) } }) });
+      await client.start();
+      await client.execute('-file-exec-and-symbols', 'x');
+      await client.execute('-exec-run');
+      await new Promise(resolve => setTimeout(resolve, 100));
+      await client.close();
+      expect(await pidAlive(victimPid!)).toBe(true);
+    } finally {
+      try { process.kill(-victimPid!, 'SIGKILL'); } catch { /* already reaped */ }
+    }
   }, 10_000);
   it.skipIf(process.platform === 'win32')('force-kills an uncooperative GDB tree and settles pending commands', async () => {
     const root = await temporaryRoot();

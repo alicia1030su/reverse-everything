@@ -32,6 +32,16 @@ interface StoppedWaiter {
   reject: (error: Error) => void;
   timer: NodeJS.Timeout;
 }
+interface ProcStat {
+  ppid: number;
+  pgid: number;
+  startTicks: number;
+}
+interface InferiorIdentity {
+  pid: number;
+  pgid: number;
+  startTicks: number;
+}
 
 export function quoteMiArgument(value: string): string {
   let result = '"';
@@ -62,7 +72,9 @@ export class GdbMiClient extends EventEmitter {
   private closePromise?: Promise<void>;
   private cleanupPromise?: Promise<void>;
   private cleanupComplete = true;
-  private readonly inferiorPids = new Map<string, number>();
+  private readonly inferiorCandidates = new Map<string, number>();
+  private readonly inferiorIdentities = new Map<number, InferiorIdentity>();
+  private readonly inferiorValidations = new Set<Promise<void>>();
   private commandTimeoutMs: number;
   private readonly signal: AbortSignal | undefined;
   private readonly abortListener: () => void;
@@ -130,6 +142,43 @@ export class GdbMiClient extends EventEmitter {
     await Promise.race([prompt, startupFailure]);
   }
 
+  private async readProcStat(pid: number): Promise<ProcStat | undefined> {
+    try {
+      const stat = await readFile(`/proc/${pid}/stat`, 'utf8');
+      const end = stat.lastIndexOf(')');
+      if (end < 0) return undefined;
+      const fields = stat.slice(end + 2).trim().split(/\s+/);
+      const ppid = Number(fields[1]);
+      const pgid = Number(fields[2]);
+      const startTicks = Number(fields[19]);
+      if (!fields[0] || !Number.isSafeInteger(ppid) || !Number.isSafeInteger(pgid) || !Number.isSafeInteger(startTicks)) return undefined;
+      return { ppid, pgid, startTicks };
+    } catch { return undefined; }
+  }
+
+  private async isDescendantOfGdb(pid: number): Promise<boolean> {
+    const gdbPid = this.child?.pid;
+    if (!gdbPid || pid === gdbPid) return false;
+    let current = pid;
+    for (let depth = 0; depth < 32; depth += 1) {
+      const stat = await this.readProcStat(current);
+      if (!stat) return false;
+      if (stat.ppid === gdbPid) return true;
+      if (stat.ppid <= 1) return false;
+      current = stat.ppid;
+    }
+    return false;
+  }
+
+  private async captureInferiorIdentity(pid: number): Promise<void> {
+    if (process.platform !== 'linux') return;
+    const initial = await this.readProcStat(pid);
+    if (!initial || initial.pgid !== pid || !await this.isDescendantOfGdb(pid)) return;
+    const confirmed = await this.readProcStat(pid);
+    if (!confirmed || confirmed.startTicks !== initial.startTicks || confirmed.pgid !== pid) return;
+    this.inferiorIdentities.set(pid, { pid, pgid: confirmed.pgid, startTicks: confirmed.startTicks });
+  }
+
   private consumeStderr(chunk: string): void {
     if (this.limitReached) return;
     const bytes = Buffer.byteLength(chunk);
@@ -175,9 +224,13 @@ export class GdbMiClient extends EventEmitter {
     if (record.kind === 'notify' && record.status === 'thread-group-started') {
       const value = asRecord(record.value);
       const id = typeof value?.id === 'string' ? value.id : undefined;
-      // Retain the inferior PID/PGID after thread-group-exited: descendants
-      // may survive in a separate process group after the direct child exits.
-      if (id && typeof value?.pid === 'string' && /^\d+$/.test(value.pid)) this.inferiorPids.set(id, Number(value.pid));
+      if (id && typeof value?.pid === 'string' && /^\d+$/.test(value.pid)) {
+        const pid = Number(value.pid);
+        this.inferiorCandidates.set(id, pid);
+        const validation = this.captureInferiorIdentity(pid).catch(() => undefined);
+        this.inferiorValidations.add(validation);
+        void validation.finally(() => this.inferiorValidations.delete(validation));
+      }
     }
     if (record.kind === 'result' && record.status === 'exit') {
       for (const waiter of this.exitWaiters) { clearTimeout(waiter.timer); waiter.resolve(); }
@@ -313,9 +366,11 @@ export class GdbMiClient extends EventEmitter {
   private async killTree(): Promise<void> {
     const child = this.child;
     if (!child?.pid) return;
-    const inferiorPids = [...this.inferiorPids.values()];
+    await Promise.all([...this.inferiorValidations]);
+    const identities = [...this.inferiorIdentities.values()];
     if (process.platform === 'win32') {
-      const pids = [...new Set([child.pid, ...inferiorPids])];
+      // Individual inferior PID/PGID validation is currently Linux-only.
+      const pids = [child.pid];
       this.cleanupComplete = true;
       for (const pid of pids) {
         const killed = await new Promise<boolean>((resolve) => {
@@ -327,14 +382,24 @@ export class GdbMiClient extends EventEmitter {
       }
       return;
     }
-    const groupIds = [child.pid, ...inferiorPids];
-    try { process.kill(-child.pid, 'SIGKILL'); } catch { try { child.kill('SIGKILL'); } catch { /* already reaped */ } }
-    for (const pid of inferiorPids) {
-      try { process.kill(-pid, 'SIGKILL'); } catch { try { process.kill(pid, 'SIGKILL'); } catch { /* already reaped */ } }
+    const verifiedInferiorPids: number[] = [];
+    for (const identity of identities) {
+      const current = await this.readProcStat(identity.pid);
+      if (current) {
+        if (current.startTicks !== identity.startTicks || current.pgid !== identity.pid) continue;
+      } else {
+        // The validated group leader may have exited while descendants remain.
+        // Only act when the previously validated PGID still exists.
+        try { process.kill(-identity.pid, 0); } catch { continue; }
+      }
+      verifiedInferiorPids.push(identity.pid);
+      try { process.kill(-identity.pid, 'SIGKILL'); } catch { /* group already gone */ }
     }
+    const groupIds = [child.pid, ...verifiedInferiorPids];
+    try { process.kill(-child.pid, 'SIGKILL'); } catch { try { child.kill('SIGKILL'); } catch { /* already reaped */ } }
     const deadline = Date.now() + 2_000;
     do {
-      if (!await this.posixTargetsAlive(groupIds, inferiorPids)) { this.cleanupComplete = true; return; }
+      if (!await this.posixTargetsAlive(groupIds, verifiedInferiorPids)) { this.cleanupComplete = true; return; }
       await new Promise(resolve => setTimeout(resolve, 20));
     } while (Date.now() < deadline);
     this.cleanupComplete = false;
