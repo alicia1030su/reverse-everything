@@ -369,8 +369,12 @@ def analyze(request: dict, worker_sha256: str, started_at: str, started: float) 
         if states_explored >= max_states or len(manager.active) + states_explored > max_states:
             truncated = True
             break
-        manager.step(find=reached_target)
-        newly_found = list(manager.stashes.get("found", []))
+        manager.step()
+        newly_found = [state for state in manager.active if reached_target(state)]
+        if newly_found:
+            found_ids = {id(state) for state in newly_found}
+            manager.active = [state for state in manager.active if id(state) not in found_ids]
+            manager.stashes["found"] = newly_found
         states_explored += len(manager.active) + len(newly_found) + len(manager.deadended)
         if time.monotonic() >= deadline:
             raise TimeoutError("symbolic analysis deadline exceeded")
