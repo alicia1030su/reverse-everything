@@ -20,6 +20,7 @@ describe('Ghidra release package layout', () => {
     expect(source).toContain("'packages/firmware'");
     expect(source).toContain("'packages/console'");
     expect(source).toContain("'packages/planner'");
+    expect(source).toContain("'packages/program-ir'");
     expect(source).toContain("'packages/game-revival'");
   });
 
@@ -28,12 +29,21 @@ describe('Ghidra release package layout', () => {
     const apiPackage = JSON.parse(await readFile('apps/api/package.json', 'utf8')) as { dependencies: Record<string, string> };
     const apiSources = await readdir('apps/api/src', { recursive: true });
     expect(source).toContain("'packages/autopilot'");
+    expect(source).toContain("'packages/program-ir'");
+    expect(source).toContain("'packages/program-semantics'");
     for (const file of apiSources.filter(file => String(file).endsWith('.ts'))) {
       const text = await readFile(path.join('apps/api/src', String(file)), 'utf8');
       for (const match of text.matchAll(/from '(@reverse\/[^']+)'/g)) {
         expect(apiPackage.dependencies[match[1]], `${file} imports ${match[1]}`).toBe('0.0.8');
       }
     }
+  });
+
+  it('declares and resolves Program IR as a core production dependency', async () => {
+    const corePackage = JSON.parse(await readFile('packages/core/package.json', 'utf8')) as { dependencies: Record<string, string> };
+    expect(corePackage.dependencies['@reverse/program-ir']).toBe('0.0.8');
+    const source = await readFile('scripts/package-runtime.mjs', 'utf8');
+    expect(source).toContain("'packages/program-ir'");
   });
 
   it('places the launcher at the path resolved by the desktop runtime adapter', async () => {

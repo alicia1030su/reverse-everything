@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 /** Model management V4. Secrets are held by the host application, never in profiles. */
 export const MODEL_ROLES = ['main','light','code','multimodal','reviewer','fallback'] as const;
 export type ModelRole = typeof MODEL_ROLES[number];
@@ -41,7 +42,8 @@ export interface ModelRequest {
 }
 export interface ModelResult {
   content:string; parsed?:unknown; providerId:string; model:string; usage:ModelUsage;
-  costUsd:number; attempts:number;
+  costUsd:number; attempts:number; requestId?:string; finishReason?:string;
+  usageSource:'provider'|'estimated'; responseSha256:string; refusal:boolean;
 }
 export interface ProviderPublicView extends Omit<ProviderProfile,'apiKeyRef'> {
   apiKeyRef?:string; hasApiKey:boolean;
@@ -155,6 +157,7 @@ export class ModelProviderService {
   private roleAssignments:RoleAssignments;
   private readonly budgets=new Map<string,Budget>();
   private readonly rateWindows=new Map<string,number[]>();
+  private readonly keyPresence=new Map<string,boolean>();
   constructor(options:{
     settings?:ModelProviderSettings; providers?:ProviderProfile[]; roleAssignments?:RoleAssignments;
     secretStore:SecretStore; settingsStore?:ModelProviderSettingsStore; fetchImpl?:FetchLike; now?:()=>number;
@@ -184,8 +187,9 @@ export class ModelProviderService {
   getUsage():{taskId:string;tokens:number;costUsd:number}[]{
     return [...this.budgets.entries()].map(([taskId,budget])=>({taskId,tokens:budget.tokens,costUsd:budget.costMicrousd/1_000_000})).sort((a,b)=>a.taskId.localeCompare(b.taskId));
   }
-  listProviders():ProviderPublicView[]{return this.publicProviders();}
-  private publicProviders():ProviderPublicView[]{return this.providers.map(({apiKeyRef,...profile})=>({...profile,...(apiKeyRef?{apiKeyRef}:{}),hasApiKey:Boolean(apiKeyRef)}));}
+  async listProviders():Promise<ProviderPublicView[]>{await this.refreshKeyPresence();return this.publicProviders();}
+  private async refreshKeyPresence():Promise<void>{for(const profile of this.providers){if(!profile.apiKeyRef){this.keyPresence.set(profile.id,false);continue;}try{this.keyPresence.set(profile.id,await this.secretStore.has(profile.apiKeyRef));}catch{this.keyPresence.set(profile.id,false);}}}
+  private publicProviders():ProviderPublicView[]{return this.providers.map(({apiKeyRef,...profile})=>({...profile,...(apiKeyRef?{apiKeyRef}:{}),hasApiKey:this.keyPresence.get(profile.id)??false}));}
   private async persist():Promise<void>{if(this.settingsStore)await this.settingsStore.save({...this.getSettings(),providers:this.providers});}
 
   async upsertProvider(profile:ProviderProfile):Promise<ProviderPublicView>{
@@ -194,7 +198,7 @@ export class ModelProviderService {
     const next={...profile,limits:normalizedLimits(profile.limits),createdAt:previous?.createdAt??profile.createdAt??nowIso(),updatedAt:nowIso()};
     this.providers=previous?this.providers.map(item=>item.id===profile.id?next:item):[...this.providers,next];
     await this.persist();
-    const view=this.listProviders().find(item=>item.id===profile.id);
+    const view=(await this.listProviders()).find(item=>item.id===profile.id);
     if(!view)throw new ModelProviderError('Provider was not saved','INTERNAL');
     return view;
   }
@@ -304,7 +308,7 @@ export class ModelProviderService {
         if(usage.totalTokens>maxTokens&&payload.promptTokens+maxTokens>profile.limits.maxTokensPerTask)throw new ModelProviderError('Task token budget exceeded','TOKEN_BUDGET_EXCEEDED');
         const parsed=request.schema?parseStructuredContent(content,request.schema):undefined;
         const costUsd=this.settle(taskId,profile,reserved,usage);
-        return {content,...(request.schema?{parsed}:{}),providerId:profile.id,model:profile.model,usage,costUsd,attempts:attempt+1};
+        return {content,...(request.schema?{parsed}:{}),providerId:profile.id,model:profile.model,usage,costUsd,attempts:attempt+1,...(payload.requestId?{requestId:payload.requestId}:{}),...(payload.finishReason?{finishReason:payload.finishReason}:{}),usageSource:payload.usageSource,responseSha256:payload.responseSha256,refusal:payload.refusal};
       }catch(error){lastError=safeError(error);if(!lastError.retryable||attempt===profile.limits.retries)break;}
     }
     this.release(taskId,reserved);
@@ -341,7 +345,7 @@ export class ModelProviderService {
       throw new ModelProviderError(redact(error instanceof Error?error.message:'Network error',[apiKey]),'NETWORK_ERROR',true);
     }finally{clearTimeout(timer);signal?.removeEventListener('abort',abort);}
   }
-  private async parseResponse(response:HttpLikeResponse,estimatedInputTokens:number,maxTokens:number):Promise<{content:string;promptTokens:number;completionTokens:number}>{
+  private async parseResponse(response:HttpLikeResponse,estimatedInputTokens:number,maxTokens:number):Promise<{content:string;promptTokens:number;completionTokens:number;requestId?:string;finishReason?:string;usageSource:'provider'|'estimated';responseSha256:string;refusal:boolean}>{
     const text=await response.text();
     let payload:unknown;
     try{payload=JSON.parse(text);}catch{throw new ModelProviderError('Provider returned non-JSON response','INVALID_RESPONSE',true);}
@@ -350,7 +354,10 @@ export class ModelProviderService {
     const choice=Array.isArray(data.choices)?data.choices[0] as Record<string,unknown>|undefined:undefined;
     const message=choice?.message as Record<string,unknown>|undefined;
     const content=typeof message?.content==='string'?message.content:'';
+    const refusal=message?.refusal===true||typeof message?.refusal==='string';
     const usage=(data.usage??(data.prompt_eval_count!==undefined?{prompt_tokens:data.prompt_eval_count,completion_tokens:data.eval_count}:undefined)) as Record<string,unknown>|undefined;
+    const requestId=typeof data.id==='string'?data.id:typeof data.request_id==='string'?data.request_id:undefined;
+    const finishReason=typeof choice?.finish_reason==='string'?choice.finish_reason:typeof data.done_reason==='string'?data.done_reason:undefined;
     const tokenCount=(value:unknown,fallback:number):number=>{
       if(value===undefined)return fallback;
       if(typeof value!=='number'||!Number.isSafeInteger(value)||value<0)throw new ModelProviderError('Invalid token usage','INVALID_RESPONSE');
@@ -360,7 +367,7 @@ export class ModelProviderService {
     const promptTokens=tokenCount(usage?.prompt_tokens!==undefined?usage.prompt_tokens:usage?.input_tokens,estimatedInputTokens);
     const completionTokens=tokenCount(usage?.completion_tokens!==undefined?usage.completion_tokens:usage?.output_tokens,maxTokens);
     if(!Number.isSafeInteger(promptTokens+completionTokens))throw new ModelProviderError('Invalid token usage','INVALID_RESPONSE');
-    return {content,promptTokens,completionTokens};
+    return {content,promptTokens,completionTokens,...(requestId?{requestId}:{}),...(finishReason?{finishReason}:{}),usageSource:usage?'provider':'estimated',responseSha256:createHash('sha256').update(text).digest('hex'),refusal};
   }
 
   /** Actively probes chat, streaming, tool calling and structured output; only successes are marked true. */

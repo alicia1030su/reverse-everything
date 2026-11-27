@@ -5,6 +5,7 @@ import path from 'node:path';
 import { pipeline } from 'node:stream/promises';
 import { fileURLToPath } from 'node:url';
 import { hashFile, verifyProvenanceDirectory } from './release-provenance.mjs';
+import { verifyV009CoreGateEvidence } from './check-v009-core-gate.mjs';
 
 const SHA256 = /^[0-9a-f]{64}$/i;
 const COMMIT = /^[0-9a-f]{40}$/i;
@@ -495,8 +496,15 @@ export async function verifyPublicAssets(release, expected) {
   }
 }
 
-async function publish(repo, tag, dir, commit, requestedReleaseId) {
+async function publish(repo, tag, dir, commit, requestedReleaseId, coreGate) {
   const { manifest, manifestSha256, expected } = await candidate(dir, tag, commit);
+  if (tag === 'v0.0.9') {
+    if (!coreGate?.report || !coreGate?.evidenceDir) throw new Error('v0.0.9 publish requires --core-gate-report and --core-gate-evidence-dir');
+    const report = JSON.parse(await readFile(path.resolve(coreGate.report), 'utf8'));
+    if (report.commit !== commit) throw new Error('v0.0.9 core acceptance commit does not match the release commit');
+    const errors = await verifyV009CoreGateEvidence(report, path.resolve(coreGate.evidenceDir), { manifestSha256 });
+    if (errors.length) throw new Error('v0.0.9 core gate failed:\n- ' + errors.join('\n- '));
+  }
   const state = await loadState(dir, tag, repo, commit, manifestSha256);
   const releaseId = requestedReleaseId ?? state?.releaseId;
   let release = await getRelease(repo, tag, releaseId);
@@ -540,7 +548,7 @@ async function main() {
     return;
   }
   if (!['ensure-draft', 'upload', 'verify-draft', 'verify-public', 'publish', 'prune-stale-drafts'].includes(command)) {
-    throw new Error('Usage: release-atomic.mjs <version|ensure-draft|upload|verify-draft|verify-public|publish|prune-stale-drafts> --dir <directory> --tag <tag> --commit <sha> [--repo owner/repo] [--release-id <id>]');
+    throw new Error('Usage: release-atomic.mjs <version|ensure-draft|upload|verify-draft|verify-public|publish|prune-stale-drafts> --dir <directory> --tag <tag> --commit <sha> [--repo owner/repo] [--release-id <id>] [--core-gate-report <acceptance.json> --core-gate-evidence-dir <directory>]');
   }
   const dir = path.resolve(required('dir'));
   const tag = required('tag');
@@ -584,7 +592,7 @@ async function main() {
   } else if (command === 'prune-stale-drafts') {
     await pruneStaleDrafts(repo, tag, dir, commit, process.argv.includes('--confirm-prune'));
   } else {
-    await publish(repo, tag, dir, commit, releaseId);
+    await publish(repo, tag, dir, commit, releaseId, { report: argument('core-gate-report'), evidenceDir: argument('core-gate-evidence-dir') });
   }
   });
 }

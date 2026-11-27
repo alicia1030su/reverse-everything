@@ -7,10 +7,13 @@ on:
     paths:
       - 'packages/core/src/adapters/ghidra.ts'
       - 'packages/core/src/index.ts'
+      - 'packages/core/package.json'
+      - 'packages/program-ir/**'
       - 'scripts/ghidra-analyze-headless.mjs'
       - 'scripts/verify-ghidra.mjs'
       - 'tests/fixtures/ghidra/**'
       - 'tests/unit/deep-adapters.test.ts'
+      - 'tests/unit/program-ir.test.ts'
       - 'tests/unit/ghidra-real.test.ts'
       - '.github/workflows/ghidra-v004.yml'
   workflow_dispatch:

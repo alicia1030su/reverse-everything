@@ -117,6 +117,16 @@ describe('autopilot planning and tools', () => {
 });
 
 describe('durable autopilot engine', () => {
+  it('enables JADX for the Android APK analyzer in the real Autopilot main chain', async () => {
+    const dataDir = await tempDir();
+    const apkPath = path.join(dataDir, 'sample.apk');
+    const { db, engine } = await replanTask(dataDir, [adapter('file'), adapter('apk')], 'Rebuild this Android APK as an independent app and deploy it', { authorizationConfirmed: true, materials: [apkPath], targetPlatform: 'Android', allowBuild: true });
+    await engine.run(engine.list()[0]!.id);
+    const row = db.raw.prepare("SELECT options_json FROM tasks WHERE adapter='apk'").get() as { options_json: string } | undefined;
+    expect(row).toBeDefined();
+    expect(JSON.parse(row!.options_json)).toMatchObject({ path: apkPath, apkDecompile: true });
+  });
+
   it('persists idempotent creation and rejects key reuse with another prompt', async () => {
     const dataDir = await tempDir(); const db = new Database(':memory:'); const project = db.project({ name: 'p', kind: 'website', authorizationConfirmed: true });
     const engine = new AutopilotEngine(db, { dataDir });

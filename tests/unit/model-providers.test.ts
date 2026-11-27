@@ -105,9 +105,18 @@ describe('ModelProviderService V4',()=>{
   it('never returns API keys in provider views or network errors',async()=>{
     const fetchImpl=vi.fn<FetchLike>().mockRejectedValue(new Error('failed with sk-super-secret'));
     const instance=service(fetchImpl);
-    expect(JSON.stringify(instance.listProviders())).not.toContain('sk-super-secret');
-    expect(instance.listProviders()[0]).toMatchObject({apiKeyRef:'key-1',hasApiKey:true});
+    expect(JSON.stringify(await instance.listProviders())).not.toContain('sk-super-secret');
+    expect((await instance.listProviders())[0]).toMatchObject({apiKeyRef:'key-1',hasApiKey:true});
     await expect(instance.complete({role:'main',taskId:'redact'})).rejects.toMatchObject({code:'ALL_PROVIDERS_FAILED'});
+  });
+
+  it('reports missing secrets honestly and records real response evidence',async()=>{
+    const missing=new ModelProviderService({providers:[profile()],secretStore:{get:async()=>null,set:async()=>{},delete:async()=>{},has:async()=>false}});
+    expect((await missing.listProviders())[0]).toMatchObject({hasApiKey:false});
+    const fetchImpl=vi.fn<FetchLike>().mockResolvedValue({ok:true,status:200,text:async()=>JSON.stringify({id:'req-1',choices:[{message:{content:'ok'},finish_reason:'stop'}],usage:{prompt_tokens:10,completion_tokens:5}})});
+    const result=await service(fetchImpl).complete({role:'main',taskId:'evidence',prompt:'x'});
+    expect(result).toMatchObject({requestId:'req-1',finishReason:'stop',usageSource:'provider',refusal:false});
+    expect(result.responseSha256).toMatch(/^[a-f0-9]{64}$/);
   });
 
   it('honors assigned role order and required multimodal capability',async()=>{

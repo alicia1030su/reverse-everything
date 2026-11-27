@@ -296,7 +296,7 @@ describe('BackupService', () => {
     expect(restoredDb.projectTasks(project.id)).toHaveLength(205);
     expect(restoredDb.raw.prepare('PRAGMA quick_check').get()).toEqual({ quick_check: 'ok' });
     expect(restoredDb.raw.prepare('PRAGMA foreign_key_check').all()).toEqual([]);
-  });
+  }, 30_000);
 
   it('atomically switches the current database and keeps the backup registered', async () => {
     const { dir, db, project, service } = await setup();

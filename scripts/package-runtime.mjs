@@ -20,7 +20,7 @@ await copyExclusive(path.join(root,'scripts/ghidra-analyze-headless.mjs'),path.j
 const rootPackage=JSON.parse(await readFile(path.join(root,'package.json'),'utf8'));
 const npmVersion=rootPackage.devDependencies?.npm;
 if(typeof npmVersion!=='string'||!/^\d+\.\d+\.\d+$/.test(npmVersion))throw new Error('npm must be an exact-version devDependency');
-const workspaceDirs=['apps/api','apps/worker','packages/core','packages/security','packages/workflow','packages/evidence','packages/ai','packages/contracts'];
+const workspaceDirs=['apps/api','apps/worker','packages/core','packages/program-ir','packages/security','packages/workflow','packages/evidence','packages/ai','packages/contracts'];
 const queue=[{name:'npm',from:root}];
 for(const dir of workspaceDirs){
   const pkg=JSON.parse(await readFile(path.join(root,dir,'package.json'),'utf8'));

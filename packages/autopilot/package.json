@@ -15,6 +15,8 @@
   "dependencies": {
     "@reverse/contracts": "0.0.8",
     "@reverse/evidence": "0.0.8",
+    "@reverse/program-ir": "0.0.8",
+    "@reverse/program-semantics": "0.0.8",
     "@reverse/workflow": "0.0.8"
   },
   "devDependencies": {
