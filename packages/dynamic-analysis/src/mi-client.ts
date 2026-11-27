@@ -1,11 +1,15 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { EventEmitter } from 'node:events';
 import { readdir, readFile } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
 import { asRecord, MiLineDecoder, type MiRecord, type MiValue } from './mi-parser.js';
 import { planInferiorCleanup, type InferiorGroupIdentity, type ProcessIdentity } from './process-identity.js';
 
+const PIDFD_HELPER = fileURLToPath(new URL('../../../scripts/pidfd_cleanup.py', import.meta.url));
+
 export interface GdbMiClientOptions {
   executable?: string;
+  pythonExecutable?: string;
   cwd?: string;
   env?: NodeJS.ProcessEnv;
   timeoutMs?: number;
@@ -73,12 +77,14 @@ export class GdbMiClient extends EventEmitter {
   private readonly inferiorValidations = new Set<Promise<void>>();
   private commandTimeoutMs: number;
   private readonly signal: AbortSignal | undefined;
+  private readonly pythonExecutable: string;
   private readonly abortListener: () => void;
 
   constructor(private readonly options: GdbMiClientOptions = {}) {
     super();
     this.commandTimeoutMs = options.timeoutMs ?? 15_000;
     this.signal = options.signal;
+    this.pythonExecutable = options.pythonExecutable ?? 'python3';
     this.abortListener = () => { const error = new GdbMiError('动态分析已取消', 'GDB_CANCELLED'); this.failAll(error); void this.close(error, true); };
     this.signal?.addEventListener('abort', this.abortListener, { once: true });
   }
@@ -180,20 +186,51 @@ export class GdbMiClient extends EventEmitter {
   }
 
   private async captureInferiorGroup(pid: number): Promise<void> {
-    if (process.platform !== 'linux') return;
+    if (process.platform !== 'linux' || !this.child?.pid) return;
     const initial = await this.readProcStat(pid);
-    if (!initial || initial.pgid !== pid || !await this.isDescendantOfGdb(pid)) return;
+    if (!initial || !await this.isDescendantOfGdb(pid)) return;
     const confirmed = await this.readProcStat(pid);
-    if (!confirmed || confirmed.startTicks !== initial.startTicks || confirmed.pgid !== pid) return;
+    if (!confirmed || confirmed.startTicks !== initial.startTicks || confirmed.pgid !== initial.pgid) return;
     const members = new Map<number, number>();
-    const currentMembers = await this.readProcGroupMembers(pid);
+    const currentMembers = await this.readProcGroupMembers(confirmed.pgid);
     if (currentMembers) {
       for (const member of currentMembers) {
-        if (await this.isDescendantOfGdb(member.pid)) members.set(member.pid, member.startTicks);
+        if (member.pid !== this.child.pid && await this.isDescendantOfGdb(member.pid)) members.set(member.pid, member.startTicks);
       }
     }
     if (!members.has(pid)) members.set(pid, confirmed.startTicks);
-    this.inferiorGroups.set(pid, { leaderPid: pid, leaderStartTicks: confirmed.startTicks, members, membersComplete: currentMembers !== undefined });
+    this.inferiorGroups.set(pid, { leaderPid: pid, leaderStartTicks: confirmed.startTicks, pgid: confirmed.pgid, gdbPid: this.child.pid, members, membersComplete: currentMembers !== undefined });
+  }
+
+  private async killVerifiedProcesses(targets: ProcessIdentity[]): Promise<{ killedPids: number[]; unresolved: boolean }> {
+    if (targets.length === 0) return { killedPids: [], unresolved: false };
+    return new Promise((resolve) => {
+      let settled = false;
+      let stdout = '';
+      let stderr = '';
+      const finish = (result: { killedPids: number[]; unresolved: boolean }): void => {
+        if (settled) return;
+        settled = true;
+        resolve(result);
+      };
+      const helper = spawn(this.pythonExecutable, [PIDFD_HELPER], { stdio: ['pipe', 'pipe', 'pipe'] });
+      helper.stdout.setEncoding('utf8');
+      helper.stderr.setEncoding('utf8');
+      helper.stdout.on('data', (chunk: string) => { if (stdout.length < 65_536) stdout += chunk.slice(0, 65_536 - stdout.length); });
+      helper.stderr.on('data', (chunk: string) => { if (stderr.length < 4_096) stderr += chunk.slice(0, 4_096 - stderr.length); });
+      helper.on('error', () => finish({ killedPids: [], unresolved: true }));
+      helper.on('close', (code) => {
+        try {
+          const parsed = JSON.parse(stdout) as { results?: Array<{ pid?: number; status?: string }> };
+          const results = Array.isArray(parsed.results) ? parsed.results : [];
+          const killedPids = results.filter(item => item.status === 'killed' && typeof item.pid === 'number').map(item => item.pid!);
+          const unresolved = code !== 0 || results.length !== targets.length || results.some(item => item.status !== 'killed' && item.status !== 'gone');
+          finish({ killedPids, unresolved });
+        } catch { finish({ killedPids: [], unresolved: true }); }
+      });
+      helper.stdin.on('error', () => finish({ killedPids: [], unresolved: true }));
+      helper.stdin.end(JSON.stringify({ targets }), 'utf8');
+    });
   }
 
   private consumeStderr(chunk: string): void {
@@ -353,30 +390,30 @@ export class GdbMiClient extends EventEmitter {
     await ensureKill();
   }
 
-  private async posixTargetsAlive(groupIds: number[], inferiorPids: number[]): Promise<boolean> {
-    const groups = new Set(groupIds);
-    const inferior = new Set(inferiorPids);
+  private async posixTargetsAlive(pids: number[]): Promise<boolean | undefined> {
+    const targets = new Set(pids);
+    if (targets.size === 0) return false;
     if (process.platform === 'linux') {
-      try {
-        const entries = await readdir('/proc');
-        for (const entry of entries) {
-          if (!/^\d+$/.test(entry)) continue;
-          const pid = Number(entry);
-          try {
-            const stat = await readFile(`/proc/${entry}/stat`, 'utf8');
-            const end = stat.lastIndexOf(')');
-            if (end < 0) continue;
-            const fields = stat.slice(end + 2).trim().split(/\s+/);
-            const state = fields[0];
-            const group = Number(fields[2]);
-            if (state !== 'Z' && (groups.has(group) || inferior.has(pid))) return true;
-          } catch { /* process exited while being inspected */ }
-        }
-        return false;
-      } catch { /* fall back to signal probes when /proc is unavailable */ }
+      let entries: string[];
+      try { entries = await readdir('/proc'); } catch { return undefined; }
+      for (const entry of entries) {
+        if (!/^\d+$/.test(entry)) continue;
+        const pid = Number(entry);
+        if (!targets.has(pid)) continue;
+        try {
+          const stat = await readFile(`/proc/${entry}/stat`, 'utf8');
+          const end = stat.lastIndexOf(')');
+          if (end < 0) return undefined;
+          const state = stat.slice(end + 2).trim().split(/\s+/)[0];
+          if (state !== 'Z') return true;
+        } catch { return undefined; }
+      }
+      return false;
     }
-    for (const group of groups) { try { process.kill(-group, 0); return true; } catch { /* group is gone */ } }
-    for (const pid of inferiorPids) { try { process.kill(pid, 0); return true; } catch { /* process is gone */ } }
+    for (const pid of targets) {
+      try { process.kill(pid, 0); return true; }
+      catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ESRCH') return undefined; }
+    }
     return false;
   }
 
@@ -399,38 +436,33 @@ export class GdbMiClient extends EventEmitter {
       return;
     }
     const groups = [...this.inferiorGroups.values()];
-    const trackedGroupIds: number[] = [];
     const killedMemberPids: number[] = [];
     let unresolved = false;
     for (const group of groups) {
-      trackedGroupIds.push(group.leaderPid);
-      const currentLeaderStat = await this.readProcStat(group.leaderPid);
-      const currentLeader: ProcessIdentity | undefined = currentLeaderStat
-        ? { pid: group.leaderPid, pgid: currentLeaderStat.pgid, startTicks: currentLeaderStat.startTicks }
-        : undefined;
-      const leaderMatches = currentLeader?.startTicks === group.leaderStartTicks && currentLeader.pgid === group.leaderPid;
-      const currentMembers = leaderMatches ? [] : await this.readProcGroupMembers(group.leaderPid);
-      if (!leaderMatches && currentMembers === undefined) { unresolved = true; continue; }
-      const plan = planInferiorCleanup(group, currentLeader, currentMembers ?? []);
-      for (const pgid of plan.killGroupPids) {
-        try { process.kill(-pgid, 'SIGKILL'); } catch { /* group already gone */ }
+      const currentMembers = await this.readProcGroupMembers(group.pgid);
+      if (currentMembers === undefined) { unresolved = true; continue; }
+      const currentLeader = await this.readProcStat(group.leaderPid);
+      if (currentLeader?.startTicks === group.leaderStartTicks && currentLeader.pgid === group.pgid) {
+        for (const member of currentMembers) {
+          if (member.pid === group.gdbPid || group.members.has(member.pid)) continue;
+          if (await this.isDescendantOfGdb(member.pid)) group.members.set(member.pid, member.startTicks);
+        }
+        group.membersComplete = true;
       }
-      for (const pid of plan.killMemberPids) {
-        const current = await this.readProcStat(pid);
-        if (!current) continue;
-        if (current.startTicks !== group.members.get(pid) || current.pgid !== group.leaderPid) { unresolved = true; continue; }
-        try { process.kill(pid, 'SIGKILL'); killedMemberPids.push(pid); } catch { /* already exited */ }
-      }
-      if (plan.unresolved) unresolved = true;
+      const plan = planInferiorCleanup(group, currentMembers);
+      const targets = plan.killMemberPids.map(pid => ({ pid, pgid: group.pgid, startTicks: group.members.get(pid)! }));
+      const killed = await this.killVerifiedProcesses(targets);
+      killedMemberPids.push(...killed.killedPids);
+      if (killed.unresolved || plan.unresolved) unresolved = true;
     }
-    const groupIds = [child.pid, ...trackedGroupIds];
-    try { process.kill(-child.pid, 'SIGKILL'); } catch { try { child.kill('SIGKILL'); } catch { /* already reaped */ } }
+    if (child.exitCode === null && child.signalCode === null) {
+      try { child.kill('SIGKILL'); } catch { /* already reaped */ }
+    }
     const deadline = Date.now() + 2_000;
     do {
-      if (!await this.posixTargetsAlive(groupIds, killedMemberPids)) {
-        this.cleanupComplete = !unresolved;
-        return;
-      }
+      const alive = await this.posixTargetsAlive(killedMemberPids);
+      if (alive === undefined) { this.cleanupComplete = false; return; }
+      if (!alive) { this.cleanupComplete = !unresolved; return; }
       await new Promise(resolve => setTimeout(resolve, 20));
     } while (Date.now() < deadline);
     this.cleanupComplete = false;
