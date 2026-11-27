@@ -60,7 +60,10 @@ def main() -> int:
             current = proc_stat(pid)
             if current is None:
                 results.append({"pid": pid, "status": "gone"})
-            elif current != (pgid, start_ticks):
+            elif current[1] != start_ticks:
+                # The pidfd already pins the process object. The process may
+                # legitimately change PGID after the fd was opened; only the
+                # creation identity must remain stable.
                 results.append({"pid": pid, "status": "mismatch"})
             else:
                 signal.pidfd_send_signal(fd, signal.SIGKILL, None, 0)

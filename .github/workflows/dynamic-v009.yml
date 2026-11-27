@@ -7,6 +7,7 @@ on:
       - 'tests/fixtures/dynamic/**'
       - 'tests/unit/dynamic-analysis.test.ts'
       - 'scripts/verify-dynamic.mjs'
+      - 'scripts/pidfd_cleanup.py'
       - '.github/workflows/dynamic-v009.yml'
       - 'package.json'
       - 'package-lock.json'
@@ -17,6 +18,7 @@ on:
       - 'tests/fixtures/dynamic/**'
       - 'tests/unit/dynamic-analysis.test.ts'
       - 'scripts/verify-dynamic.mjs'
+      - 'scripts/pidfd_cleanup.py'
       - '.github/workflows/dynamic-v009.yml'
       - 'package.json'
       - 'package-lock.json'
@@ -42,6 +44,8 @@ jobs:
       - run: npm ci
       - run: npm run build
       - run: npx vitest run tests/unit/dynamic-analysis.test.ts
+      - name: Verify pidfd cleanup identity contract
+        run: python3 -m unittest tests/fixtures/dynamic/test_pidfd_cleanup.py
       - name: Verify with real GDB in isolated network namespace
         run: sudo unshare --net -- "$(command -v node)" scripts/verify-dynamic.mjs
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

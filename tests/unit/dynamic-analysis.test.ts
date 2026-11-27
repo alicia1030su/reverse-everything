@@ -95,13 +95,22 @@ describe('inferior process identity planning', () => {
   it('does not mistake an incomplete member snapshot for an empty group', () => {
     expect(planInferiorCleanup({ ...group, membersComplete: false }, [])).toEqual({ killMemberPids: [], unresolved: true });
   });
+
+  it('still reaps identity-verified members when the group snapshot is incomplete', () => {
+    expect(planInferiorCleanup({ ...group, membersComplete: false }, [{ pid: 100, pgid: 100, startTicks: 10 }, { pid: 101, pgid: 200, startTicks: 20 }]))
+      .toEqual({ killMemberPids: [100, 101], unresolved: true });
+  });
 });
 
 describe('GDB MI client', () => {
-  async function withLinuxPlatform(run: () => Promise<void>): Promise<void> {
+  async function withPlatform(platform: string, run: () => Promise<void>): Promise<void> {
     const descriptor = Object.getOwnPropertyDescriptor(process, 'platform')!;
-    Object.defineProperty(process, 'platform', { value: 'linux' });
+    Object.defineProperty(process, 'platform', { value: platform });
     try { await run(); } finally { Object.defineProperty(process, 'platform', descriptor); }
+  }
+
+  async function withLinuxPlatform(run: () => Promise<void>): Promise<void> {
+    await withPlatform('linux', run);
   }
 
   it('persists unknown process observations as failed cleanup', async () => {
@@ -165,6 +174,41 @@ describe('GDB MI client', () => {
       secondInternals.readProcAllProcesses = async () => [];
       await secondInternals.ensureCleanup();
       expect(second.cleanupSucceeded).toBe(false);
+    });
+  });
+
+  it('does not claim descendant cleanup success on non-Linux POSIX after an inferior runs', async () => {
+    await withPlatform('darwin', async () => {
+      const client = new GdbMiClient();
+      const internals = client as unknown as {
+        child: { pid: number; exitCode: number; signalCode: null };
+        inferiorCandidates: Map<string, number>;
+        ensureCleanup(): Promise<void>;
+      };
+      internals.child = { pid: 50, exitCode: 0, signalCode: null };
+      internals.inferiorCandidates.set('i1', 100);
+      await internals.ensureCleanup();
+      expect(client.cleanupSucceeded).toBe(false);
+    });
+  });
+
+  it('fails closed when an inferior notification arrives after cleanup starts', async () => {
+    await withLinuxPlatform(async () => {
+      const client = new GdbMiClient();
+      const internals = client as unknown as {
+        child: { pid: number; exitCode: number; signalCode: null };
+        closed: boolean;
+        ensureCleanup(): Promise<void>;
+        readProcAllProcesses(): Promise<unknown[] | undefined>;
+        handleRecord(record: unknown): void;
+      };
+      internals.child = { pid: 50, exitCode: 0, signalCode: null };
+      internals.closed = true;
+      internals.readProcAllProcesses = async () => [];
+      const cleanup = internals.ensureCleanup();
+      internals.handleRecord({ kind: 'notify', status: 'thread-group-started', value: { id: 'i1', pid: '100' } });
+      await cleanup;
+      expect(client.cleanupSucceeded).toBe(false);
     });
   });
 

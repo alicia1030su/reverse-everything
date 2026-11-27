@@ -33,11 +33,11 @@ export function planInferiorCleanup(
   group: InferiorGroupIdentity,
   currentMembers: readonly ProcessIdentity[],
 ): InferiorCleanupPlan {
-  if (!group.membersComplete) return { killMemberPids: [], unresolved: true };
-
   const observed = new Map(currentMembers.map(member => [member.pid, member]));
   const killMemberPids: number[] = [];
-  let unresolved = false;
+  // An incomplete group snapshot prevents proving that no unknown members
+  // remain, but it must not block cleanup of identities already verified.
+  let unresolved = !group.membersComplete;
   // Membership is tied to PID + start time, not to the original PGID: a live
   // inferior may call setsid()/setpgid() after its identity was captured.
   for (const [pid, startTicks] of group.members) {

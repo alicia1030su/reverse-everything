@@ -331,6 +331,9 @@ export class GdbMiClient extends EventEmitter {
       if (id && typeof value?.pid === 'string' && /^\d+$/.test(value.pid)) {
         const pid = Number(value.pid);
         this.inferiorCandidates.set(id, pid);
+        // Closing is the cleanup barrier. A late notification must not start an
+        // untracked asynchronous capture after the member snapshot was taken.
+        if (this.closed) { this.markCaptureObservationFailed(); return; }
         const validation = this.captureInferiorGroup(pid).then(() => undefined).catch(() => { this.markCaptureObservationFailed(); });
         this.inferiorValidations.add(validation);
         void validation.finally(() => this.inferiorValidations.delete(validation));
@@ -517,6 +520,9 @@ export class GdbMiClient extends EventEmitter {
       killedMemberPids.push(...killed.killedPids);
       if (killed.unresolved || plan.unresolved) unresolved = true;
     }
+    // Non-Linux POSIX lacks the pidfd identity guard used above. Once an
+    // inferior was observed, descendant cleanup cannot be proven here.
+    if (process.platform !== 'linux' && this.inferiorCandidates.size > 0) this.cleanupComplete = false;
     if (child.exitCode === null && child.signalCode === null) {
       try { child.kill('SIGKILL'); } catch { /* already reaped */ }
     }

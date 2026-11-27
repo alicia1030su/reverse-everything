@@ -149,7 +149,7 @@ export class DynamicAnalysisEngine {
       else limitations.push('网络隔离未启用；不得在此模式执行不受信任样本。');
       limitations.push('隔离根目录仅约束工作目录与私有二进制快照，不限制样本的文件系统、进程或系统调用；必须在可信授权样本或外层操作系统沙箱中运行。');
       limitations.push('GDB/MI 与 inferior 共享输出通道，文本/MI 归属为 best-effort 分流，不能证明协议完整性；严格隔离场景应使用外层 PTY 或操作系统沙箱。');
-      if (process.platform !== 'linux') limitations.push('进程树强制回收在 Windows 使用 taskkill，在 POSIX 使用进程组；inferior 成员身份验证与 pidfd 清理目前仅 Linux 可用，非 Linux 平台没有内核级禁网。');
+      if (process.platform !== 'linux') limitations.push('进程树强制回收在 Windows 使用 taskkill；inferior 成员身份验证与 pidfd 清理目前仅 Linux 可用，其他 POSIX 平台启动过 inferior 时无法确认后代已回收，非 Linux 平台没有内核级禁网。');
       const env: NodeJS.ProcessEnv = {};
       for (const key of ENV_WHITELIST) if (request.env?.[key] !== undefined) env[key] = request.env[key]; else if (process.env[key] !== undefined) env[key] = process.env[key];
       // Do not inherit debugger, dynamic-loader or language-runtime injection variables.
