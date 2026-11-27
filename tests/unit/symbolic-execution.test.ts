@@ -142,6 +142,14 @@ describe('symbolic execution worker contract', () => {
     expect(result.error).toContain('Invalid symbolic worker response');
   });
 
+  it('preserves worker error diagnostics instead of masking them as digest mismatches', async () => {
+    const engine = new SymbolicExecutionEngine({ pythonExecutable: 'python3', workerPath });
+    const result = await engine.analyze(request('worker-error'));
+    expect(result.status).toBe('error');
+    expect(result.error).toContain('deterministic worker diagnostic');
+    expect(result.error).not.toContain('digest');
+  });
+
   it('rejects output for a different binary', async () => {
     const engine = new SymbolicExecutionEngine({ pythonExecutable: 'python3', workerPath });
     const result = await engine.analyze(request('mismatched'));
