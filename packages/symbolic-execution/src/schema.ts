@@ -10,6 +10,14 @@ export const SYMBOLIC_LIMITS = Object.freeze({
   maxAddressHistory: 4_096,
 });
 
+const PARTIAL_REASONS = new Set(['state-budget', 'path-budget', 'evidence-truncated', 'native-verification']);
+const PARTIAL_LIMITATION: Record<string, RegExp> = {
+  'state-budget': /path\/state budget|exploration is not exhaustive/i,
+  'path-budget': /path\/state budget|exploration is not exhaustive/i,
+  'evidence-truncated': /constraint or address-history evidence was truncated/i,
+  'native-verification': /one or more solved inputs did not reproduce/i,
+};
+
 function record(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -84,13 +92,30 @@ export function validateSymbolicResult(value: unknown, maxOutputBytes: number): 
     if (!record(input) || !text(input.pathId, 256) || !pathIds.has(input.pathId) || !value.paths.some(path => record(path) && path.id === input.pathId && path.reachedTarget === true) || !hex(input.inputHex) || !base64(input.inputBase64)) throw new Error('Invalid solved symbolic input');
     if (input.inputHex.length % 2 !== 0 || Buffer.from(input.inputHex, 'hex').toString('base64') !== input.inputBase64) throw new Error('Solved input encodings disagree');
     if (!record(input.execution) || !(input.execution.exitCode === null || integer(input.execution.exitCode, 0, 255)) || typeof input.execution.verified !== 'boolean' || typeof input.execution.timedOut !== 'boolean' || !optionalText(input.execution.stdout, 65_536) || !optionalText(input.execution.stderr, 65_536)) throw new Error('Invalid execution evidence');
-    for (const flag of ['stdoutTruncated', 'stderrTruncated', 'outputLimitExceeded']) if (input.execution[flag] !== undefined && typeof input.execution[flag] !== 'boolean') throw new Error('Invalid execution output limit evidence');
-    if (input.execution.verified === true && (input.execution.timedOut === true || input.execution.outputLimitExceeded === true || input.execution.stdoutTruncated === true)) throw new Error('Truncated or timed-out execution cannot be verified');
+    for (const flag of ['stdoutTruncated', 'stderrTruncated', 'outputLimitExceeded', 'terminatedBySignal']) if (input.execution[flag] !== undefined && typeof input.execution[flag] !== 'boolean') throw new Error('Invalid execution output limit evidence');
+    if (input.execution.verified === true && (input.execution.timedOut === true || input.execution.outputLimitExceeded === true || input.execution.stdoutTruncated === true || input.execution.terminatedBySignal === true)) throw new Error('Truncated, signalled or timed-out execution cannot be verified');
   }
   if (!record(value.solver) || !text(value.solver.name, 128) || !text(value.solver.version, 128)) throw new Error('Invalid solver provenance');
   if (!record(value.stats) || !integer(value.stats.statesExplored, 0, SYMBOLIC_LIMITS.maxStates) || !integer(value.stats.pathsFound, 0, SYMBOLIC_LIMITS.maxPaths) || !integer(value.stats.elapsedMs, 0, SYMBOLIC_LIMITS.maxTimeoutMs)) throw new Error('Invalid symbolic statistics');
   if (value.stats.pathsFound !== value.paths.length) throw new Error('Path count is inconsistent');
+  if (value.stats.maxStates !== undefined && !integer(value.stats.maxStates, 1, SYMBOLIC_LIMITS.maxStates)) throw new Error('Invalid symbolic maxStates');
+  if (value.stats.maxPaths !== undefined && !integer(value.stats.maxPaths, 1, SYMBOLIC_LIMITS.maxPaths)) throw new Error('Invalid symbolic maxPaths');
+  if (!optionalCount(value.stats.activeStates)) throw new Error('Invalid symbolic activeStates');
   if (!strings(value.limitations, 256, 8_192)) throw new Error('Invalid limitations');
+  const partialReasons = value.partialReasons;
+  if (partialReasons !== undefined && (!Array.isArray(partialReasons) || partialReasons.length > PARTIAL_REASONS.size || partialReasons.some(reason => typeof reason !== 'string' || !PARTIAL_REASONS.has(reason)) || new Set(partialReasons).size !== partialReasons.length)) throw new Error('Invalid symbolic partialReasons');
+  if (value.status === 'partial' && (!Array.isArray(partialReasons) || partialReasons.length === 0)) throw new Error('Partial symbolic result requires explicit partialReasons');
+  if (value.status !== 'partial' && Array.isArray(partialReasons) && partialReasons.length > 0) throw new Error('Only partial symbolic results may include partialReasons');
+  const evidenceTruncated = value.paths.some(path => record(path) && (path.constraintsTruncated === true || path.historyTruncated === true || (Array.isArray(path.constraints) && path.constraints.some(constraint => record(constraint) && constraint.truncated === true))));
+  const nativeUnverified = value.solvedInputs.some(input => record(input.execution) && input.execution.verified !== true);
+  const stateBudget = typeof value.stats.maxStates === 'number' && typeof value.stats.activeStates === 'number' && (value.stats.statesExplored >= value.stats.maxStates || value.stats.activeStates > value.stats.maxStates - value.stats.statesExplored);
+  const pathBudget = typeof value.stats.maxPaths === 'number' && value.paths.length >= value.stats.maxPaths;
+  if (value.status === 'completed' && (evidenceTruncated || nativeUnverified || stateBudget || pathBudget)) throw new Error('Completed analysis cannot contain partial conditions');
+  if (Array.isArray(partialReasons)) for (const reason of partialReasons) {
+    const actual = reason === 'state-budget' ? stateBudget : reason === 'path-budget' ? pathBudget : reason === 'evidence-truncated' ? evidenceTruncated : nativeUnverified;
+    if (!actual) throw new Error(`Symbolic partial reason does not match result evidence: ${reason}`);
+    if (!value.limitations.some(item => typeof item === 'string' && PARTIAL_LIMITATION[reason]!.test(item))) throw new Error(`Symbolic partial reason lacks a matching limitation: ${reason}`);
+  }
   if (!record(value.provenance)) throw new Error('Missing provenance');
   for (const field of ['binaryPath', 'binarySha256', 'workerSha256', 'pythonVersion', 'angrVersion', 'requestedAt', 'completedAt']) {
     if (!text(value.provenance[field], field === 'binaryPath' ? 4_096 : 512)) throw new Error(`Missing provenance.${field}`);

@@ -170,6 +170,24 @@ print(json.dumps(result))`;
     expect(result.verified).toBe(false);
   });
 
+  it.skipIf(process.platform === 'win32')('converts native SIGTERM cancellation into bounded execution evidence', () => {
+    const worker = fileURLToPath(new URL('../../scripts/symbolic_execute.py', import.meta.url));
+    const script = `import importlib.util,json,os,signal,sys,threading,time
+spec=importlib.util.spec_from_file_location("symbolic_worker", sys.argv[1])
+module=importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
+module.install_native_signal_handlers()
+def terminate():
+    time.sleep(0.2)
+    os.kill(os.getpid(), signal.SIGTERM)
+threading.Thread(target=terminate, daemon=True).start()
+result=module.execute_binary(sys.executable, b"", None, 5, ["-c", "import time;time.sleep(10)"])
+print(json.dumps(result))`;
+    const result = JSON.parse(execFileSync('python3', ['-c', script, worker], { encoding: 'utf8' })) as { terminatedBySignal: boolean; verified: boolean; timedOut: boolean };
+    expect(result.terminatedBySignal).toBe(true);
+    expect(result.verified).toBe(false);
+    expect(result.timedOut).toBe(false);
+  });
+
   it('handles partial concrete input and bounds constraint evidence', () => {
     const worker = fileURLToPath(new URL('../../scripts/symbolic_execute.py', import.meta.url));
     const script = `import importlib.util,sys
@@ -189,6 +207,9 @@ assert len(included) == 16 and included[0]["truncated"] is True
 assert meta["constraintsTruncated"] is True and meta["constraintCount"] == 513
 assert meta["constraintsIncluded"] == 16 and meta["constraintsOmitted"] == 497
 assert meta["constraintChars"] == 64000 and meta["constraintCharsTotal"] == 513*5000
+assert module.state_budget_allows(10, 0, 10)
+assert not module.state_budget_allows(11, 0, 10)
+assert not module.state_budget_allows(1, 10, 10)
 history, hmeta = module.history_evidence(list(range(4097)))
 assert len(history) == 4096 and hmeta["historyTruncated"] is True
 assert hmeta["historyCount"] == 4097 and hmeta["historyOmitted"] == 1
@@ -207,16 +228,27 @@ print("ok")`;
   it('rejects unverified evidence promoted to completed status', () => {
     const engine = new SymbolicExecutionEngine({ pythonExecutable: 'python3', workerPath });
     return engine.analyze(request('schema-source')).then(result => {
-      expect(() => validateSymbolicResult({ ...result, solvedInputs: [{ ...result.solvedInputs[0]!, execution: { ...result.solvedInputs[0]!.execution, verified: false } }] }, 10_000)).toThrow('verified');
+      expect(() => validateSymbolicResult({ ...result, solvedInputs: [{ ...result.solvedInputs[0]!, execution: { ...result.solvedInputs[0]!.execution, verified: false } }] }, 10_000)).toThrow(/verified|partial conditions/);
     });
   });
 
-  it('requires partial status when path evidence is truncated', async () => {
+  it('requires explicit and matching partial reasons', async () => {
     const engine = new SymbolicExecutionEngine({ pythonExecutable: 'python3', workerPath });
     const result = await engine.analyze(request('schema-source'));
     const path = { ...result.paths[0]!, constraintsTruncated: true, constraintCount: 1, constraintsIncluded: 1, constraintsOmitted: 0, constraintChars: 1, constraintCharsTotal: 1 };
+    const limitations = [...result.limitations, 'Constraint or address-history evidence was truncated; see per-path truncation metadata.'];
     expect(() => validateSymbolicResult({ ...result, paths: [path] }, 10_000)).toThrow('truncated evidence');
-    expect(() => validateSymbolicResult({ ...result, status: 'partial', paths: [path] }, 10_000)).not.toThrow();
-    expect(() => validateSymbolicResult({ ...result, status: 'partial', paths: [{ ...path, constraintsOmitted: 1 }] }, 10_000)).toThrow('omission count');
+    expect(() => validateSymbolicResult({ ...result, status: 'partial', paths: [path], limitations }, 10_000)).toThrow('requires explicit partialReasons');
+    expect(() => validateSymbolicResult({ ...result, status: 'partial', partialReasons: ['evidence-truncated'], paths: [path], limitations }, 10_000)).not.toThrow();
+    expect(() => validateSymbolicResult({ ...result, status: 'partial', partialReasons: ['evidence-truncated'], paths: [path], limitations: result.limitations }, 10_000)).toThrow('matching limitation');
+    expect(() => validateSymbolicResult({ ...result, status: 'partial', partialReasons: ['state-budget'], paths: [path], limitations }, 10_000)).toThrow('does not match');
+    expect(() => validateSymbolicResult({ ...result, status: 'partial', partialReasons: ['evidence-truncated'], paths: [{ ...path, constraintsOmitted: 1 }], limitations }, 10_000)).toThrow('omission count');
+  });
+
+  it('rejects verified native evidence terminated by signal', async () => {
+    const engine = new SymbolicExecutionEngine({ pythonExecutable: 'python3', workerPath });
+    const result = await engine.analyze(request('schema-source'));
+    const execution = { ...result.solvedInputs[0]!.execution, terminatedBySignal: true };
+    expect(() => validateSymbolicResult({ ...result, solvedInputs: [{ ...result.solvedInputs[0]!, execution }] }, 10_000)).toThrow('signalled');
   });
 });
