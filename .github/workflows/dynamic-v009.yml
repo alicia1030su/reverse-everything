@@ -1,0 +1,52 @@
+name: dynamic-v009
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'packages/dynamic-analysis/**'
+      - 'tests/fixtures/dynamic/**'
+      - 'tests/unit/dynamic-analysis.test.ts'
+      - 'scripts/verify-dynamic.mjs'
+      - '.github/workflows/dynamic-v009.yml'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'tsconfig.json'
+  pull_request:
+    paths:
+      - 'packages/dynamic-analysis/**'
+      - 'tests/fixtures/dynamic/**'
+      - 'tests/unit/dynamic-analysis.test.ts'
+      - 'scripts/verify-dynamic.mjs'
+      - '.github/workflows/dynamic-v009.yml'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'tsconfig.json'
+permissions:
+  contents: read
+jobs:
+  dynamic:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22.18.0'
+          cache: npm
+      - name: Install pinned GDB and compiler
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends gdb=15.0.50.20240403-0ubuntu1 gcc
+          gdb --version
+          gcc --version
+      - run: npm ci
+      - run: npm run build
+      - run: npx vitest run tests/unit/dynamic-analysis.test.ts
+      - name: Verify with real GDB in isolated network namespace
+        run: sudo unshare --net -- "$(command -v node)" scripts/verify-dynamic.mjs
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: dynamic-v009-evidence
+          path: artifacts/dynamic-v009/
+          if-no-files-found: error
