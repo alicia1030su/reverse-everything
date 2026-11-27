@@ -145,6 +145,22 @@ describe('GDB MI client', () => {
     await client.close();
     expect(client.exited).toBe(true);
   });
+  it.skipIf(process.platform === 'win32')('reaps descendants left in an inferior separate process group', async () => {
+    const root = await temporaryRoot();
+    const marker = path.join(root, 'separate-group-child.pid');
+    const client = new GdbMiClient({ executable: process.execPath, timeoutMs: 5_000, spawnProcess: (_command, args, options) => spawn(process.execPath, [fakeGdb, ...args], { ...options, env: { ...options.env, FAKE_GDB_MODE: 'separate-group-orphan', FAKE_GDB_CHILD_PID_FILE: marker } }) });
+    await client.start();
+    await client.execute('-file-exec-and-symbols', 'x');
+    await client.execute('-exec-run');
+    const deadline = Date.now() + 5_000;
+    while (Date.now() < deadline) {
+      try { await readFile(marker, 'utf8'); break; } catch { await new Promise(resolve => setTimeout(resolve, 20)); }
+    }
+    const pid = Number(await readFile(marker, 'utf8'));
+    expect(Number.isSafeInteger(pid) && pid > 1).toBe(true);
+    await client.close(undefined, true);
+    expect(await pidAlive(pid)).toBe(false);
+  }, 10_000);
   it.skipIf(process.platform === 'win32')('force-kills an uncooperative GDB tree and settles pending commands', async () => {
     const root = await temporaryRoot();
     const marker = path.join(root, 'child.pid');
