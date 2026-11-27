@@ -40,20 +40,29 @@ function parseFrame(value: MiValue | undefined): DynamicFrame | undefined {
 }
 function addressKey(value: string): bigint | undefined { try { return /^0x[0-9a-f]+$/i.test(value) ? BigInt(value) : undefined; } catch { return undefined; } }
 function parseThreads(value: MiValue | undefined): DynamicThread[] {
-  return asList(asRecord(value)?.['threads']).flatMap((item) => asList(asRecord(item)?.['threads'])).flatMap((item): DynamicThread[] => {
-    const record = asRecord(item);
-    const id = field(record, 'id');
-    if (!record || !id) return [];
-    const frame = parseFrame(record.frame);
-    return [{ id, current: record.current === 'true', ...(frame ? { frame } : {}) }];
+  const record = asRecord(value);
+  const currentId = field(record, 'current-thread-id');
+  const entries = asList(record?.['threads']).flatMap((item) => {
+    const nested = asRecord(item)?.['threads'];
+    return asList(nested).length > 0 ? asList(nested) : [item];
+  });
+  return entries.flatMap((item): DynamicThread[] => {
+    const thread = asRecord(item);
+    const id = field(thread, 'id');
+    if (!thread || !id) return [];
+    const frame = parseFrame(thread.frame);
+    return [{ id, current: thread.current === 'true' || id === currentId, ...(frame ? { frame } : {}) }];
   });
 }
-function parseRegisters(value: MiValue | undefined): Record<string, string> {
+function parseRegisterNames(value: MiValue | undefined): string[] {
+  return asList(asRecord(value)?.['register-names']).flatMap((item) => typeof item === 'string' ? [item] : []);
+}
+function parseRegisters(value: MiValue | undefined, names: string[] = []): Record<string, string> {
   const result: Record<string, string> = {};
   for (const item of asList(asRecord(value)?.['register-values'])) {
     const register = asRecord(item);
-    const name = field(register, 'name');
     const raw = field(register, 'value');
+    const name = field(register, 'name') ?? names[Number(field(register, 'number'))];
     if (register && name && raw !== undefined) result[name] = raw;
   }
   return result;
@@ -149,11 +158,16 @@ export class DynamicAnalysisEngine {
         onRecord: (record) => {
           if (record.kind === 'raw') { addEvent({ type: 'output', data: { channel: 'inferior-raw', text: record.value } }); return; }
           if (record.kind !== 'stream' || record.channel !== 'console') return;
-          const match = /^\s*(0x[0-9a-f]+)\s+(0x[0-9a-f]+)(?:\s+(0x[0-9a-f]+))?\s+(\S.*)$/i.exec(record.value.trim());
+          const match = /^\s*(0x[0-9a-f]+)\s+(0x[0-9a-f]+)\s+(0x[0-9a-f]+)\s+(.+)$/i.exec(record.value.trim());
           if (!match) return;
           const from = BigInt(match[1]!); const to = BigInt(match[2]!);
-          const size = match[3] ? BigInt(match[3]) : to - from + 1n;
-          consoleModules.push({ from: match[1]!, to: match[2]!, size: Number(size), name: match[4]!.trim() });
+          const size = BigInt(match[3]!);
+          const remainder = match[4]!.trim();
+          const first = remainder.split(/\s+/, 1)[0]!;
+          // `info proc mappings` has an offset column before the objfile name;
+          // older `info modules` output does not.
+          const name = /^0x[0-9a-f]+$/i.test(first) ? remainder.slice(first.length).trim() : remainder;
+          if (name) consoleModules.push({ from: match[1]!, to: match[2]!, size: Number(size), name });
         },
         onOutput: (_text, bytes) => { outputBytes += bytes; },
         onLimit: () => { truncated = true; limitations.push('GDB 原始输出达到 maxOutputBytes 限额，分析提前终止。'); },
@@ -181,8 +195,8 @@ export class DynamicAnalysisEngine {
         const frame = parseFrame(stopped?.frame);
         const programFunction = inferProgramFunction(frame, frame?.address);
         addEvent({ type: 'breakpoint', threadId, ...(frame ? { frame } : {}), ...(frame?.address ? { address: frame.address } : {}), data: { reason: field(stopped, 'reason') ?? 'stopped', ...(programFunction ?? {}) } });
-        const [threadValue, stackValue, registerValue] = await Promise.all([
-          client!.execute('-thread-info'), client!.execute('-stack-list-frames'), client!.execute('-data-list-register-values', 'x'),
+        const [threadValue, stackValue, registerNamesValue, registerValue] = await Promise.all([
+          client!.execute('-thread-info'), client!.execute('-stack-list-frames'), client!.execute('-data-list-register-names'), client!.execute('-data-list-register-values', 'x'),
         ]);
         for (const thread of parseThreads(threadValue)) threads.set(thread.id, thread);
         addEvent({ type: 'thread', threadId, data: { threads: [...threads.values()] } });
@@ -192,9 +206,9 @@ export class DynamicAnalysisEngine {
         if (current) { const breakpointEvent = [...events].reverse().find((event) => event.type === 'breakpoint'); if (breakpointEvent) { breakpointEvent.frame = current; if (current.address) breakpointEvent.address = current.address; } }
         if (correlated) { const breakpointEvent = [...events].reverse().find((event) => event.type === 'breakpoint'); if (breakpointEvent) breakpointEvent.data = { ...(breakpointEvent.data as Record<string, unknown>), ...correlated }; }
         addEvent({ type: 'stack', threadId, ...(current ? { frame: current } : {}), data: { frames: stack, ...(correlated ?? {}) } });
-        const registers = parseRegisters(registerValue);
+        const registers = parseRegisters(registerValue, parseRegisterNames(registerNamesValue));
         addEvent({ type: 'register', threadId, registers });
-        await client!.execute('-interpreter-exec', 'console', 'info modules');
+        await client!.execute('-interpreter-exec', 'console', 'info proc mappings');
         for (const module of consoleModules) modules.set(`${module.from ?? ''}:${module.name}`, module);
         addEvent({ type: 'module', data: { modules: [...modules.values()] } });
       };

@@ -51,12 +51,18 @@ readline.createInterface({ input: process.stdin }).on('line', async (line) => {
     process.stdout.write(`${id}^running\n*running,thread-id="all"\n(gdb) `);
     running = false;
     setTimeout(() => process.stdout.write('*stopped,reason="exited-normally"\n(gdb) '), 5);
-  } else if (command === '-thread-info') process.stdout.write(`${id}^done,threads=[current-thread-id="1",threads=[{id="1",frame={level="0",addr="0x401136",func="main"},state="stopped"},{id="2",frame={level="0",addr="0x401140",func="worker"},state="running"}]]\n(gdb) `);
+  } else if (command === '-thread-info') process.stdout.write(`${id}^done,threads=[{id="1",frame={level="0",addr="0x401136",func="main"},state="stopped"},{id="2",frame={level="0",addr="0x401140",func="worker"},state="running"}],current-thread-id="1"\n(gdb) `);
   else if (command === '-stack-list-frames') process.stdout.write(`${id}^done,stack=[frame={level="0",addr="0x401136",func="main",file="sample.c",line="15"},frame={level="1",addr="0x401200",func="worker"}]\n(gdb) `);
-  else if (command === '-data-list-register-values') process.stdout.write(`${id}^done,register-values=[{number="0",name="rip",value="0x401136"},{number="1",name="rax",value="0x2"}]\n(gdb) `);
+  else if (command === '-data-list-register-names') process.stdout.write(`${id}^done,register-names=["rip","rax"]\n(gdb) `);
+  else if (command === '-data-list-register-values') process.stdout.write(`${id}^done,register-values=[{number="0",value="0x401136"},{number="1",value="0x2"}]\n(gdb) `);
   else if (command === '-interpreter-exec') {
-    process.stdout.write('~"0x0000000000401000 0x0000000000402000 0x0000000000001000 /sample\\n"\n');
-    process.stdout.write('~"0x00007ffff7c00000 0x00007ffff7c01000 /lib/libc.so\\n"\n');
+    if (payload.includes('info proc mappings')) {
+      process.stdout.write('~"0x0000000000401000 0x0000000000402000 0x0000000000001000 0x0 /sample\\n"\n');
+      process.stdout.write('~"0x00007ffff7c00000 0x00007ffff7c01000 0x0000000000001001 0x0 /lib/libc.so\\n"\n');
+    } else {
+      process.stdout.write('~"0x0000000000401000 0x0000000000402000 0x0000000000001000 /sample\\n"\n');
+      process.stdout.write('~"0x00007ffff7c00000 0x00007ffff7c01000 /lib/libc.so\\n"\n');
+    }
     process.stdout.write(`${id}^done\n(gdb) `);
   } else if (command === '-gdb-exit') { process.stdin.destroy(); process.exit(0); }
   else process.stdout.write(`${id}^error,msg="unsupported fake command"\n(gdb) `);
