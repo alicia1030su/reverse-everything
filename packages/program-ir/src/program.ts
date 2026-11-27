@@ -65,7 +65,11 @@ export function assertProgramIr(program: ProgramIr, options: { allowPartial?: bo
     requireRef(program.functions, instruction.functionId, 'instruction function');
     const block = requireRef(program.blocks, instruction.blockId, 'instruction block');
     if (!block.instructionIds.includes(instruction.id)) throw new ProgramIrError(`Instruction ${instruction.id} is missing from its block`);
-    if (!partial && (!instruction.pcode || instruction.pcode.length === 0)) throw new ProgramIrError(`Instruction ${instruction.id} has no P-Code evidence`);
+    if (!partial && instruction.pcodeStatus === 'available' && (!instruction.pcode || instruction.pcode.length === 0)) throw new ProgramIrError(`Instruction ${instruction.id} has no P-Code evidence`);
+    if (!partial && instruction.pcodeStatus === 'unavailable') {
+      if (!program.limitations.some(item => item.includes('P-Code was unavailable'))) throw new ProgramIrError(`Instruction ${instruction.id} has undisclosed unavailable P-Code`);
+      if (!instruction.evidenceIds.some(id => program.evidence.find(item => item.id === id)?.kind === 'UNKNOWN')) throw new ProgramIrError(`Instruction ${instruction.id} lacks UNKNOWN P-Code evidence`);
+    }
     for (const id of instruction.evidenceIds) requireRef(program.evidence, id, 'instruction evidence');
   }
   for (const call of program.calls) {

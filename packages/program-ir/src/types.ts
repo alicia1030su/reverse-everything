@@ -1,6 +1,7 @@
 export type EvidenceKind = 'EVIDENCE' | 'INFERENCE' | 'UNKNOWN' | 'VERIFIED';
 export type VariableKind = 'parameter' | 'local' | 'global';
 export type DataKind = 'string' | 'pointer' | 'integer' | 'bytes' | 'unknown';
+export type PcodeStatus = 'available' | 'unavailable';
 
 export interface EvidenceRef {
   id: string;
@@ -18,6 +19,7 @@ export interface InstructionIr {
   mnemonic: string;
   bytes?: string;
   pcode?: string[];
+  pcodeStatus: PcodeStatus;
   evidenceIds: string[];
 }
 

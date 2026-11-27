@@ -74,6 +74,18 @@ describe('Program IR', () => {
     expect(() => assertProgramIr(badFunction)).toThrow(/inconsistent ownership/);
   });
 
+  it('records unavailable P-Code as UNKNOWN instead of inventing semantics', async () => {
+    const metadata = await fixture();
+    metadata.functions[0]!.blocks![0]!.instructions![0]!.pcode = [];
+    metadata.functions[0]!.blocks![0]!.instructions![0]!.pcodeStatus = 'unavailable';
+    const program = ghidraMetadataToProgram(metadata, 'fixture');
+    assertProgramIr(program);
+    const instruction = program.instructions[0]!;
+    expect(instruction.pcodeStatus).toBe('unavailable');
+    expect(program.evidence.find(item => item.id === instruction.evidenceIds[1])?.kind).toBe('UNKNOWN');
+    expect(program.limitations.join(' ')).toContain('P-Code was unavailable');
+  });
+
   it('classifies bodyless Ghidra functions as unanalyzed instead of inventing CFG', async () => {
     const metadata = await fixture();
     metadata.functions.push({ name: 'external_stub', entry: '0x00105000', body: '0x00105000', thunk: false, external: false, blocks: [] });

@@ -8,7 +8,7 @@ import type { TaskContext } from '@reverse/workflow';
 import { defineAdapter, limitedRead, noReconstruction, output, uploadPath } from './base.js';
 
 export interface GhidraVariable { name:string; dataType:string; kind:'parameter'|'local'|'global'; storage?:string; parameterIndex?:number }
-export interface GhidraInstruction { address:string; mnemonic:string; bytes?:string; pcode?:string[] }
+export interface GhidraInstruction { address:string; mnemonic:string; bytes?:string; pcode?:string[]; pcodeStatus?:'available'|'unavailable' }
 export interface GhidraBlock { start:string; end:string; successors:string[]; predecessors:string[]; instructions:GhidraInstruction[] }
 export interface GhidraFunction { name:string; entry:string; body:string; thunk:boolean; external:boolean; signature?:string; callingConvention?:string; returnType?:string; parameters?:GhidraVariable[]; locals?:GhidraVariable[]; blocks?:GhidraBlock[] }
 export interface GhidraDecompiledFunction { name:string; entry:string; pseudocode:string }
@@ -162,7 +162,9 @@ public class ExportMetadata extends GhidraScript {
       if (encodedBytes.length() > 0) encodedBytes.append(' ');
       encodedBytes.append(String.format("%02x", value & 0xff));
     }
-    return "{\"address\":" + a(instruction.getAddress()) + ",\"mnemonic\":" + q(instruction.getMnemonicString()) + ",\"bytes\":" + q(encodedBytes.toString()) + ",\"pcode\":" + pcode + "}";
+    String pcodeStatus = operations != null && operations.length > 0 ? "available" : "unavailable";
+    if ("unavailable".equals(pcodeStatus) && !limitations.contains("P-Code was unavailable for one or more instructions")) limitations.add("P-Code was unavailable for one or more instructions");
+    return "{\"address\":" + a(instruction.getAddress()) + ",\"mnemonic\":" + q(instruction.getMnemonicString()) + ",\"bytes\":" + q(encodedBytes.toString()) + ",\"pcode\":" + pcode + ",\"pcodeStatus\":" + q(pcodeStatus) + "}";
   }
   private String addressList(Address[] addresses, int cap) {
     StringBuilder out = new StringBuilder("[");
@@ -495,7 +497,7 @@ function metadataCount(value:unknown,fallback:number,limit:number,label:string):
 function record(value:unknown):value is Record<string,unknown>{return Boolean(value&&typeof value==='object'&&!Array.isArray(value));}
 function stringArray(value:unknown):value is string[]{return Array.isArray(value)&&value.every(item=>typeof item==='string');}
 function ghidraVariable(value:unknown,kind:GhidraVariable['kind']):value is GhidraVariable{return record(value)&&typeof value.name==='string'&&typeof value.dataType==='string'&&value.kind===kind&&(value.storage===undefined||typeof value.storage==='string')&&(value.parameterIndex===undefined||(Number.isSafeInteger(value.parameterIndex)&&(value.parameterIndex as number)>=0));}
-function ghidraInstruction(value:unknown):value is GhidraInstruction{return record(value)&&typeof value.address==='string'&&typeof value.mnemonic==='string'&&(value.bytes===undefined||typeof value.bytes==='string')&&(value.pcode===undefined||stringArray(value.pcode));}
+function ghidraInstruction(value:unknown):value is GhidraInstruction{return record(value)&&typeof value.address==='string'&&typeof value.mnemonic==='string'&&(value.bytes===undefined||typeof value.bytes==='string')&&(value.pcode===undefined||stringArray(value.pcode))&&(value.pcodeStatus===undefined||value.pcodeStatus==='available'||value.pcodeStatus==='unavailable');}
 function ghidraBlock(value:unknown):value is GhidraBlock{return record(value)&&typeof value.start==='string'&&typeof value.end==='string'&&stringArray(value.successors)&&stringArray(value.predecessors)&&Array.isArray(value.instructions)&&value.instructions.every(ghidraInstruction);}
 function ghidraStructuredFunction(value:unknown):value is GhidraFunction {
   if(!record(value)||typeof value.name!=='string'||typeof value.entry!=='string'||typeof value.body!=='string'||typeof value.thunk!=='boolean'||typeof value.external!=='boolean')return false;
@@ -544,7 +546,8 @@ async function readMetadata(file:string,maxBytes:number):Promise<GhidraMetadata>
       for(const instruction of block.instructions){
         if(instructionCount>=MAX_GHIDRA_INSTRUCTIONS||instructions.length>=128){structuredTruncated=true;break;}
         const pcode=instruction.pcode?.slice(0,MAX_GHIDRA_PCODE).map(bounded);if(pcode&&pcode.length<(instruction.pcode?.length??0))structuredTruncated=true;
-        instructions.push({address:bounded(instruction.address),mnemonic:bounded(instruction.mnemonic),...(instruction.bytes===undefined?{}:{bytes:bounded(instruction.bytes)}),...(pcode===undefined?{}:{pcode})});instructionCount++;
+        const pcodeStatus=instruction.pcodeStatus??(pcode&&pcode.length>0?'available':'unavailable');
+        instructions.push({address:bounded(instruction.address),mnemonic:bounded(instruction.mnemonic),...(instruction.bytes===undefined?{}:{bytes:bounded(instruction.bytes)}),...(pcode===undefined?{}:{pcode}),pcodeStatus});instructionCount++;
       }
       blocks.push({start:bounded(block.start),end:bounded(block.end),successors:block.successors.slice(0,512).map(bounded),predecessors:block.predecessors.slice(0,512).map(bounded),instructions});blockCount++;
     }

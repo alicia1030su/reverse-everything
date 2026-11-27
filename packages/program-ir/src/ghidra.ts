@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import type { BasicBlockIr, CallSiteIr, DataItemIr, EvidenceRef, FunctionIr, InstructionIr, ProgramIr, ProgramProvenance, VariableIr, XrefIr } from './types.js';
 
-export interface GhidraInstructionInput { address: string; mnemonic: string; bytes?: string; pcode?: string[] }
+export interface GhidraInstructionInput { address: string; mnemonic: string; bytes?: string; pcode?: string[]; pcodeStatus?: 'available' | 'unavailable' }
 export interface GhidraBlockInput { start: string; end: string; successors: string[]; predecessors?: string[]; instructions?: GhidraInstructionInput[] }
 export interface GhidraVariableInput { name: string; dataType: string; kind: 'parameter' | 'local' | 'global'; storage?: string; parameterIndex?: number }
 export interface GhidraFunctionInput {
@@ -97,8 +97,16 @@ export function ghidraMetadataToProgram(metadata: GhidraProgramInput, id = `ghid
         if (instructionIds.has(iId)) throw new Error(`Duplicate instruction identity: ${iId}`);
         instructionIds.add(iId);
         const instructionEvidenceId = evidenceId(`${id}:instruction:${iId}`);
-        instructions.push({ id: iId, functionId: fn.id, blockId: bId, address: at, mnemonic: rawInstruction.mnemonic, evidenceIds: [instructionEvidenceId], ...(rawInstruction.bytes !== undefined ? { bytes: rawInstruction.bytes } : {}), ...(rawInstruction.pcode !== undefined ? { pcode: rawInstruction.pcode.slice(0, 256) } : {}) });
+        const pcodeStatus = rawInstruction.pcodeStatus ?? (rawInstruction.pcode && rawInstruction.pcode.length > 0 ? 'available' : 'unavailable');
+        const instructionEvidenceIds = [instructionEvidenceId];
+        instructions.push({ id: iId, functionId: fn.id, blockId: bId, address: at, mnemonic: rawInstruction.mnemonic, pcodeStatus, evidenceIds: instructionEvidenceIds, ...(rawInstruction.bytes !== undefined ? { bytes: rawInstruction.bytes } : {}), ...(rawInstruction.pcode !== undefined ? { pcode: rawInstruction.pcode.slice(0, 256) } : {}) });
         addEvidence({ id: instructionEvidenceId, kind: 'EVIDENCE', source: 'ghidra', locator: `instruction:${iId}`, summary: `Ghidra decoded ${rawInstruction.mnemonic} at ${at} in ${fn.name}` });
+        if (pcodeStatus === 'unavailable') {
+          const pcodeEvidenceId = evidenceId(`${id}:pcode-unavailable:${iId}`);
+          instructionEvidenceIds.push(pcodeEvidenceId);
+          addEvidence({ id: pcodeEvidenceId, kind: 'UNKNOWN', source: 'ghidra', locator: `pcode:${iId}`, summary: `Ghidra did not provide P-Code for ${rawInstruction.mnemonic} at ${at}` });
+          limitations.add('P-Code was unavailable for one or more instructions');
+        }
         block.instructionIds.push(iId);
       }
       blocks.push(block); fn.blockIds.push(bId);
