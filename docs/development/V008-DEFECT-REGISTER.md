@@ -26,5 +26,6 @@
 | V008-020 | P1 | Linux 候选演示包使用 GNU tar 解包 ZIP，导致冻结验收失败 | Release Run `45967220100` 的 `package:demos` 在首个干净解包步骤报 `tar: This does not look like a tar archive`；Windows tar 支持 ZIP 掩盖了缺陷 | Linux/macOS 使用系统 `unzip`、Windows 使用系统 `tar`；使用纯 JavaScript ZIP 写入器新增真实解包回归；完整演示包默认安装/测试/启动验收通过 | VERIFIED |
 | V008-021 | P2 | 报告页 E2E 标题选择器在 Windows 可访问性树中匹配两个标题 | PR #21 CI Run `45970023110` 的 `web-v005.spec.ts:92` strict mode violation：`分析报告` 同时匹配 `通俗分析报告` | 页面主标题断言增加 `exact: true`，保留原可见性与后续视图切换/导出断言；目标用例单独重跑 1/1 | VERIFIED |
 | V008-022 | P2 | Windows 慢速 runner 上重建取消测试的 mock 信号等待仍为默认 1 秒 | 主线 CI Run `45974788337` 的 `game-revival.test.ts:134` 在文件写入后尚未进入 mock 即超时 | 等待上限统一为 10 秒；保留取消、输出清理、数据库可用与关闭后禁写断言；目标用例重跑 1/1 | VERIFIED |
+| V008-023 | P1 | 独立 Server 包缺少 Autopilot 工作区包，干净安装后 API 无法启动 | Release Run `45979697375` 的干净 Server smoke 报 `ERR_MODULE_NOT_FOUND: @reverse/autopilot`；API 清单也未声明该直接依赖 | Server 归档加入 `packages/autopilot`；API 清单补齐全部直接 `@reverse/*` 依赖并同步锁文件；新增打包拓扑回归；干净安装与健康检查通过 | VERIFIED |
 
 > 本表在 Phase 0 独立审计后追加全部可复现缺陷；不得用删除测试或降低断言关闭缺陷。V008-003 为外部凭证阻塞的 OPEN P2，不影响 P0/P1 清零判定，但不得宣称真实远程模型已验证。
