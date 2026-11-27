@@ -158,7 +158,7 @@ describe('GDB MI client', () => {
     }
     const pid = Number(await readFile(marker, 'utf8'));
     expect(Number.isSafeInteger(pid) && pid > 1).toBe(true);
-    await client.close(undefined, true);
+    await client.close();
     expect(await pidAlive(pid)).toBe(false);
   }, 10_000);
   it.skipIf(process.platform === 'win32')('force-kills an uncooperative GDB tree and settles pending commands', async () => {
