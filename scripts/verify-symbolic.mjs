@@ -42,6 +42,7 @@ if (result.status === 'partial') {
     'path-budget': /path\/state budget|exploration is not exhaustive/i,
     'evidence-truncated': /constraint or address-history evidence was truncated/i,
     'native-verification': /one or more solved inputs did not reproduce/i,
+    'output-budget': /response exceeded its budget|path records were omitted/i,
   };
   for (const reason of result.partialReasons) assert.ok(result.limitations.some(item => limitationByReason[reason]?.test(item)), `partial reason lacks matching limitation: ${reason}`);
 }

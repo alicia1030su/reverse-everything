@@ -170,6 +170,34 @@ print(json.dumps(result))`;
     expect(result.verified).toBe(false);
   });
 
+  it('degrades oversized worker responses with an explicit output-budget reason', () => {
+    const worker = fileURLToPath(new URL('../../scripts/symbolic_execute.py', import.meta.url));
+    const script = `import importlib.util,json,sys
+spec=importlib.util.spec_from_file_location("symbolic_worker", sys.argv[1])
+module=importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
+result={
+ "schemaVersion":1,"status":"completed",
+ "paths":[{"id":"large","targetAddress":"0x401000","addressHistory":["0x401000"]*4096,
+ "constraints":[{"expression":"x"*4000} for _ in range(512)],
+ "constraintsTruncated":False,"constraintCount":512,"constraintsIncluded":512,"constraintsOmitted":0,
+ "constraintChars":512*4000,"constraintCharsTotal":512*4000,
+ "historyTruncated":False,"historyCount":4096,"historyIncluded":4096,"historyOmitted":0,
+ "historyChars":4096*8,"historyCharsTotal":4096*8,
+ "satisfiable":True,"reachedTarget":True,"statesExplored":1}],
+ "solvedInputs":[],"solver":{"name":"angr/claripy/Z3","version":"4.13.0"},
+ "stats":{"statesExplored":1,"pathsFound":1,"elapsedMs":1,"maxStates":100000,"maxPaths":256,"activeStates":0},
+ "limitations":[],"provenance":{"binaryPath":"x","binarySha256":"1"*64,"workerSha256":"2"*64,"pythonVersion":"3","angrVersion":"9","requestedAt":"x","completedAt":"x"}}
+print(json.dumps(module.bounded_response(result)))`;
+    const bounded = JSON.parse(execFileSync('python3', ['-c', script, worker], { encoding: 'utf8', maxBuffer: 4_000_000 })) as Record<string, unknown>;
+    expect(bounded.status).toBe('partial');
+    expect(bounded.partialReasons).toEqual(['output-budget']);
+    expect(bounded.outputBudgetExceeded).toBe(true);
+    expect(bounded.paths).toEqual([]);
+    expect(Buffer.byteLength(JSON.stringify(bounded))).toBeLessThanOrEqual(2_097_152);
+    expect(() => validateSymbolicResult(bounded, 3_000_000)).not.toThrow();
+    expect(() => validateSymbolicResult({ ...bounded, status: 'completed', partialReasons: [] }, 3_000_000)).toThrow('partial conditions');
+  });
+
   it.skipIf(process.platform === 'win32')('converts native SIGTERM cancellation into bounded execution evidence', () => {
     const worker = fileURLToPath(new URL('../../scripts/symbolic_execute.py', import.meta.url));
     const script = `import importlib.util,json,os,signal,sys,threading,time

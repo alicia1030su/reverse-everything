@@ -71,12 +71,13 @@ export interface SolvedSymbolicInput {
   execution: SymbolicExecution;
 }
 
-export type SymbolicPartialReason = 'state-budget' | 'path-budget' | 'evidence-truncated' | 'native-verification';
+export type SymbolicPartialReason = 'state-budget' | 'path-budget' | 'evidence-truncated' | 'native-verification' | 'output-budget';
 
 export interface SymbolicAnalysisResult {
   schemaVersion: 1;
   status: 'completed' | 'partial' | 'timeout' | 'cancelled' | 'error' | 'unauthorized';
   partialReasons?: SymbolicPartialReason[];
+  outputBudgetExceeded?: boolean;
   paths: SymbolicPath[];
   solvedInputs: SolvedSymbolicInput[];
   solver: { name: string; version: string };

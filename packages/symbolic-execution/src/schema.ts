@@ -10,12 +10,13 @@ export const SYMBOLIC_LIMITS = Object.freeze({
   maxAddressHistory: 4_096,
 });
 
-const PARTIAL_REASONS = new Set(['state-budget', 'path-budget', 'evidence-truncated', 'native-verification']);
+const PARTIAL_REASONS = new Set(['state-budget', 'path-budget', 'evidence-truncated', 'native-verification', 'output-budget']);
 const PARTIAL_LIMITATION: Record<string, RegExp> = {
   'state-budget': /path\/state budget|exploration is not exhaustive/i,
   'path-budget': /path\/state budget|exploration is not exhaustive/i,
   'evidence-truncated': /constraint or address-history evidence was truncated/i,
   'native-verification': /one or more solved inputs did not reproduce/i,
+  'output-budget': /response exceeded its budget|path records were omitted/i,
 };
 
 function record(value: unknown): value is Record<string, unknown> {
@@ -103,6 +104,7 @@ export function validateSymbolicResult(value: unknown, maxOutputBytes: number): 
   if (!optionalCount(value.stats.activeStates)) throw new Error('Invalid symbolic activeStates');
   if (!strings(value.limitations, 256, 8_192)) throw new Error('Invalid limitations');
   const partialReasons = value.partialReasons;
+  if (value.outputBudgetExceeded !== undefined && typeof value.outputBudgetExceeded !== 'boolean') throw new Error('Invalid symbolic outputBudgetExceeded');
   if (partialReasons !== undefined && (!Array.isArray(partialReasons) || partialReasons.length > PARTIAL_REASONS.size || partialReasons.some(reason => typeof reason !== 'string' || !PARTIAL_REASONS.has(reason)) || new Set(partialReasons).size !== partialReasons.length)) throw new Error('Invalid symbolic partialReasons');
   if (value.status === 'partial' && (!Array.isArray(partialReasons) || partialReasons.length === 0)) throw new Error('Partial symbolic result requires explicit partialReasons');
   if (value.status !== 'partial' && Array.isArray(partialReasons) && partialReasons.length > 0) throw new Error('Only partial symbolic results may include partialReasons');
@@ -110,9 +112,10 @@ export function validateSymbolicResult(value: unknown, maxOutputBytes: number): 
   const nativeUnverified = value.solvedInputs.some(input => record(input.execution) && input.execution.verified !== true);
   const stateBudget = typeof value.stats.maxStates === 'number' && typeof value.stats.activeStates === 'number' && (value.stats.statesExplored >= value.stats.maxStates || value.stats.activeStates > value.stats.maxStates - value.stats.statesExplored);
   const pathBudget = typeof value.stats.maxPaths === 'number' && value.paths.length >= value.stats.maxPaths;
-  if (value.status === 'completed' && (evidenceTruncated || nativeUnverified || stateBudget || pathBudget)) throw new Error('Completed analysis cannot contain partial conditions');
+  const outputBudget = value.outputBudgetExceeded === true;
+  if (value.status === 'completed' && (evidenceTruncated || nativeUnverified || stateBudget || pathBudget || outputBudget)) throw new Error('Completed analysis cannot contain partial conditions');
   if (Array.isArray(partialReasons)) for (const reason of partialReasons) {
-    const actual = reason === 'state-budget' ? stateBudget : reason === 'path-budget' ? pathBudget : reason === 'evidence-truncated' ? evidenceTruncated : nativeUnverified;
+    const actual = reason === 'state-budget' ? stateBudget : reason === 'path-budget' ? pathBudget : reason === 'evidence-truncated' ? evidenceTruncated : reason === 'output-budget' ? outputBudget : nativeUnverified;
     if (!actual) throw new Error(`Symbolic partial reason does not match result evidence: ${reason}`);
     if (!value.limitations.some(item => typeof item === 'string' && PARTIAL_LIMITATION[reason]!.test(item))) throw new Error(`Symbolic partial reason lacks a matching limitation: ${reason}`);
   }
