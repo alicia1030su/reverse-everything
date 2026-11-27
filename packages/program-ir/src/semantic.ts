@@ -23,6 +23,14 @@ export function inferSemanticHypotheses(program: ProgramIr): SemanticHypothesis[
     for (const rule of RULES) {
       if (!rule.pattern.test(fn.pseudocode)) continue;
       const evidenceIds = [functionEvidence];
+      for (const blockId of fn.blockIds) {
+        const block = program.blocks.find(item => item.id === blockId);
+        evidenceIds.push(...(block?.evidenceIds ?? []));
+        for (const instructionId of block?.instructionIds ?? []) {
+          const instruction = program.instructions.find(item => item.id === instructionId);
+          evidenceIds.push(...(instruction?.evidenceIds ?? []));
+        }
+      }
       hypotheses.push({ id: `hyp:${createHash('sha256').update(`${fn.id}:${rule.kind}`).digest('hex').slice(0, 24)}`, functionId: fn.id, kind: rule.kind, summary: rule.summary, confidence: rule.confidence, kindEvidence: 'INFERENCE', evidenceIds: [...new Set(evidenceIds)], falsification: rule.falsification });
     }
   }

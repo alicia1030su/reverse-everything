@@ -14,7 +14,7 @@ function outputFor(programId: string, functionId: string, evidenceId: string) {
 
 describe('Semantic Reverse Engineering Engine', () => {
   it('produces evidence-grounded inference from bounded Program IR', async () => {
-    const ir = await program(); const fn = ir.functions.find(item => item.name === 'sum_bytes')!; const evidenceId = fn.evidenceIds[0]!;
+    const ir = await program(); const fn = ir.functions.find(item => item.name === 'sum_bytes')!; const evidenceId = ir.instructions.find(item => item.functionId === fn.id)!.evidenceIds[0]!;
     let received = '';
     const complete: SemanticCompletionPort = async request => {
       received = request.prompt;
@@ -39,8 +39,15 @@ describe('Semantic Reverse Engineering Engine', () => {
     await expect(new SemanticReverseEngineeringEngine(badEvidence).analyzeFunction(ir, fn.id)).rejects.toThrow(/unavailable evidence/);
   });
 
+  it('rejects unsupported network claims even when they cite a real instruction', async () => {
+    const ir = await program(); const fn = ir.functions.find(item => item.name === 'sum_bytes')!; const evidenceId = ir.instructions.find(item => item.functionId === fn.id)!.evidenceIds[0]!;
+    const content = JSON.stringify({ functionId: fn.id, purpose: 'x', variables: [], behaviors: [{ description: 'Calls socket/connect and sends environment variables', kind: 'network-io', confidence: 0.99, evidenceIds: [evidenceId] }], hypotheses: [], architectureNotes: '', unknowns: [] });
+    const complete: SemanticCompletionPort = async () => ({ content, providerId: 'test', model: 'fake', usage: { promptTokens: 1, completionTokens: 1, totalTokens: 2 }, invocation: 'test-double', completedAt: '2026-11-27T00:00:00.000Z' });
+    await expect(new SemanticReverseEngineeringEngine(complete).analyzeFunction(ir, fn.id)).rejects.toThrow(/not supported/);
+  });
+
   it('does not accept inconsistent usage totals', async () => {
-    const ir = await program(); const fn = ir.functions.find(item => item.name === 'sum_bytes')!; const evidenceId = fn.evidenceIds[0]!;
+    const ir = await program(); const fn = ir.functions.find(item => item.name === 'sum_bytes')!; const evidenceId = ir.instructions.find(item => item.functionId === fn.id)!.evidenceIds[0]!;
     const complete: SemanticCompletionPort = async () => ({ content: outputFor(ir.id, fn.id, evidenceId), providerId: 'test', model: 'fake', usage: { promptTokens: 2, completionTokens: 1, totalTokens: 4 }, invocation: 'real', completedAt: '2026-11-27T00:00:00.000Z' });
     await expect(new SemanticReverseEngineeringEngine(complete).analyzeFunction(ir, fn.id)).rejects.toThrow(/usage totals/);
   });

@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { assertProgramIr, type ProgramIr } from '@reverse/program-ir';
 import type { SemanticCompletionPort, SemanticModelRequest, SemanticModelResult } from '@reverse/program-semantics';
 import type { ModelProviderService } from './providers.js';
@@ -5,6 +6,7 @@ import type { ModelProviderService } from './providers.js';
 /** Adapts the real HTTP provider service to the evidence-strict semantic engine port. */
 export function createSemanticCompletionPort(service: ModelProviderService, taskId = 'program-semantics'): SemanticCompletionPort {
   return async (request: SemanticModelRequest): Promise<SemanticModelResult> => {
+    const clientRequestId = randomUUID();
     const result = await service.complete({
       role: 'main', taskId, system: request.system, prompt: request.prompt, maxTokens: request.maxTokens,
       requiredCapabilities: ['structuredOutput'], ...(request.signal ? { signal: request.signal } : {}),
@@ -12,7 +14,7 @@ export function createSemanticCompletionPort(service: ModelProviderService, task
     return {
       content: result.content, providerId: result.providerId, model: result.model, usage: result.usage,
       invocation: 'real', completedAt: new Date().toISOString(),
-      requestId: result.requestId ?? `response:${result.responseSha256}`,
+      requestId: result.requestId ?? `client:${clientRequestId}`,
       ...(result.finishReason ? { finishReason: result.finishReason } : {}),
       usageSource: result.usageSource, responseSha256: result.responseSha256, refusal: result.refusal,
     };

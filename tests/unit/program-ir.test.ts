@@ -23,7 +23,7 @@ describe('Program IR', () => {
     const program = ghidraMetadataToProgram(await fixture(), 'fixture');
     const query = new ProgramQuery(program);
     const context = query.context('sum_bytes');
-    expect(context.fn.id).toBe('fn:0x101000');
+    expect(context.fn.id).toMatch(/^fn:[a-f0-9]{16}:0x101000$/);
     expect(context.variables.map(variable => variable.name)).toEqual(['data', 'length', 'sum']);
     expect(context.callees).toHaveLength(0);
     expect(context.callers.map(fn => fn.name)).toEqual(['main']);
@@ -46,11 +46,40 @@ describe('Program IR', () => {
   it('keeps legacy flat metadata compatible and reports absent structure', async () => {
     const metadata = await fixture();
     const program = ghidraMetadataToProgram({ ...metadata, functions: metadata.functions.map(({ blocks: _blocks, parameters: _parameters, locals: _locals, ...fn }) => fn), globals: [], xrefs: [] }, 'legacy');
-    assertProgramIr(program);
+    assertProgramIr(program, { allowPartial: true });
     expect(program.blocks).toHaveLength(0);
     expect(program.instructions).toHaveLength(0);
     expect(program.limitations).toContain('Ghidra export did not contain control-flow blocks');
     expect(program.limitations).toContain('Ghidra export did not contain instruction or P-Code records');
+  });
+
+  it('binds program and function identity to the analyzed content', async () => {
+    const metadata = await fixture();
+    const changed = structuredClone(metadata);
+    changed.functions[0]!.blocks![0]!.instructions![0]!.bytes = 'ffffff';
+    const first = ghidraMetadataToProgram(metadata);
+    const second = ghidraMetadataToProgram(changed);
+    expect(first.id).not.toBe(second.id);
+    expect(first.functions[0]!.id).not.toBe(second.functions[0]!.id);
+    expect(first.evidence[0]!.id).not.toBe(second.evidence[0]!.id);
+  });
+
+  it('requires complete provenance and rejects dangling evidence references', async () => {
+    const program = ghidraMetadataToProgram(await fixture(), 'fixture');
+    const noProvenance = structuredClone(program); delete noProvenance.provenance;
+    expect(() => assertProgramIr(noProvenance)).toThrow(/provenance/);
+    const badEvidence = structuredClone(program); badEvidence.variables[0]!.evidenceIds = ['ev:missing'];
+    expect(() => assertProgramIr(badEvidence)).toThrow(/Unknown variable evidence/);
+    const badFunction = structuredClone(program); badFunction.variables[0]!.functionId = 'fn:missing';
+    expect(() => assertProgramIr(badFunction)).toThrow(/inconsistent ownership/);
+  });
+
+  it('binds string references only by exact function entry', async () => {
+    const metadata = await fixture();
+    metadata.stringReferences[0]!.functionEntry = undefined;
+    const program = ghidraMetadataToProgram(metadata, 'fixture');
+    expect(program.xrefs.some(item => item.type === 'string-reference')).toBe(false);
+    expect(program.limitations.join(' ')).toContain('no exact function entry');
   });
 
   it('rejects ambiguous names rather than attaching evidence to the wrong function', async () => {
@@ -58,6 +87,6 @@ describe('Program IR', () => {
     const program = ghidraMetadataToProgram({ ...metadata, functions: [...metadata.functions, { name: 'sum_bytes', entry: '0x00999999', body: '0x00999999', thunk: false, external: false }] });
     const query = new ProgramQuery(program);
     expect(() => query.context('sum_bytes')).toThrow(/Ambiguous function name/);
-    expect(query.context('fn:0x999999').fn.entry).toBe('0x999999');
+    expect(query.context(program.functions.find(fn => fn.entry === '0x999999')!.id).fn.entry).toBe('0x999999');
   });
 });

@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { once } from 'node:events';
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
@@ -19,6 +19,14 @@ const expected = [
 ];
 
 describe('atomic release state', () => {
+  it('wires the v0.0.9 core gate into the publish path', async () => {
+    const source = await readFile('scripts/release-atomic.mjs', 'utf8');
+    expect(source).toContain("tag === 'v0.0.9'");
+    expect(source).toContain('verifyV009CoreGateEvidence');
+    expect(source).toContain('--core-gate-report');
+    expect(source).toContain('--core-gate-evidence-dir');
+  });
+
   it('requires an accepted candidate at the frozen commit', () => {
     const manifest = {
       schemaVersion: 1,

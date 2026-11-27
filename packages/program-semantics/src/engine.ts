@@ -25,7 +25,25 @@ function validateGrounding(program: ProgramIr, functionId: string, evidence: Evi
   for (const variable of output.variables) if (!availableVariables.has(variable.name)) throw new Error(`Semantic model invented variable: ${variable.name}`);
   for (const item of [...output.behaviors, ...output.hypotheses]) {
     if (!item.evidenceIds.length) throw new Error('Semantic behaviors and hypotheses must cite evidence');
-    for (const id of item.evidenceIds) if (!availableEvidence.has(id)) throw new Error(`Semantic model cited unavailable evidence: ${id}`);
+    const cited = item.evidenceIds.map(id => {
+      if (!availableEvidence.has(id)) throw new Error(`Semantic model cited unavailable evidence: ${id}`);
+      return evidence.find(candidate => candidate.id === id)!;
+    });
+    if (!cited.some(item => /^(?:instruction|block|variable|call|xref):/.test(item.locator))) throw new Error('Semantic claims must cite fine-grained structural evidence, not only function identity');
+  }
+  const claimPatterns: Record<string, RegExp> = {
+    'network-io': /\b(?:socket|connect|send|recv|WSAStartup|getaddrinfo)\b/i,
+    'file-io': /\b(?:fopen|fread|fwrite|CreateFileA?|ReadFile|WriteFile)\b/i,
+    'cryptographic-primitive': /\b(?:AES|SHA1|SHA256|MD5|RC4|EVP_|BCrypt)\w*\b/i,
+    'memory-copy': /\b(?:memcpy|memmove)\b/i,
+    'memory-initialization': /\bmemset\b/i,
+    'parsing': /\b(?:strtol|strtoul|sscanf|parse|decode)\w*\b/i,
+    'iteration': /\b(?:for|while|do)\s*\(/i,
+  };
+  const structuralText = [fn.pseudocode ?? '', ...program.instructions.filter(instruction => instruction.functionId === fn.id).flatMap(instruction => [instruction.mnemonic, ...(instruction.pcode ?? [])]), ...program.calls.filter(call => call.callerId === fn.id).map(call => program.functions.find(candidate => candidate.id === call.calleeId)?.name ?? '')].join('\n');
+  for (const behavior of output.behaviors) {
+    const pattern = claimPatterns[behavior.kind];
+    if (pattern && !pattern.test(structuralText)) throw new Error(`Semantic behavior ${behavior.kind} is not supported by function structure`);
   }
 }
 

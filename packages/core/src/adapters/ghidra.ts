@@ -13,7 +13,7 @@ export interface GhidraBlock { start:string; end:string; successors:string[]; pr
 export interface GhidraFunction { name:string; entry:string; body:string; thunk:boolean; external:boolean; signature?:string; callingConvention?:string; returnType?:string; parameters?:GhidraVariable[]; locals?:GhidraVariable[]; blocks?:GhidraBlock[] }
 export interface GhidraDecompiledFunction { name:string; entry:string; pseudocode:string }
 export interface GhidraCall { caller:string; callee:string; callerEntry?:string; calleeEntry?:string; address?:string; instructionAddress?:string }
-export interface GhidraStringReference { address:string; function:string|null; value:string }
+export interface GhidraStringReference { address:string; function:string|null; functionEntry?:string; value:string }
 export interface GhidraXref { from:string; to:string; type:string; function?:string; functionEntry?:string }
 export interface GhidraMetadata { format:string; architecture:string; compilerSpec:string; imageBase:string; functions:GhidraFunction[]; strings:string[]; functionCount:number; stringCount:number; decompiledFunctions:GhidraDecompiledFunction[]; decompiledCount:number; decompileFailureCount:number; calls:GhidraCall[]; callCount:number; stringReferences:GhidraStringReference[]; stringReferenceCount:number; globals:GhidraVariable[]; globalCount:number; xrefs:GhidraXref[]; xrefCount:number; blockCount:number; instructionCount:number; parameterCount:number; localCount:number; truncated:boolean; limitations:string[] }
 export interface GhidraAnalysis { engine:'ghidra-headless'; status:'completed'; metadata:GhidraMetadata; programIr:ProgramIr; programIrStats:ProgramStats; exitCode:number; outputTruncated:boolean; stdout:string; stderr:string; limitations:string[] }
@@ -30,6 +30,7 @@ import ghidra.program.model.address.AddressSetView;
 import ghidra.program.model.block.BasicBlockModel;
 import ghidra.program.model.block.CodeBlock;
 import ghidra.program.model.block.CodeBlockIterator;
+import ghidra.program.model.block.CodeBlockReferenceIterator;
 import ghidra.program.model.listing.Data;
 import ghidra.program.model.listing.DataIterator;
 import ghidra.program.model.listing.Function;
@@ -171,6 +172,19 @@ public class ExportMetadata extends GhidraScript {
     }
     return out.append(']').toString();
   }
+  private String destinationAddresses(CodeBlockReferenceIterator references, int cap) {
+    List<Address> addresses = new ArrayList<Address>();
+    while (references.hasNext() && addresses.size() < cap) addresses.add(references.next().getDestinationAddress());
+    return addressList(addresses.toArray(new Address[0]), cap);
+  }
+  private String sourceAddresses(CodeBlockReferenceIterator references, int cap) {
+    List<Address> addresses = new ArrayList<Address>();
+    while (references.hasNext() && addresses.size() < cap) addresses.add(references.next().getSourceAddress());
+    return addressList(addresses.toArray(new Address[0]), cap);
+  }
+  private void checkCancelled() {
+    if (monitor.isCancelled()) throw new IllegalStateException("Ghidra analysis was cancelled");
+  }
   private String callAddress(Function caller, Function callee) {
     try {
       InstructionIterator instructions = currentProgram.getListing().getInstructions(caller.getBody(), true);
@@ -186,7 +200,7 @@ public class ExportMetadata extends GhidraScript {
     return "null";
   }
   private boolean stopStructure(String reason) {
-    monitor.checkCanceled();
+    checkCancelled();
     limit(reason);
     return true;
   }
@@ -218,14 +232,14 @@ public class ExportMetadata extends GhidraScript {
         boolean structureLimited = false;
         BasicBlockModel blockModel = new BasicBlockModel(program);
         while (functions.hasNext()) {
-          monitor.checkCanceled();
+          checkCancelled();
           Function function = functions.next();
           if (functionCount >= MAX_FUNCTIONS) { limit("Function inventory was limited to 10000 entries"); break; }
           int previousBlocks = blockCount, previousInstructions = instructionCount, previousParameters = parameterCount, previousLocals = localCount, previousVariables = variableCount;
           StringBuilder encoded = new StringBuilder((functionCount > 0 ? "," : "") + "{\"name\":" + q(function.getName()) + ",\"entry\":" + a(function.getEntryPoint()) + ",\"body\":" + a(function.getBody().getMinAddress()) + ",\"thunk\":" + function.isThunk() + ",\"external\":" + function.isExternal());
           try {
             StringBuilder details = new StringBuilder();
-            details.append(",\"signature\":").append(q(function.getSignature()));
+            details.append(",\"signature\":").append(q(function.getSignature().toString()));
             details.append(",\"callingConvention\":").append(q(function.getCallingConventionName()));
             details.append(",\"returnType\":").append(q(function.getReturnType() == null ? "UNKNOWN" : function.getReturnType().getName()));
             details.append(",\"parameters\":[");
@@ -248,14 +262,14 @@ public class ExportMetadata extends GhidraScript {
               CodeBlockIterator blocks = blockModel.getCodeBlocksContaining(function.getBody(), monitor);
               int perFunctionBlocks = 0;
               while (blocks.hasNext()) {
-                monitor.checkCanceled();
+                checkCancelled();
                 if (blockCount >= MAX_BLOCKS || perFunctionBlocks >= MAX_BLOCKS_PER_FUNCTION) { structureLimited = stopStructure("Control-flow block inventory was limited to 10000 blocks or 512 blocks per function"); break; }
                 CodeBlock block = blocks.next();
-                StringBuilder blockJson = new StringBuilder((perFunctionBlocks > 0 ? "," : "") + "{\"start\":" + a(block.getStart()) + ",\"end\":" + a(block.getEnd()) + ",\"successors\":" + addressList(block.getDestinations(monitor).toArray(new Address[0]), MAX_BLOCKS_PER_FUNCTION) + ",\"predecessors\":" + addressList(block.getSources(monitor).toArray(new Address[0]), MAX_BLOCKS_PER_FUNCTION) + ",\"instructions\":[");
+                StringBuilder blockJson = new StringBuilder((perFunctionBlocks > 0 ? "," : "") + "{\"start\":" + a(block.getMinAddress()) + ",\"end\":" + a(block.getMaxAddress()) + ",\"successors\":" + destinationAddresses(block.getDestinations(monitor), MAX_BLOCKS_PER_FUNCTION) + ",\"predecessors\":" + sourceAddresses(block.getSources(monitor), MAX_BLOCKS_PER_FUNCTION) + ",\"instructions\":[");
                 InstructionIterator instructions = program.getListing().getInstructions(block, true);
                 int perBlockInstructions = 0;
                 while (instructions.hasNext()) {
-                  monitor.checkCanceled();
+                  checkCancelled();
                   if (instructionCount >= MAX_INSTRUCTIONS || perBlockInstructions >= MAX_INSTRUCTIONS_PER_BLOCK) { structureLimited = stopStructure("Instruction inventory was limited to 50000 instructions or 128 instructions per block"); break; }
                   Instruction instruction = instructions.next();
                   if (perBlockInstructions > 0) blockJson.append(',');
@@ -373,7 +387,7 @@ public class ExportMetadata extends GhidraScript {
             Function source = program.getFunctionManager().getFunctionContaining(reference.getFromAddress());
             String key = item.getAddress() + "@" + (source == null ? reference.getFromAddress().toString() : source.getEntryPoint().toString());
             if (!referenceKeys.add(key)) continue;
-            String encoded = (stringReferenceCount > 0 ? "," : "") + "{\"address\":" + a(item.getAddress()) + ",\"function\":" + (source == null ? "null" : q(source.getName())) + ",\"value\":" + q(text) + "}";
+            String encoded = (stringReferenceCount > 0 ? "," : "") + "{\"address\":" + a(item.getAddress()) + ",\"function\":" + (source == null ? "null" : q(source.getName())) + (source == null ? "" : ",\"functionEntry\":" + a(source.getEntryPoint())) + ",\"value\":" + q(text) + "}";
             if (!writeIfFits(encoded)) { referencesLimited = true; break; }
             stringReferenceCount++;
           }
@@ -383,7 +397,7 @@ public class ExportMetadata extends GhidraScript {
         int globalCount = 0, globalScanCount = 0;
         boolean globalsLimited = false;
         while (data.hasNext()) {
-          monitor.checkCanceled();
+          checkCancelled();
           if (globalScanCount++ >= MAX_GLOBALS * 4) { limit("Global variable scan was limited to 20000 defined data items"); break; }
           Data item = data.next();
           if (item.getValue() instanceof String || program.getFunctionManager().getFunctionContaining(item.getAddress()) != null) continue;
@@ -400,16 +414,15 @@ public class ExportMetadata extends GhidraScript {
         int xrefCount = 0, xrefScanCount = 0;
         boolean xrefsLimited = false;
         while ((data.hasNext() || instructionIterator.hasNext()) && xrefScanCount < MAX_GLOBALS * 4 + MAX_INSTRUCTIONS * 2) {
-          monitor.checkCanceled();
+          checkCancelled();
           xrefScanCount++;
           Address address = data.hasNext() ? data.next().getAddress() : instructionIterator.next().getAddress();
           Function source = program.getFunctionManager().getFunctionContaining(address);
-          ReferenceIterator references = program.getReferenceManager().getReferencesFrom(address);
+          Reference[] references = program.getReferenceManager().getReferencesFrom(address);
           int perAddress = 0;
-          while (references.hasNext()) {
+          for (Reference reference : references) {
             if (perAddress++ >= MAX_XREFS_PER_ADDRESS) { limit("Cross-reference scan was limited to 32 references per address"); break; }
             if (xrefCount >= MAX_XREFS) { limit("Cross-reference inventory was limited to 10000 entries"); xrefsLimited = true; break; }
-            Reference reference = references.next();
             String key = address + "->" + reference.getToAddress() + ":" + reference.getReferenceType().getName();
             if (!xrefKeys.add(key)) continue;
             String encodedXref = (xrefCount > 0 ? "," : "") + "{\"from\":" + a(address) + ",\"to\":" + a(reference.getToAddress()) + ",\"type\":" + q(reference.getReferenceType().getName()) + (source == null ? "" : ",\"function\":" + q(source.getName()) + ",\"functionEntry\":" + a(source.getEntryPoint())) + "}";
@@ -492,7 +505,12 @@ function ghidraStructuredFunction(value:unknown):value is GhidraFunction {
   return value.blocks===undefined||(Array.isArray(value.blocks)&&value.blocks.every(ghidraBlock));
 }
 function ghidraStructuredCall(value:unknown):value is GhidraCall{return record(value)&&typeof value.caller==='string'&&typeof value.callee==='string'&&['callerEntry','calleeEntry','address','instructionAddress'].every(key=>value[key]===undefined||typeof value[key]==='string');}
-function ghidraXref(value:unknown):value is GhidraXref{return record(value)&&typeof value.from==='string'&&typeof value.to==='string'&&typeof value.type==='string'&&(value.function===undefined||typeof value.function==='string');}
+function ghidraStringReference(value:unknown):value is GhidraStringReference {
+  if(!record(value)||typeof value.address!=='string'||typeof value.value!=='string')return false;
+  if(value.function!==null&&typeof value.function!=='string')return false;
+  return value.functionEntry===undefined||typeof value.functionEntry==='string';
+}
+function ghidraXref(value:unknown):value is GhidraXref{return record(value)&&typeof value.from==='string'&&typeof value.to==='string'&&typeof value.type==='string'&&(value.function===undefined||typeof value.function==='string')&&(value.functionEntry===undefined||typeof value.functionEntry==='string');}
 async function readMetadata(file:string,maxBytes:number):Promise<GhidraMetadata> {
   const info=await stat(file);if(info.size>maxBytes)throw new Error(`Ghidra metadata output exceeds ${maxBytes}-byte limit`);const buffer=await limitedRead(file,maxBytes+1);if(buffer.length>maxBytes)throw new Error(`Ghidra metadata output exceeds ${maxBytes}-byte limit`);let value:unknown;try{value=JSON.parse(buffer.toString('utf8'));}catch{throw new Error('Ghidra postScript produced malformed metadata JSON');}
   if(!value||typeof value!=='object'||Array.isArray(value))throw new Error('Ghidra postScript did not produce a metadata object');const raw=value as Record<string,unknown>;
@@ -502,7 +520,7 @@ async function readMetadata(file:string,maxBytes:number):Promise<GhidraMetadata>
   const rawStrings=metadataArray<string>(raw.strings,'string',(item):item is string=>typeof item==='string');
   const rawDecompiled=metadataArray<GhidraDecompiledFunction>(raw.decompiledFunctions,'pseudocode',(item):item is GhidraDecompiledFunction=>Boolean(item&&typeof item==='object'&&typeof (item as GhidraDecompiledFunction).name==='string'&&typeof (item as GhidraDecompiledFunction).entry==='string'&&typeof (item as GhidraDecompiledFunction).pseudocode==='string'));
   const rawCalls=metadataArray<GhidraCall>(raw.calls,'call',ghidraStructuredCall);
-  const rawReferences=metadataArray<GhidraStringReference>(raw.stringReferences,'string reference',(item):item is GhidraStringReference=>Boolean(item&&typeof item==='object'&&typeof (item as GhidraStringReference).address==='string'&&((item as GhidraStringReference).function===null||typeof (item as GhidraStringReference).function==='string')&&typeof (item as GhidraStringReference).value==='string'));
+  const rawReferences=metadataArray<GhidraStringReference>(raw.stringReferences,'string reference',ghidraStringReference);
   const rawGlobals=metadataArray<GhidraVariable>(raw.globals,'global variable',item=>ghidraVariable(item,'global'));
   const rawXrefs=metadataArray<GhidraXref>(raw.xrefs,'cross-reference',ghidraXref);
   const rawLimitations=metadataArray<string>(raw.limitations,'limitations',(item):item is string=>typeof item==='string');
@@ -536,7 +554,7 @@ async function readMetadata(file:string,maxBytes:number):Promise<GhidraMetadata>
   const decompiledFunctions:GhidraDecompiledFunction[]=[];let pseudocodeChars=0;
   for(const item of rawDecompiled){if(decompiledFunctions.length>=500||pseudocodeChars>=MAX_PSEUDOCODE_CHARS)break;const pseudocode=bounded(item.pseudocode),remaining=MAX_PSEUDOCODE_CHARS-pseudocodeChars;const safe=pseudocode.length>remaining?(remaining>'[TRUNCATED]'.length?`${pseudocode.slice(0,remaining-'[TRUNCATED]'.length)}[TRUNCATED]`:''):pseudocode;decompiledFunctions.push({name:bounded(item.name),entry:bounded(item.entry),pseudocode:safe});pseudocodeChars+=safe.length;}
   const calls=rawCalls.slice(0,10_000).map(item=>({caller:bounded(item.caller),callee:bounded(item.callee),...(item.callerEntry===undefined?{}:{callerEntry:bounded(item.callerEntry)}),...(item.calleeEntry===undefined?{}:{calleeEntry:bounded(item.calleeEntry)}),...(item.address===undefined?{}:{address:bounded(item.address)}),...(item.instructionAddress===undefined?{}:{instructionAddress:bounded(item.instructionAddress)})}));
-  const stringReferences=rawReferences.slice(0,5_000).map(item=>({address:bounded(item.address),function:item.function===null?null:bounded(item.function),value:bounded(item.value)}));
+  const stringReferences=rawReferences.slice(0,5_000).map(item=>({address:bounded(item.address),function:item.function===null?null:bounded(item.function),...(item.functionEntry===undefined?{}:{functionEntry:bounded(item.functionEntry)}),value:bounded(item.value)}));
   const format=bounded(typeof raw.format==='string'?raw.format:'UNKNOWN'),architecture=bounded(typeof raw.architecture==='string'?raw.architecture:'UNKNOWN'),compilerSpec=bounded(typeof raw.compilerSpec==='string'?raw.compilerSpec:'UNKNOWN'),imageBase=bounded(typeof raw.imageBase==='string'?raw.imageBase:'UNKNOWN');
   const limitations=rawLimitations.slice(0,20).map(bounded);if(fieldTruncated)limitations.push('Metadata string fields were truncated at 16384 characters');if(raw.functions.length>10_000)limitations.push('Function inventory was limited to 10000 entries');if(raw.strings.length>5_000)limitations.push('String inventory was limited to 5000 entries');if(rawDecompiled.length>500)limitations.push('Pseudocode inventory was limited to 500 functions');if(pseudocodeChars>=MAX_PSEUDOCODE_CHARS)limitations.push('Pseudocode character budget of 262144 was reached');if(rawCalls.length>10_000)limitations.push('Call inventory was limited to 10000 edges');if(rawReferences.length>5_000)limitations.push('String reference inventory was limited to 5000 entries');if(rawLimitations.length>20)limitations.push('PostScript limitations were limited to 20 entries');if(raw.decompiledFunctions===undefined||raw.calls===undefined||raw.stringReferences===undefined)limitations.push('PostScript omitted bounded pseudocode, call graph or string reference metadata');
   const globals=rawGlobals.slice(0,MAX_GHIDRA_GLOBALS).map(item=>({name:bounded(item.name),dataType:bounded(item.dataType),kind:'global' as const,...(item.storage===undefined?{}:{storage:bounded(item.storage)})}));
@@ -566,7 +584,7 @@ export const ghidraAdapter=defineAdapter({
       const timeoutSeconds=Math.max(1,Math.floor(prep.options.timeoutMs/1000)-2);const args=[projectDir,'re_project','-import',prep.input,'-scriptPath',work,'-postScript','ExportMetadata.java',metadataFile,String(prep.options.maxMetadataBytes),'-deleteProject','-analysisTimeoutPerFile',String(timeoutSeconds)];
       const execution=await runHeadless(prep.info,args,work,ctx.signal,prep.options.maxOutputBytes,prep.options.timeoutMs,{metadataFile,maxMetadataBytes:prep.options.maxMetadataBytes,taskDir,maxDiskBytes:prep.options.maxDiskBytes,...(ctx.registerProcess?{registerProcess:ctx.registerProcess}:{})});const stdout=redactSensitive(execution.stdout),stderr=redactSensitive(execution.stderr);if(execution.code!==0)throw new Error(`Ghidra analyzeHeadless exited with code ${execution.code}: ${stderr.slice(0,1000)||stdout.slice(0,1000)||'no diagnostic output'}`);assertDiskBudget(await directoryBytes(taskDir),prep.options.maxDiskBytes);
       let metadata:GhidraMetadata;try{metadata=await readMetadata(metadataFile,prep.options.maxMetadataBytes);}catch(error){throw new Error(`Ghidra metadata export failed: ${error instanceof Error?error.message:String(error)}; stderr: ${stderr.slice(-4_000)||'none'}; stdout: ${stdout.slice(-8_000)||'none'}`,{cause:error});}const limitations=[...new Set(['Ghidra metadata export is static analysis only; no uploaded code is executed','Pseudocode is bounded static decompiler output; call graphs and string references do not reconstruct original source or runtime behavior','Potentially sensitive metadata and process diagnostics are redacted',...(metadata.decompileFailureCount>0?[`Pseudocode decompilation failed for ${metadata.decompileFailureCount} function(s)`]:[]),...metadata.limitations])];if(metadata.truncated)limitations.push('Ghidra postScript inventory was truncated');if(execution.truncated)limitations.push(`Ghidra process output exceeded ${prep.options.maxOutputBytes} bytes; retained diagnostics are truncated`);
-      const programIr=ghidraMetadataToProgram({...metadata,provenance:{inputSha256:ctx.upload?.sha256??'UNKNOWN',analyzer:'ghidra-headless',analyzerVersion:process.env.RE_GHIDRA_VERSION??'UNKNOWN',...(process.env.GITHUB_SHA?{commit:process.env.GITHUB_SHA}:{}),generatedAt:new Date().toISOString(),environment:`${process.platform}/${process.arch}`}});programIr.hypotheses=inferSemanticHypotheses(programIr);assertProgramIr(programIr);const programIrStats=programStats(programIr);
+      const programIr=ghidraMetadataToProgram({...metadata,provenance:{inputSha256:ctx.upload?.sha256??'UNKNOWN',analyzer:'ghidra-headless',analyzerVersion:process.env.RE_GHIDRA_VERSION??'UNKNOWN',...(process.env.GITHUB_SHA?{commit:process.env.GITHUB_SHA}:{}),generatedAt:new Date().toISOString(),environment:`${process.platform}/${process.arch}`}});programIr.hypotheses=inferSemanticHypotheses(programIr);assertProgramIr(programIr,{allowPartial:metadata.truncated||(metadata.blockCount===0&&metadata.instructionCount===0)});const programIrStats=programStats(programIr);
       const result:GhidraAnalysis={engine:'ghidra-headless',status:'completed',metadata,programIr,programIrStats,exitCode:execution.code,outputTruncated:execution.truncated,stdout,stderr,limitations};await ctx.log('info',`Ghidra imported ${metadata.format}/${metadata.architecture}; exported ${metadata.functions.length} functions, ${metadata.decompiledFunctions.length} pseudocode entries, ${metadata.calls.length} calls, ${metadata.blockCount} blocks and ${metadata.instructionCount} instructions`,'analyzeHeadless');return result;
     }finally{await rm(work,{recursive:true,force:true,maxRetries:3,retryDelay:100});}
   },

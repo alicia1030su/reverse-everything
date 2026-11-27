@@ -18,6 +18,7 @@ export interface InstructionIr {
   mnemonic: string;
   bytes?: string;
   pcode?: string[];
+  evidenceIds: string[];
 }
 
 export interface BasicBlockIr {
@@ -28,6 +29,7 @@ export interface BasicBlockIr {
   instructionIds: string[];
   successorIds: string[];
   predecessorIds: string[];
+  evidenceIds: string[];
 }
 
 export interface VariableIr {

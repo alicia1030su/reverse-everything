@@ -19,13 +19,17 @@ export function buildSemanticContext(program: ProgramIr, functionId: string, max
   if (fn.external) throw new Error('External functions do not have an analyzable body');
   const variables = [...fn.parameterIds, ...fn.localIds].map(id => program.variables.find(item => item.id === id)).filter((item): item is NonNullable<typeof item> => item !== undefined);
   const evidenceIds = new Set(fn.evidenceIds);
+  for (const variable of variables) for (const id of variable.evidenceIds) evidenceIds.add(id);
   for (const id of fn.blockIds) {
     const block = program.blocks.find(item => item.id === id);
+    for (const evidenceId of block?.evidenceIds ?? []) evidenceIds.add(evidenceId);
     for (const instructionId of block?.instructionIds ?? []) {
       const instruction = program.instructions.find(item => item.id === instructionId);
-      if (instruction?.pcode?.length) evidenceIds.add(instruction.id);
+      for (const evidenceId of instruction?.evidenceIds ?? []) evidenceIds.add(evidenceId);
     }
   }
+  for (const call of program.calls) if (call.callerId === fn.id || call.calleeId === fn.id) for (const id of call.evidenceIds) evidenceIds.add(id);
+  for (const xref of program.xrefs) if (xref.functionId === fn.id) for (const id of xref.evidenceIds) evidenceIds.add(id);
   const context: SemanticContext = {
     program,
     fn,

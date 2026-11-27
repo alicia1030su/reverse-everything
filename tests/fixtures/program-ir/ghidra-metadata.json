@@ -3,6 +3,7 @@
   "architecture": "x86:LE:64:default",
   "compilerSpec": "gcc",
   "imageBase": "0x00100000",
+  "provenance": { "inputSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "analyzer": "ghidra", "analyzerVersion": "12.2", "commit": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "generatedAt": "2026-11-27T00:00:00.000Z", "environment": "test" },
   "functions": [
     {
       "name": "sum_bytes", "entry": "0x00101000", "body": "0x00101000", "thunk": false, "external": false,
@@ -25,9 +26,9 @@
   ],
   "calls": [{ "caller": "main", "callee": "sum_bytes", "callerEntry": "0x00102000", "calleeEntry": "0x00101000", "address": "0x00102000" }],
   "strings": ["abc"],
-  "stringReferences": [{ "address": "0x00103000", "function": "main", "value": "abc" }],
+  "stringReferences": [{ "address": "0x00103000", "function": "main", "functionEntry": "0x00102000", "value": "abc" }],
   "globals": [{ "name": "errno", "dataType": "int", "kind": "global", "storage": "0x00104000" }],
-  "xrefs": [{ "from": "0x00102004", "to": "0x00103000", "type": "DATA", "function": "main" }],
+  "xrefs": [{ "from": "0x00102004", "to": "0x00103000", "type": "DATA", "function": "main", "functionEntry": "0x00102000" }],
   "truncated": false,
   "limitations": []
 }
