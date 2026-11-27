@@ -1,0 +1,84 @@
+export interface SymbolicInputSpec {
+  /** Only file-backed stdin is supported in Wave 2. */
+  source: 'stdin';
+  sizeBytes: number;
+  /** Concrete bytes are equality-constrained; remaining bytes stay symbolic. */
+  inputBytes?: string;
+}
+
+export interface SymbolicTarget {
+  function?: string;
+  address?: string;
+  expectedOutput?: string;
+}
+
+export interface SymbolicAnalysisRequest {
+  binaryPath: string;
+  target: SymbolicTarget;
+  input: SymbolicInputSpec;
+  timeoutMs?: number;
+  maxPaths?: number;
+  maxStates?: number;
+  /** Explicit assertion that the caller may analyze and execute this binary. */
+  authorized: boolean;
+  entry?: { function?: string; address?: string };
+}
+
+export interface SymbolicConstraint {
+  expression: string;
+  address?: string;
+}
+
+export interface SymbolicExecution {
+  exitCode: number | null;
+  stdout: string;
+  stderr: string;
+  verified: boolean;
+  timedOut: boolean;
+}
+
+export interface SymbolicPath {
+  id: string;
+  targetAddress: string;
+  addressHistory: string[];
+  constraints: SymbolicConstraint[];
+  satisfiable: boolean;
+  reachedTarget: boolean;
+  statesExplored: number;
+}
+
+export interface SolvedSymbolicInput {
+  pathId: string;
+  inputHex: string;
+  inputBase64: string;
+  execution: SymbolicExecution;
+}
+
+export interface SymbolicAnalysisResult {
+  schemaVersion: 1;
+  status: 'completed' | 'partial' | 'timeout' | 'cancelled' | 'error' | 'unauthorized';
+  paths: SymbolicPath[];
+  solvedInputs: SolvedSymbolicInput[];
+  solver: { name: string; version: string };
+  stats: { statesExplored: number; pathsFound: number; elapsedMs: number };
+  limitations: string[];
+  provenance: {
+    binaryPath: string;
+    binarySha256: string;
+    workerSha256: string;
+    pythonVersion: string;
+    angrVersion: string;
+    requestedAt: string;
+    completedAt: string;
+  };
+  error?: string;
+}
+
+export interface SymbolicEngineOptions {
+  pythonExecutable?: string;
+  workerPath?: string;
+  maxOutputBytes?: number;
+  maxRequestBytes?: number;
+  /** Injected for deterministic worker-process tests. */
+  spawn?: typeof import('node:child_process').spawn;
+}

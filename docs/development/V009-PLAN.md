@@ -55,14 +55,17 @@
 4. 真实动态、符号执行、Binary Diff 与游戏原客户端兼容逐项按证据披露。
 5. P0/P1 清零、资产与公开复验通过；任一项缺失不得发布 v0.0.9。
 
-## Wave 1 当前状态（2026-11-27）
+## Wave 1 当前状态（2026-11-27，已合并）
 
+- PR #25 已合并，合并提交 `8e65bdd494212d40edb621dc0b171e81cf9e1aaf`。
 - 已新增 `@reverse/program-ir` 与 `@reverse/program-semantics`，支持函数/变量/CFG/指令/P-Code/调用/数据/交叉引用查询。
 - Ghidra headless 已扩展真实结构化导出，并生成带二进制哈希、分析器与提交来源的 Program IR。
 - Autopilot APK 主链已启用 JADX；Provider 密钥状态与真实响应证据已修复。
 - 已实现 `scripts/check-v009-core-gate.mjs`，真实模型、盲测或核心能力证据缺失时强制阻断发布。
-- 本地全量构建通过，Vitest 922 passed / 9 skipped / 0 failed；独立 Server 包干净安装与健康检查通过。
-- 真实 Ghidra 12.2 PE/ELF 导出由 PR CI 验证；真实模型、动态/符号执行、Binary Diff 与三个盲测仍未验收。
+- 最终 CI：Ubuntu 932 passed / 7 skipped，Windows 931 passed / 8 skipped；真实 Ghidra 12.2 Ubuntu PE/ELF 与 Windows PE、真实 JADX 全部通过。
+- 独立 Server 包干净安装与健康检查通过；两轮独立复审 P0=0/P1=0。
+- Wave 2 已实现：GDB/MI 动态执行时间线、线程/模块/寄存器/调用栈证据、Program IR 关联，以及 angr/Z3 路径探索、约束求解、测试输入生成与原生执行复现。
+- Wave 2 本地全量 Vitest 956 passed / 9 skipped；动态/符号/打包拓扑 31/31；真实 GDB 与 angr/Z3 由 Ubuntu CI 验证。真实模型、Binary Diff 与三个盲测仍未验收。
 
 ## 当前外部阻塞
 

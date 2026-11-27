@@ -31,6 +31,9 @@ describe('Ghidra release package layout', () => {
     expect(source).toContain("'packages/autopilot'");
     expect(source).toContain("'packages/program-ir'");
     expect(source).toContain("'packages/program-semantics'");
+    expect(source).toContain("'packages/dynamic-analysis'");
+    expect(source).toContain("'packages/symbolic-execution'");
+    expect(source).toContain("scripts/symbolic_execute.py");
     for (const file of apiSources.filter(file => String(file).endsWith('.ts'))) {
       const text = await readFile(path.join('apps/api/src', String(file)), 'utf8');
       for (const match of text.matchAll(/from '(@reverse\/[^']+)'/g)) {
@@ -44,6 +47,9 @@ describe('Ghidra release package layout', () => {
     expect(corePackage.dependencies['@reverse/program-ir']).toBe('0.0.8');
     const source = await readFile('scripts/package-runtime.mjs', 'utf8');
     expect(source).toContain("'packages/program-ir'");
+    expect(source).toContain("'packages/dynamic-analysis'");
+    expect(source).toContain("'packages/symbolic-execution'");
+    expect(source).toContain("scripts/symbolic_execute.py");
   });
 
   it('places the launcher at the path resolved by the desktop runtime adapter', async () => {

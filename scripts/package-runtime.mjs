@@ -14,13 +14,13 @@ const out=path.join(root,'dist/desktop-runtime/node_modules');
 await resetGeneratedDirectory(path.dirname(out),path.join(root,'dist'),'desktop-runtime');
 await mkdir(out,{recursive:true});
 await mkdir(path.join(out,'scripts'),{recursive:true});
-await copyExclusive(path.join(root,'scripts/ghidra-analyze-headless.mjs'),path.join(out,'scripts/ghidra-analyze-headless.mjs'));
+await copyExclusive(path.join(root,'scripts/ghidra-analyze-headless.mjs'),path.join(out,'scripts/ghidra-analyze-headless.mjs'));await copyExclusive(path.join(root,'scripts/symbolic_execute.py'),path.join(out,'scripts/symbolic_execute.py'));
 await mkdir(path.join(path.dirname(out),'scripts'),{recursive:true});
-await copyExclusive(path.join(root,'scripts/ghidra-analyze-headless.mjs'),path.join(path.dirname(out),'scripts/ghidra-analyze-headless.mjs'));
+await copyExclusive(path.join(root,'scripts/ghidra-analyze-headless.mjs'),path.join(path.dirname(out),'scripts/ghidra-analyze-headless.mjs'));await copyExclusive(path.join(root,'scripts/symbolic_execute.py'),path.join(path.dirname(out),'scripts/symbolic_execute.py'));
 const rootPackage=JSON.parse(await readFile(path.join(root,'package.json'),'utf8'));
 const npmVersion=rootPackage.devDependencies?.npm;
 if(typeof npmVersion!=='string'||!/^\d+\.\d+\.\d+$/.test(npmVersion))throw new Error('npm must be an exact-version devDependency');
-const workspaceDirs=['apps/api','apps/worker','packages/core','packages/program-ir','packages/security','packages/workflow','packages/evidence','packages/ai','packages/contracts'];
+const workspaceDirs=['apps/api','apps/worker','packages/core','packages/program-ir','packages/program-semantics','packages/dynamic-analysis','packages/symbolic-execution','packages/security','packages/workflow','packages/evidence','packages/ai','packages/contracts'];
 const queue=[{name:'npm',from:root}];
 for(const dir of workspaceDirs){
   const pkg=JSON.parse(await readFile(path.join(root,dir,'package.json'),'utf8'));
