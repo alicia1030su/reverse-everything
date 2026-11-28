@@ -118,6 +118,8 @@ try {
   await save('PASSED');
 } catch (error) {
   const message = error instanceof Error ? error.message : String(error);
-  await save('FAILED', { code: error?.code ?? 'VALIDATION_ERROR', message: apiKey ? message.split(apiKey).join('[REDACTED]') : message });
+  const safeMessage = apiKey ? message.split(apiKey).join('[REDACTED]') : message;
+  await save('FAILED', { code: error?.code ?? 'VALIDATION_ERROR', message: safeMessage });
+  console.error(`Real model validation failed: ${error?.code ?? 'VALIDATION_ERROR'}: ${safeMessage}`);
   process.exitCode = 1;
 }
