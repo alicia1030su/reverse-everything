@@ -77,6 +77,16 @@
 - 最终 CI：Ubuntu 993 passed / 7 skipped，Windows 983 passed / 17 skipped；真实 GDB Run `46074956253`、真实 angr/Z3 Run `46074956247`、全量 CI Run `46074956310` 全部通过。
 - 独立最终复审 P0=0/P1=0。真实模型八阶段、Binary Diff 与三个源码隔离盲测仍未验收。
 
+## Wave 3 当前状态（2026-11-28，已合并）
+
+- PR #28 已合并，合并提交 `d70a9450b4adbf72262f76a13dc3a2b7b70db7c6`。
+- Autopilot 新增 `program-ir:query` 工具，支持函数上下文、调用路径、CFG/环路、数据、P-Code、假设与证据查询，并生成绑定 Program IR SHA-256 的可复核报告。
+- 软件深度重建计划会在 Ghidra 分析后自动加入 Program IR 查询；持久化步骤结果在租约恢复后直接复用，不重复执行。
+- Program IR 查询接受上游合法 partial 输出但强制保留 provenance 与 limitations；环路查询改为迭代 Kosaraju SCC，避免大函数递归与重复 BFS。
+- 文件读取/复制/报告写入使用句柄相对、no-follow 的安全 helper，拒绝硬链接、符号链接和 junction，并覆盖父目录替换竞态；Server/Desktop 打包同步包含 helper。
+- 最终 CI：Ubuntu 993 passed / 7 skipped，Windows 983 passed / 17 skipped；真实 Ghidra、真实 GDB、全量 CI Run `46085497244` 全部通过，独立安全复审 P0=0/P1=0。
+- 真实模型八阶段、Binary Diff 与三个源码隔离盲测仍未验收。
+
 ## 当前外部阻塞
 
 - 本机未发现 `OPENAI_API_KEY`、`ANTHROPIC_API_KEY` 或 Ollama；真实模型验收保持 BLOCKED，直到配置真实提供方或本地模型。
