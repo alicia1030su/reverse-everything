@@ -51,6 +51,11 @@ function kindFor(relative) {
 
 const model = await readJson(modelReportPath);
 if (model.status !== 'PASSED' || model.realModel?.realModelCalled !== true || model.realModel.invocation !== 'real') throw new Error('Real model report is not PASSED');
+const modelPaths = new Set();
+for (const request of model.realModel.requests) {
+  if (modelPaths.has(request.evidencePath) || modelPaths.has(request.promptPath)) throw new Error(`Real model report reuses an evidence or prompt path: ${request.evidencePath ?? request.promptPath}`);
+  modelPaths.add(request.evidencePath); modelPaths.add(request.promptPath);
+}
 const requests = model.realModel.requests.map(request => ({ ...request, promptPath: `model/${request.promptPath}`, evidencePath: `model/${request.evidencePath}` }));
 const blindTests = [];
 let behaviorTests = 0;

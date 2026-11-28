@@ -47,6 +47,14 @@ export function validateV009CoreGate(report) {
   if (model.invocation !== 'real') errors.push('Real model invocation evidence is required');
   if (!model.provider || !model.model) errors.push('Real provider and model identifiers are required');
   const requests = Array.isArray(model.requests) ? model.requests : [];
+  const modelEvidencePaths = new Set();
+  const modelPromptPaths = new Set();
+  for (const request of requests) {
+    if (request?.evidencePath && modelEvidencePaths.has(request.evidencePath)) errors.push(`Duplicate model evidence path: ${request.evidencePath}`);
+    else if (request?.evidencePath) modelEvidencePaths.add(request.evidencePath);
+    if (request?.promptPath && modelPromptPaths.has(request.promptPath)) errors.push(`Duplicate model prompt path: ${request.promptPath}`);
+    else if (request?.promptPath) modelPromptPaths.add(request.promptPath);
+  }
   for (const stage of V009_MODEL_STAGES) {
     const matching = requests.filter(request => request?.stage === stage);
     if (!matching.length) { errors.push(`Missing real-model stage evidence: ${stage}`); continue; }
