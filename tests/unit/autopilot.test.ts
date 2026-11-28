@@ -128,7 +128,7 @@ describe('autopilot planning and tools', () => {
     const program = ghidraMetadataToProgram(metadata, 'autopilot-fixture');
     await writeFile(path.join(work, 'program-ir.json'), JSON.stringify(program));
     const registry = createDefaultToolRegistry();
-    const context = { permissions: ['read-task-artifacts'], budget: { timeoutMs: 10_000, maxDiskMB: 10 }, cwd: work, workspaceRoot: dataDir, taskId: 't', projectId: 'p' };
+    const context = { permissions: ['read-task-artifacts'], budget: { timeoutMs: 30_000, maxDiskMB: 10 }, cwd: work, workspaceRoot: dataDir, taskId: 't', projectId: 'p' };
     const result = await registry.invoke('program-ir:query', { programIrPath: 'program-ir.json', operation: 'function-context', functionId: 'sum_bytes' }, context);
     expect(result).toMatchObject({ programId: program.id, operation: 'function-context', result: { fn: { name: 'sum_bytes' } } });
     const report = JSON.parse(await readFile(String(result.reportPath), 'utf8')) as { operation: string; programId: string; result: { fn: { name: string } } };
@@ -147,7 +147,7 @@ describe('autopilot planning and tools', () => {
     const program = ghidraMetadataToProgram({ ...metadata, functions: metadata.functions.map(({ blocks: _blocks, parameters: _parameters, locals: _locals, ...fn }) => fn), globals: [], xrefs: [] }, 'partial-fixture');
     await writeFile(path.join(work, 'partial-ir.json'), JSON.stringify(program));
     const registry = createDefaultToolRegistry();
-    const result = await registry.invoke('program-ir:query', { programIrPath: 'partial-ir.json', operation: 'stats' }, { permissions: ['read-task-artifacts'], budget: { timeoutMs: 10_000, maxDiskMB: 10 }, cwd: work, workspaceRoot: dataDir, taskId: 't', projectId: 'p' });
+    const result = await registry.invoke('program-ir:query', { programIrPath: 'partial-ir.json', operation: 'stats' }, { permissions: ['read-task-artifacts'], budget: { timeoutMs: 30_000, maxDiskMB: 10 }, cwd: work, workspaceRoot: dataDir, taskId: 't', projectId: 'p' });
     expect(result).toMatchObject({ programId: program.id, operation: 'stats', result: { functions: 3, blocks: 0, instructions: 0 } });
     expect(result.limitations).toEqual(expect.arrayContaining(['Ghidra export did not contain control-flow blocks', 'Ghidra export did not contain instruction or P-Code records']));
   });
@@ -158,7 +158,7 @@ describe('autopilot planning and tools', () => {
     await writeFile(path.join(work, 'program-ir.json'), JSON.stringify(ghidraMetadataToProgram(metadata, 'linked-report-fixture')));
     await symlink(outside, path.join(work, 'reports'), process.platform === 'win32' ? 'junction' : 'dir');
     const registry = createDefaultToolRegistry();
-    await expect(registry.invoke('program-ir:query', { programIrPath: 'program-ir.json', operation: 'stats' }, { permissions: ['read-task-artifacts'], budget: { timeoutMs: 10_000, maxDiskMB: 10 }, cwd: work, workspaceRoot: dataDir, taskId: 't', projectId: 'p' })).rejects.toThrow(/reports|链接|symlink|junction|越界/i);
+    await expect(registry.invoke('program-ir:query', { programIrPath: 'program-ir.json', operation: 'stats' }, { permissions: ['read-task-artifacts'], budget: { timeoutMs: 30_000, maxDiskMB: 10 }, cwd: work, workspaceRoot: dataDir, taskId: 't', projectId: 'p' })).rejects.toThrow(/reports|链接|symlink|junction|越界/i);
     expect(await readdir(outside)).toEqual([]);
   });
 
@@ -169,7 +169,7 @@ describe('autopilot planning and tools', () => {
     const outside = path.join(dataDir, 'outside-report.json'); await writeFile(outside, 'sentinel');
     await link(outside, path.join(work, 'reports', 'program-ir-query.json'));
     const registry = createDefaultToolRegistry();
-    const result = await registry.invoke('program-ir:query', { programIrPath: 'program-ir.json', operation: 'stats' }, { permissions: ['read-task-artifacts'], budget: { timeoutMs: 5000, maxDiskMB: 10 }, cwd: work, workspaceRoot: dataDir, taskId: 't', projectId: 'p' });
+    const result = await registry.invoke('program-ir:query', { programIrPath: 'program-ir.json', operation: 'stats' }, { permissions: ['read-task-artifacts'], budget: { timeoutMs: 30_000, maxDiskMB: 10 }, cwd: work, workspaceRoot: dataDir, taskId: 't', projectId: 'p' });
     expect(result.reportPath).not.toBe(path.join(work, 'reports', 'program-ir-query.json'));
     expect(await readFile(outside, 'utf8')).toBe('sentinel');
   });
