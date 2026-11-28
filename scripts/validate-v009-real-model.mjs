@@ -125,8 +125,10 @@ try {
       if (!response.ok) diagnostic = ` Model list endpoint returned HTTP ${response.status}.`;
       else {
         const payload = await response.json();
-        const ids = (payload.data ?? payload.models ?? []).map(item => item.id ?? item.name).filter(value => typeof value === 'string').slice(0, 100);
-        diagnostic = ids.length ? ` Accessible models: ${ids.join(', ')}` : ' Model list endpoint returned no model identifiers.';
+        const list = Array.isArray(payload?.data) ? payload.data : Array.isArray(payload?.models) ? payload.models : Array.isArray(payload) ? payload : [];
+        const ids = list.map(item => item?.id ?? item?.name).filter(value => typeof value === 'string').slice(0, 100);
+        const shape = Array.isArray(payload) ? `array length ${payload.length}` : `keys ${Object.keys(payload ?? {}).join(',')}`;
+        diagnostic = ids.length ? ` Accessible models: ${ids.join(', ')}` : ` Model list endpoint returned no model identifiers (${shape}). Payload: ${JSON.stringify(payload).slice(0, 4000)}`;
       }
     } catch (listError) {
       diagnostic = ` Model list diagnostic failed: ${listError instanceof Error ? listError.message : String(listError)}`;
