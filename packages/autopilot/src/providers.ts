@@ -281,7 +281,7 @@ export class ModelProviderService {
         if(!failure.retryable)break;
       }
     }
-    const summary=failures.map(failure=>failure.code).join(', ');
+    const summary=failures.map(failure=>`${failure.code}${failure.status ? ` HTTP ${failure.status}` : ''}: ${failure.message}`).join('; ');
     throw new ModelProviderError(`All model providers failed (${summary})`,'ALL_PROVIDERS_FAILED');
   }
 
@@ -300,7 +300,11 @@ export class ModelProviderService {
         this.checkRate(profile);
         const body=this.requestBody(profile,request,maxTokens);
         const response=await this.http(profile,apiKey,body,request.signal);
-        if(!response.ok)throw new ModelProviderError(`Provider HTTP ${response.status}`,'PROVIDER_HTTP',response.status===408||response.status===429||response.status>=500,response.status);
+        if(!response.ok){
+          let detail='';try{detail=(await response.text()).slice(0,2000);}catch{}
+          const safeDetail=redact(detail,[apiKey]).replace(/\s+/g,' ').trim();
+          throw new ModelProviderError(`Provider HTTP ${response.status}${safeDetail?`: ${safeDetail}`:''}`,'PROVIDER_HTTP',response.status===408||response.status===429||response.status>=500,response.status);
+        }
         const payload=await this.parseResponse(response,estimatedInputTokens,maxTokens);
         const content=payload.content;
         if(!content)throw new ModelProviderError('Provider returned empty content','EMPTY_RESPONSE',true);

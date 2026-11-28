@@ -102,6 +102,11 @@ describe('ModelProviderService V4',()=>{
     expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
 
+  it('preserves redacted HTTP error details for provider compatibility diagnosis',async()=>{
+    const fetchImpl=vi.fn<FetchLike>().mockResolvedValue(response({error:{message:'invalid model sk-super-secret'}},400));
+    await expect(service(fetchImpl).complete({role:'main',taskId:'http-diagnostic',prompt:'x'})).rejects.toThrow(/PROVIDER_HTTP HTTP 400: .*invalid model \[REDACTED\]/);
+  });
+
   it('never returns API keys in provider views or network errors',async()=>{
     const fetchImpl=vi.fn<FetchLike>().mockRejectedValue(new Error('failed with sk-super-secret'));
     const instance=service(fetchImpl);
