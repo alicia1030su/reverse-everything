@@ -8,6 +8,7 @@ import { detectIntent } from './intent.js';
 import { discoveryQuestions, mergeAnswers, unansweredRequired } from './questions.js';
 import { createAutopilotPlan, readySteps, replanAutopilotPlan } from './planner.js';
 import { createDefaultToolRegistry, ToolRegistry } from './tools.js';
+import { relativeParts, runSecureFs } from './secure-fs.js';
 import { createDeliveryPackage, type DeliveryArtifactSource, type DeliveryCheckSource } from './delivery.js';
 import {
   AUTOPILOT_STATUSES, AutopilotError, type AutopilotIntent, type AutopilotMessage, type AutopilotMetrics, type AutopilotPlan,
@@ -423,6 +424,15 @@ export class AutopilotEngine {
       case 'document:delivery': input = { goal: task.contract?.userGoal ?? task.prompt, completed: task.plan?.steps.filter(item => item.status === 'SUCCEEDED').map(item => item.title) ?? [], incomplete: task.contract?.knownLimitations ?? [] }; break;
       case 'verify:delivery': input = { files: this.allDependencyRefs(task, step), checks: step.dependsOn.flatMap(id => this.stepResult(task.id, id)?.checks ?? []) }; break;
       case 'reconstruct:workspace': input = { goal: task.contract?.userGoal ?? task.prompt }; break;
+      case 'program-ir:query': {
+        const artifact = this.dependencyResult(task, step)?.artifacts?.find(item => item.name === 'program-ir.json');
+        if (!artifact?.path || !artifact.sha256) throw new AutopilotError('缺少带 SHA-256 的 Ghidra program-ir.json 工件', 'AUTOPILOT_ARTIFACT_MISSING', 422);
+        const workspaceRoot = path.join(this.options.dataDir, 'autopilot', task.id);
+        const fileName = `program-ir-${randomUUID()}.json`;
+        const copied = await runSecureFs({ operation: 'copy', source: artifact.path, root: workspaceRoot, directoryParts: relativeParts(workspaceRoot, cwd), fileName, maxBytes: 32 * 1024 * 1024, expectedSha256: artifact.sha256 }, { signal });
+        if (copied.operation !== 'copy') throw new AutopilotError('安全文件复制响应类型无效', 'AUTOPILOT_PROTOCOL', 502);
+        input = { ...(step.toolInput ?? {}), programIrPath: fileName, expectedSha256: artifact.sha256 }; break;
+      }
       case 'build:allowlisted': case 'test:allowlisted': case 'package:allowlisted': input = { cwd }; break;
       default: throw new AutopilotError(`本地工具未实现: ${step.tool}`, 'TOOL_UNAVAILABLE', 503);
     }

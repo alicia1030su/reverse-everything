@@ -1,9 +1,10 @@
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { link, mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises';
 import { createHash, randomUUID } from 'node:crypto';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { Database, WorkflowEngine, type AdapterDefinition, type AdapterName } from '@reverse/workflow';
+import { ghidraMetadataToProgram, type GhidraProgramInput } from '@reverse/program-ir';
 import {
   AutopilotEngine, ToolRegistry, createAutopilotPlan, createDefaultToolRegistry, createDeliveryPackage, createGoalContract, detectIntent,
   discoveryQuestions, mergeAnswers, nextUnansweredQuestion, parseModelIntent, runAllowlistedCommand, validateAutopilotPlan,
@@ -44,6 +45,12 @@ async function replanTask(dataDir: string, adapters: AdapterDefinition[], prompt
         if (definition.analyze) await definition.analyze({} as never);
         const file = path.join(dataDir, `${taskId}.txt`); const content = `real ${child.adapter} artifact`; await writeFile(file, content);
         db.raw.prepare('INSERT INTO artifacts (id,task_id,name,stored_path,size,sha256,mime,created_at) VALUES (?,?,?,?,?,?,?,?)').run(randomUUID(), taskId, 'analysis.txt', file, Buffer.byteLength(content), createHash('sha256').update(content).digest('hex'), 'text/plain', new Date().toISOString());
+        if (child.adapter === 'ghidra') {
+          const metadata = JSON.parse(await readFile('tests/fixtures/program-ir/ghidra-metadata.json', 'utf8')) as GhidraProgramInput;
+          const program = ghidraMetadataToProgram(metadata, `autopilot-${taskId}`); const irFile = path.join(dataDir, `${taskId}-program-ir.json`); const ir = JSON.stringify(program);
+          await writeFile(irFile, ir);
+          db.raw.prepare('INSERT INTO artifacts (id,task_id,name,stored_path,size,sha256,mime,created_at) VALUES (?,?,?,?,?,?,?,?)').run(randomUUID(), taskId, 'program-ir.json', irFile, Buffer.byteLength(ir), createHash('sha256').update(ir).digest('hex'), 'application/json', new Date().toISOString());
+        }
         db.updateTask(taskId, { status: 'COMPLETED' });
       } catch (error) { db.updateTask(taskId, { status: 'FAILED', error: error instanceof Error ? error.message : String(error) }); }
     },
@@ -114,6 +121,70 @@ describe('autopilot planning and tools', () => {
     await expect(runAllowlistedCommand('build', os.homedir(), dataDir, { timeoutMs: 1000, maxDiskMB: 10 })).rejects.toThrow(/隔离工作区/);
     expect(new ToolRegistry().list()).toEqual([]);
   });
+
+  it('queries validated Program IR and writes a reviewable report', async () => {
+    const dataDir = await tempDir(); const work = path.join(dataDir, 'work'); await mkdir(work, { recursive: true });
+    const metadata = JSON.parse(await readFile('tests/fixtures/program-ir/ghidra-metadata.json', 'utf8')) as GhidraProgramInput;
+    const program = ghidraMetadataToProgram(metadata, 'autopilot-fixture');
+    await writeFile(path.join(work, 'program-ir.json'), JSON.stringify(program));
+    const registry = createDefaultToolRegistry();
+    const context = { permissions: ['read-task-artifacts'], budget: { timeoutMs: 10_000, maxDiskMB: 10 }, cwd: work, workspaceRoot: dataDir, taskId: 't', projectId: 'p' };
+    const result = await registry.invoke('program-ir:query', { programIrPath: 'program-ir.json', operation: 'function-context', functionId: 'sum_bytes' }, context);
+    expect(result).toMatchObject({ programId: program.id, operation: 'function-context', result: { fn: { name: 'sum_bytes' } } });
+    const report = JSON.parse(await readFile(String(result.reportPath), 'utf8')) as { operation: string; programId: string; result: { fn: { name: string } } };
+    expect(report).toMatchObject({ operation: 'function-context', programId: program.id, result: { fn: { name: 'sum_bytes' } } });
+    await expect(registry.invoke('program-ir:query', { programIrPath: '../../outside.json', operation: 'stats' }, context)).rejects.toThrow(/工作区|outside/i);
+    await expect(registry.invoke('program-ir:query', { programIrPath: 'program-ir.json', operation: 'stats' }, { ...context, permissions: [] })).rejects.toThrow(/权限|FORBIDDEN/);
+    await expect(registry.invoke('program-ir:query', { programIrPath: 'program-ir.json', operation: 'stats', expectedSha256: '0'.repeat(64) }, context)).rejects.toThrow(/SHA-256|mismatch/i);
+    await expect(registry.invoke('program-ir:query', { programIrPath: 'program-ir.json', operation: 'search-functions', pattern: '[' }, context)).resolves.toMatchObject({ result: { items: [] } });
+    await writeFile(path.join(work, 'invalid.json'), '{}');
+    await expect(registry.invoke('program-ir:query', { programIrPath: 'invalid.json', operation: 'stats' }, context)).rejects.toThrow(/Program IR|schema|provenance/i);
+  });
+
+  it('accepts upstream partial Program IR and preserves its limitations', async () => {
+    const dataDir = await tempDir(); const work = path.join(dataDir, 'work'); await mkdir(work, { recursive: true });
+    const metadata = JSON.parse(await readFile('tests/fixtures/program-ir/ghidra-metadata.json', 'utf8')) as GhidraProgramInput;
+    const program = ghidraMetadataToProgram({ ...metadata, functions: metadata.functions.map(({ blocks: _blocks, parameters: _parameters, locals: _locals, ...fn }) => fn), globals: [], xrefs: [] }, 'partial-fixture');
+    await writeFile(path.join(work, 'partial-ir.json'), JSON.stringify(program));
+    const registry = createDefaultToolRegistry();
+    const result = await registry.invoke('program-ir:query', { programIrPath: 'partial-ir.json', operation: 'stats' }, { permissions: ['read-task-artifacts'], budget: { timeoutMs: 10_000, maxDiskMB: 10 }, cwd: work, workspaceRoot: dataDir, taskId: 't', projectId: 'p' });
+    expect(result).toMatchObject({ programId: program.id, operation: 'stats', result: { functions: 3, blocks: 0, instructions: 0 } });
+    expect(result.limitations).toEqual(expect.arrayContaining(['Ghidra export did not contain control-flow blocks', 'Ghidra export did not contain instruction or P-Code records']));
+  });
+
+  it('rejects a linked report directory without writing outside the task workspace', async () => {
+    const dataDir = await tempDir(); const work = path.join(dataDir, 'work'); const outside = path.join(dataDir, 'outside'); await mkdir(work, { recursive: true }); await mkdir(outside);
+    const metadata = JSON.parse(await readFile('tests/fixtures/program-ir/ghidra-metadata.json', 'utf8')) as GhidraProgramInput;
+    await writeFile(path.join(work, 'program-ir.json'), JSON.stringify(ghidraMetadataToProgram(metadata, 'linked-report-fixture')));
+    await symlink(outside, path.join(work, 'reports'), process.platform === 'win32' ? 'junction' : 'dir');
+    const registry = createDefaultToolRegistry();
+    await expect(registry.invoke('program-ir:query', { programIrPath: 'program-ir.json', operation: 'stats' }, { permissions: ['read-task-artifacts'], budget: { timeoutMs: 10_000, maxDiskMB: 10 }, cwd: work, workspaceRoot: dataDir, taskId: 't', projectId: 'p' })).rejects.toThrow(/reports|链接|symlink|junction|越界/i);
+    expect(await readdir(outside)).toEqual([]);
+  });
+
+  it('does not follow a preexisting fixed report hard link', async () => {
+    const dataDir = await tempDir(); const work = path.join(dataDir, 'work'); await mkdir(path.join(work, 'reports'), { recursive: true });
+    const metadata = JSON.parse(await readFile('tests/fixtures/program-ir/ghidra-metadata.json', 'utf8')) as GhidraProgramInput;
+    await writeFile(path.join(work, 'program-ir.json'), JSON.stringify(ghidraMetadataToProgram(metadata, 'linked-target-fixture')));
+    const outside = path.join(dataDir, 'outside-report.json'); await writeFile(outside, 'sentinel');
+    await link(outside, path.join(work, 'reports', 'program-ir-query.json'));
+    const registry = createDefaultToolRegistry();
+    const result = await registry.invoke('program-ir:query', { programIrPath: 'program-ir.json', operation: 'stats' }, { permissions: ['read-task-artifacts'], budget: { timeoutMs: 5000, maxDiskMB: 10 }, cwd: work, workspaceRoot: dataDir, taskId: 't', projectId: 'p' });
+    expect(result.reportPath).not.toBe(path.join(work, 'reports', 'program-ir-query.json'));
+    expect(await readFile(outside, 'utf8')).toBe('sentinel');
+  });
+
+  it('adds Ghidra and Program IR query steps for deep binary rebuild goals', () => {
+    const intent = detectIntent({ prompt: 'Analyze this binary software with Program IR function analysis and generate a report', paths: ['/tmp/sample.exe'] });
+    expect(intent.requiredCapabilities).toContain('ghidra');
+    const contract = createGoalContract(intent, { authorizationConfirmed: true, materials: ['/tmp/sample.exe'], targetPlatform: 'Windows' });
+    const plan = createAutopilotPlan(intent, contract);
+    expect(plan.steps.some(step => step.tool === 'analyzer:ghidra')).toBe(true);
+    const query = plan.steps.find(step => step.tool === 'program-ir:query');
+    expect(query).toBeDefined();
+    expect(query?.dependsOn).toContain('analyze-ghidra');
+    expect(query?.toolInput).toEqual({ operation: 'stats' });
+  });
 });
 
 describe('durable autopilot engine', () => {
@@ -125,6 +196,51 @@ describe('durable autopilot engine', () => {
     const row = db.raw.prepare("SELECT options_json FROM tasks WHERE adapter='apk'").get() as { options_json: string } | undefined;
     expect(row).toBeDefined();
     expect(JSON.parse(row!.options_json)).toMatchObject({ path: apkPath, apkDecompile: true });
+  });
+
+  it('executes a Program IR query from the real Ghidra artifact chain', async () => {
+    const dataDir = await tempDir(); const binary = path.join(dataDir, 'sample.exe');
+    const { db, engine, task } = await replanTask(dataDir, [adapter('file'), adapter('ghidra')], 'Analyze this binary software with Program IR function analysis and generate a report', { authorizationConfirmed: true, target: binary, materials: [binary], targetPlatform: 'Windows' });
+    const completed = await engine.run(task.id);
+    expect(completed.status, JSON.stringify({ error: completed.error, steps: completed.plan?.steps.map(step => ({ id: step.id, tool: step.tool, status: step.status, error: step.error, taskId: step.taskId })), results: db.raw.prepare('SELECT step_id,output_json FROM autopilot_step_results WHERE task_id=?').all(task.id) })).toBe('COMPLETED');
+    const query = completed.plan!.steps.find(step => step.tool === 'program-ir:query')!;
+    expect(query.status).toBe('SUCCEEDED');
+    const stored = db.raw.prepare('SELECT output_json FROM autopilot_step_results WHERE task_id=? AND step_id=?').get(task.id, query.id) as { output_json: string };
+    const result = JSON.parse(stored.output_json) as { outputRefs: string[]; checks: { name: string; passed: boolean }[] };
+    expect(result.outputRefs).toHaveLength(1);
+    const report = JSON.parse(await readFile(result.outputRefs[0]!, 'utf8')) as { operation: string; programIrSha256: string; result: { functions: number } };
+    expect(report.operation).toBe('stats');
+    expect(report.programIrSha256).toMatch(/^[0-9a-f]{64}$/);
+    expect(report.result.functions).toBe(3);
+    expect(result.checks.every(check => check.passed)).toBe(true);
+  });
+
+  it('does not overwrite a hard-linked Program IR target in the step workspace', async () => {
+    const dataDir = await tempDir(); const binary = path.join(dataDir, 'sample.exe');
+    const { engine, task } = await replanTask(dataDir, [adapter('file'), adapter('ghidra')], 'Analyze this binary software with Program IR function analysis and generate a report', { authorizationConfirmed: true, target: binary, materials: [binary], targetPlatform: 'Windows' });
+    const stepCwd = path.join(dataDir, 'autopilot', task.id, 'steps', 'query-program-ir'); await mkdir(stepCwd, { recursive: true });
+    const outside = path.join(dataDir, 'outside-ir.json'); await writeFile(outside, 'sentinel');
+    await link(outside, path.join(stepCwd, 'program-ir.json'));
+    const completed = await engine.run(task.id);
+    expect(completed.status, completed.error ?? '').toBe('COMPLETED');
+    expect(await readFile(outside, 'utf8')).toBe('sentinel');
+  });
+
+  it('reuses a persisted Program IR query result after lease recovery', async () => {
+    const dataDir = await tempDir(); const binary = path.join(dataDir, 'sample.exe');
+    const { db, engine, task } = await replanTask(dataDir, [adapter('file'), adapter('ghidra')], 'Analyze this binary software with Program IR function analysis and generate a report', { authorizationConfirmed: true, target: binary, materials: [binary], targetPlatform: 'Windows' });
+    const query = task.plan!.steps.find(step => step.tool === 'program-ir:query')!;
+    const report = path.join(dataDir, 'persisted-program-ir-query.json'); await writeFile(report, JSON.stringify({ operation: 'stats', persisted: true }));
+    const result = { status: 'SUCCEEDED', outputRefs: [report], checks: [{ name: 'program-ir:query', passed: true, evidence: 'persisted query report' }], summary: 'reused Program IR query' };
+    db.raw.prepare('INSERT INTO autopilot_step_results (task_id,step_id,idempotency_key,status,output_json,created_at) VALUES (?,?,?,\'SUCCEEDED\',?,?)').run(task.id, query.id, `${task.id}:persisted-query`, JSON.stringify(result), new Date().toISOString());
+    query.status = 'SUCCEEDED'; query.outputRefs = [report]; db.raw.prepare('UPDATE autopilot_tasks SET plan_json=? WHERE id=?').run(JSON.stringify(task.plan), task.id);
+    const invoke = engine.tools.invoke.bind(engine.tools); let queryCalls = 0;
+    engine.tools.invoke = async (name, input, context) => { if (name === 'program-ir:query') queryCalls++; return invoke(name, input, context); };
+    const completed = await engine.run(task.id);
+    expect(completed.status, completed.error ?? '').toBe('COMPLETED');
+    expect(queryCalls).toBe(0);
+    expect(completed.plan!.steps.find(step => step.id === query.id)?.attempt).toBe(0);
+    expect(completed.plan!.steps.find(step => step.id === query.id)?.outputRefs).toEqual([report]);
   });
 
   it('persists idempotent creation and rejects key reuse with another prompt', async () => {

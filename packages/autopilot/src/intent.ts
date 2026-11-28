@@ -79,6 +79,7 @@ export function detectIntent(promptOrInput: string | { prompt: string; uploadIds
   const objectives = splitObjectives(prompt);
   const targetPlatform = detectTargetPlatform(prompt);
   const requiredCapabilities = [...CAPABILITIES[kind]];
+  if (kind === 'software-rebuild' && /program\s*ir|ghidra|binary|二进制|逆向|reverse engineering|function analysis/i.test(prompt)) requiredCapabilities.push('ghidra');
   const delivery = deliveryFromRules(prompt, kind);
   const missing: string[] = [];
   const permissions: string[] = ['read-target', 'write-task-artifacts'];

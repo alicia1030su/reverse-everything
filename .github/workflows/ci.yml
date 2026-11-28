@@ -38,6 +38,8 @@ jobs:
       - run: npm run check:secrets
       - run: npm run licenses
       - run: npm test -- --reporter=json --outputFile=.artifacts/vitest-${{ matrix.os }}.json
+      - name: Verify secure filesystem helper
+        run: ${{ matrix.os == 'windows-latest' && 'python' || 'python3' }} -m unittest tests/fixtures/dynamic/test_secure_fs.py
       - name: Upload Vitest report
         if: always()
         uses: actions/upload-artifact@v7

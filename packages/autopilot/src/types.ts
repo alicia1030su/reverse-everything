@@ -25,7 +25,7 @@ export interface GoalContract {
 export type AutopilotStepStatus = 'PENDING'|'READY'|'RUNNING'|'WAITING_FOR_USER'|'SUCCEEDED'|'FAILED'|'SKIPPED'|'BLOCKED';
 export interface AutopilotStep {
   id:string; goal:string; title:string; kind:'discover'|'analyze'|'reconstruct'|'build'|'test'|'repair'|'package'|'verify'|'document';
-  dependsOn:string[]; tool:string; inputRefs:string[]; expectedOutput:string; acceptance:string;
+  dependsOn:string[]; tool:string; inputRefs:string[]; toolInput?:JsonObject; expectedOutput:string; acceptance:string;
   budget:{timeoutMs:number;maxDiskMB:number}; retries:number; status:AutopilotStepStatus; attempt:number;
   taskId?:string; outputRefs:string[]; error?:string; startedAt?:string; endedAt?:string;
 }

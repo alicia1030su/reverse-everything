@@ -4,6 +4,7 @@ import { cp, mkdir, readFile, readdir, stat, writeFile } from 'node:fs/promises'
 import path from 'node:path';
 import type { JsonObject } from '@reverse/contracts';
 import { AutopilotError, type ToolDefinition } from './types.js';
+import { registerProgramIrQueryTool } from './program-ir-tool.js';
 
 export interface ToolBudget { timeoutMs: number; maxDiskMB: number }
 export interface ToolInvokeContext {
@@ -145,6 +146,7 @@ async function checksumFiles(files: string[]): Promise<string> {
 
 export function createDefaultToolRegistry(): ToolRegistry {
   const registry = new ToolRegistry();
+  registerProgramIrQueryTool(registry);
   const analyzers: [string, string, string[]][] = [
     ['website', 'Bounded same-origin website capture and static compatibility analysis', ['URL', 'HTML']],
     ['file', 'Read-only static file identification and bounded content analysis', ['PE', 'ELF', 'Mach-O', 'ZIP', 'UNKNOWN']],
