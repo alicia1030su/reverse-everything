@@ -24,6 +24,7 @@ import { registerGameRevivalRoutes } from './game-revival.js';
 import { registerLegacyRoutes } from './legacy-routes.js';
 import { registerAutopilotRoutes } from './autopilot-routes.js';
 import { registerModelRoutes } from './model-routes.js';
+import { registerBinaryDiffRoutes } from './binary-diff-routes.js';
 import { AutopilotEngine, AutopilotError, type SecretStore } from '@reverse/autopilot';
 
 export interface ServerOptions { dataDir?: string; db?: Database; token?: string; webDir?: string; resourceDir?: string; logger?: boolean; backgroundResources?: boolean; rateLimitPerMinute?: number }
@@ -102,6 +103,7 @@ export async function buildServer(options:ServerOptions={}) {
   registerHardwareRoutes(app);
   registerDesktopMetricsRoutes(app,db,retention);
   registerResearchRoutes(app,{db,engine,dataDir,resourceDir});
+  registerBinaryDiffRoutes(app,{db});
   registerGameRevivalRoutes(app,{db,dataDir});
   registerLegacyRoutes(app,{db,dataDir});
   app.get('/api/health',async()=>({ok:true,product:'reverse-everything',version:VERSION,schemaVersion:SCHEMA_VERSION}));

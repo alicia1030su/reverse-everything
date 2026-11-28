@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import {
-  Activity, Bot, Boxes, ChevronRight, CirclePlus, Cpu, Database, DatabaseBackup, FileSearch,
+  Activity, Bot, Boxes, ChevronRight, CirclePlus, Cpu, Database, DatabaseBackup, FileSearch, GitCompareArrows,
   FileText, FlaskConical, FolderKanban, Gamepad2, Gauge, KeyRound, LayoutDashboard, Menu, Moon, Network,
   PackageCheck, PackageSearch, Rocket, Settings, ShieldCheck, Sparkles, Sun, Usb, Wrench, X,
 } from 'lucide-react';
@@ -35,6 +35,7 @@ const navigation = [
       { to: '/revival', label: '游戏复活实验室', icon: FlaskConical },
       { to: '/game-studio', label: '游戏复活工作台', icon: Rocket },
       { to: '/legacy-studio', label: '古老软件复活', icon: Wrench },
+      { to: '/binary-diff', label: '二进制差异', icon: GitCompareArrows },
       { to: '/security', label: '漏洞分析中心', icon: ShieldCheck },
       { to: '/validation', label: '重建与验证', icon: Boxes },
       { to: '/tools', label: '工具与依赖', icon: PackageSearch },

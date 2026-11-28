@@ -7,6 +7,7 @@ import path from 'node:path';
 const mocks = vi.hoisted(() => ({
   tools: new Map<string, { description: string; handler: (args: Record<string, unknown>) => Promise<{ content: Array<{ text: string }> }> }>(),
   apiBytes: vi.fn(),
+  api: vi.fn(),
 }));
 
 vi.mock('@modelcontextprotocol/server', () => ({
@@ -16,7 +17,7 @@ vi.mock('@modelcontextprotocol/server', () => ({
     }
   },
 }));
-vi.mock('../../apps/cli/src/client.js', () => ({ api: vi.fn(), apiBytes: mocks.apiBytes }));
+vi.mock('../../apps/cli/src/client.js', () => ({ api: mocks.api, apiBytes: mocks.apiBytes }));
 vi.mock('node:fs/promises', async importOriginal => {
   const actual = await importOriginal<typeof import('node:fs/promises')>();
   return {
@@ -50,6 +51,7 @@ beforeEach(async () => {
   process.env.RE_API_TOKEN = 'test-token';
   mocks.tools.clear();
   mocks.apiBytes.mockReset();
+  mocks.api.mockReset();
   sandbox = await mkdtemp(path.join(os.tmpdir(), 're-mcp-download-'));
   allowed = path.join(sandbox, 'allowed');
   outside = path.join(sandbox, 'outside');
@@ -65,6 +67,15 @@ afterEach(async () => {
 });
 
 describe('MCP download filesystem safety', () => {
+  it('registers Binary Diff through the shared API client', async () => {
+    mocks.api.mockResolvedValue({ status: 'PASSED', summary: { matchedFunctions: 3 } });
+    createMcpServer();
+    const tool = mocks.tools.get('binary_diff')!;
+    expect(tool.description).toContain('Program IR');
+    const result = await tool.handler({ beforeTaskId: 'before', afterTaskId: 'after', maxFunctions: 100 });
+    expect(mocks.api).toHaveBeenCalledWith('/api/binary-diff', { method: 'POST', body: JSON.stringify({ beforeTaskId: 'before', afterTaskId: 'after', maxFunctions: 100 }) });
+    expect(JSON.parse(result.content[0].text).summary.matchedFunctions).toBe(3);
+  });
   it('returns bounded base64 by default without creating a file', async () => {
     const bytes = Buffer.from('verified artifact');
     mocks.apiBytes.mockResolvedValue(new Response(bytes, { headers: { 'x-artifact-sha256': 'wrong-header' } }));

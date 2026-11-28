@@ -5,9 +5,12 @@ export const REQUIRED_PUSH_WORKFLOWS = Object.freeze([
   'CI',
   'Android v0.0.4 real JADX',
   'Ghidra V004 Real Verification',
+  'dynamic-v009',
+  'Symbolic V009 Real Verification',
+  'Binary Diff V009 Real Verification',
 ]);
 
-export const WORKFLOW_DISPATCH_RELEASES = Object.freeze(['Release v007', 'Release v008']);
+export const WORKFLOW_DISPATCH_RELEASES = Object.freeze(['Release v007', 'Release v008', 'Release v009']);
 const workflowDispatchReleases = new Set(WORKFLOW_DISPATCH_RELEASES);
 
 export function requiredReleaseWorkflows(currentWorkflow) {

@@ -1,6 +1,6 @@
 {
   "name": "@reverse/dynamic-analysis",
-  "version": "0.0.8",
+  "version": "0.0.9",
   "private": true,
   "type": "module",
   "exports": {
@@ -13,7 +13,7 @@
     "build": "tsc -p tsconfig.json"
   },
   "dependencies": {
-    "@reverse/program-ir": "0.0.8"
+    "@reverse/program-ir": "0.0.9"
   },
   "devDependencies": {
     "typescript": "5.9.3",

@@ -1,6 +1,6 @@
 {
   "name": "@reverse/workflow",
-  "version": "0.0.8",
+  "version": "0.0.9",
   "private": true,
   "type": "module",
   "exports": {
@@ -13,11 +13,11 @@
     "build": "tsc -p tsconfig.json"
   },
   "dependencies": {
-    "@reverse/ai": "0.0.8",
-    "@reverse/contracts": "0.0.8",
-    "@reverse/evidence": "0.0.8",
-    "@reverse/planner": "0.0.8",
-    "@reverse/security": "0.0.8"
+    "@reverse/ai": "0.0.9",
+    "@reverse/contracts": "0.0.9",
+    "@reverse/evidence": "0.0.9",
+    "@reverse/planner": "0.0.9",
+    "@reverse/security": "0.0.9"
   },
   "devDependencies": {
     "typescript": "5.9.3",

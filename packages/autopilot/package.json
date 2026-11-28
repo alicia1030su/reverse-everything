@@ -1,6 +1,6 @@
 {
   "name": "@reverse/autopilot",
-  "version": "0.0.8",
+  "version": "0.0.9",
   "private": true,
   "type": "module",
   "exports": {
@@ -13,11 +13,11 @@
     "build": "tsc -p tsconfig.json"
   },
   "dependencies": {
-    "@reverse/contracts": "0.0.8",
-    "@reverse/evidence": "0.0.8",
-    "@reverse/program-ir": "0.0.8",
-    "@reverse/program-semantics": "0.0.8",
-    "@reverse/workflow": "0.0.8"
+    "@reverse/contracts": "0.0.9",
+    "@reverse/evidence": "0.0.9",
+    "@reverse/program-ir": "0.0.9",
+    "@reverse/program-semantics": "0.0.9",
+    "@reverse/workflow": "0.0.9"
   },
   "devDependencies": {
     "typescript": "5.9.3",

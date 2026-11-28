@@ -1,15 +1,21 @@
 # Reverse Everything
 
-**Autopilot: natural-language local reverse engineering and compatibility reconstruction · v0.0.8**
+**Autopilot: natural-language local reverse engineering and compatibility reconstruction · v0.0.9**
 
 Current stable release: **v0.0.8**, officially released on 2026-11-27.
 
 [![CI](https://github.com/alicia1030su/reverse-everything/actions/workflows/ci.yml/badge.svg)](https://github.com/alicia1030su/reverse-everything/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
-[![Release](https://img.shields.io/badge/release-v0.0.8-blue.svg)](https://github.com/alicia1030su/reverse-everything/releases/tag/v0.0.8)
+[![Release](https://img.shields.io/badge/release-v0.0.9-blue.svg)](https://github.com/alicia1030su/reverse-everything/actions/workflows/release-v009.yml)
 [简体中文](README.md)
 
 ![Reverse Everything banner](docs/assets/banner.svg)
+
+## What is new in v0.0.9
+
+v0.0.9 deepens program understanding for authorized binaries: structured Ghidra Program IR, GDB/MI dynamic timelines, angr/Z3 symbolic execution, Autopilot function-level evidence queries, and cross-version function matching with additions, removals, CFG and call-graph changes. Binary Diff is available through Web, REST, CLI, MCP, and Skill.
+
+Eight-stage real-model acceptance and three source-isolated blind cases are enforced. Without a real provider the result remains `BLOCKED / MISSING_API_KEY`; mocks or rule-based output are never presented as real-model capability. v0.0.8 remains the current stable release until every v0.0.9 hard gate passes.
 
 ## What is new in v0.0.8
 
@@ -195,7 +201,7 @@ Local URLs require `--confirm-local`. The CLI reads `RE_DATA_DIR/local-token` by
 
 - API: `http://127.0.0.1:4173/api/v1`; `/api` remains an alias.
 - OpenAPI: runtime `GET /api/openapi.json`.
-- MCP: stdio and Streamable HTTP share the API. The v0.0.7 baseline continues to expose **44 tools**; v0.0.8 adds 10 `autopilot_*` tools for 54 total. `create_task` accepts the `legacy` adapter, while game tools remain `list_game_profiles`, `save_game_profile`, `scan_game_directory`, `create_game_server_spec`, `list_game_rebuilds`, `create_game_rebuild`, and `get_game_rebuild`.
+- MCP: stdio and Streamable HTTP share the API. The v0.0.7 baseline continues to expose **44 tools**; v0.0.8 adds 10 `autopilot_*` tools and v0.0.9 adds `binary_diff` for 55 total. `create_task` accepts the `legacy` adapter, while game tools remain `list_game_profiles`, `save_game_profile`, `scan_game_directory`, `create_game_server_spec`, `list_game_rebuilds`, `create_game_rebuild`, and `get_game_rebuild`.
 - Skill: `skills/reverse-everything`; prefer MCP, otherwise CLI/API.
 
 All entrypoints share backend authorization, schemas, budgets, and structured errors. Cleanup, device opening, live capture, flashing, driver installation, and arbitrary host command execution are not exposed to MCP.

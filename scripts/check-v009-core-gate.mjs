@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { assertFinalDeliveryPassed } from './model-evidence.mjs';
 
 export const V009_MODEL_STAGES = Object.freeze([
   'program-analysis', 'function-understanding', 'research-plan', 'tool-selection',
@@ -69,8 +70,10 @@ export function validateV009CoreGate(report) {
     if (test.buildPassed !== true || test.hiddenTestsPassed !== true || test.behaviorEquivalent !== true) errors.push(`Blind test ${test.id ?? 'unknown'} did not pass build/hidden/behavior acceptance`);
     if (!Number.isSafeInteger(test.hiddenTestCount) || test.hiddenTestCount < 1) errors.push(`Blind test ${test.id ?? 'unknown'} has no hidden tests`);
     if (!isSha(test.implementationSha256)) errors.push(`Blind test ${test.id ?? 'unknown'} is missing its implementation digest`);
+    if (!isSha(test.candidateExecutableSha256)) errors.push(`Blind test ${test.id ?? 'unknown'} is missing its candidate executable digest`);
     requireEvidence(test.binaryPath, `Blind test ${test.id ?? 'unknown'} binary`, test.binarySha256);
     requireEvidence(test.implementationPath, `Blind test ${test.id ?? 'unknown'} implementation`, test.implementationSha256);
+    requireEvidence(test.candidateExecutablePath, `Blind test ${test.id ?? 'unknown'} candidate executable`, test.candidateExecutableSha256);
     requireEvidence(test.hiddenTestsPath, `Blind test ${test.id ?? 'unknown'} hidden tests`);
   }
 
@@ -110,6 +113,8 @@ function validateEvidenceContent(report, item, data, errors) {
     const value = parseJsonEvidence(data, label, errors);
     if (!value) return;
     if (!request || value.stage !== request.stage || value.requestId !== request.requestId || value.finishReason !== 'stop' || value.usageSource !== 'provider' || value.refusal !== false) errors.push(`${label} model response does not match the reported request`);
+    if (typeof value.response !== 'string' || !value.response.trim() || !value.parsed || typeof value.parsed !== 'object' || Array.isArray(value.parsed)) errors.push(`${label} lacks the raw model response or parsed structured output`);
+    if (request?.stage === 'final-delivery') { try { assertFinalDeliveryPassed(value.parsed); } catch (error) { errors.push(`${label} ${error instanceof Error ? error.message : String(error)}`); } }
     if (JSON.stringify(value.usage) !== JSON.stringify(request?.usage)) errors.push(`${label} model usage does not match the report`);
     if (value.promptSha256 !== request?.promptSha256) errors.push(`${label} model prompt digest does not match the report`);
     if (value.realModelCalled !== true || value.provider !== report.realModel.provider || value.model !== report.realModel.model) errors.push(`${label} is not evidence of the reported real model`);
@@ -118,6 +123,8 @@ function validateEvidenceContent(report, item, data, errors) {
     const value = parseJsonEvidence(data, label, errors);
     if (!value) return;
     if (!test || value.passed !== true || value.mismatchCount !== 0 || value.sourceExposedToAgent !== false || !Number.isSafeInteger(value.testCount) || value.testCount < test.hiddenTestCount) errors.push(`${label} hidden-test evidence is incomplete or failed`);
+    if (!isSha(value.implementationSha256) || value.implementationSha256.toLowerCase() !== test.implementationSha256.toLowerCase()) errors.push(`${label} hidden tests are not bound to the candidate source digest`);
+    if (!isSha(value.candidateExecutableSha256) || value.candidateExecutableSha256.toLowerCase() !== test.candidateExecutableSha256.toLowerCase()) errors.push(`${label} hidden tests are not bound to the candidate executable digest`);
   } else if (item.kind === 'dynamic-trace') {
     const value = parseJsonEvidence(data, label, errors);
     if (!value) return;
@@ -129,7 +136,10 @@ function validateEvidenceContent(report, item, data, errors) {
   } else if (item.kind === 'binary-diff') {
     const value = parseJsonEvidence(data, label, errors);
     if (!value) return;
-    if (value.status !== 'PASSED' || !Number.isSafeInteger(value.comparedBinaries) || value.comparedBinaries < 2 || !Number.isSafeInteger(value.matchedFunctions) || value.matchedFunctions < 1) errors.push(`${label} lacks a real two-binary function diff`);
+    if (value.status !== 'PASSED' || value.comparedBinaries !== 2 || !Number.isSafeInteger(value.matchedFunctions) || value.matchedFunctions < 1) errors.push(`${label} lacks a real two-binary function diff`);
+    if (!isSha(value.before?.inputSha256) || !isSha(value.after?.inputSha256) || value.before.inputSha256.toLowerCase() === value.after.inputSha256.toLowerCase()) errors.push(`${label} must bind two different input binary digests`);
+    if (!Array.isArray(value.matches) || value.matches.length !== value.matchedFunctions || value.matches.some(match => !match?.beforeId || !match?.afterId || !Array.isArray(match.beforeEvidenceIds) || !match.beforeEvidenceIds.length || !Array.isArray(match.afterEvidenceIds) || !match.afterEvidenceIds.length)) errors.push(`${label} has incomplete function match evidence`);
+    if (value.summary?.matchedFunctions !== value.matchedFunctions) errors.push(`${label} summary does not match the function matches`);
   } else if (item.kind === 'game-compat') {
     const value = parseJsonEvidence(data, label, errors);
     if (!value) return;

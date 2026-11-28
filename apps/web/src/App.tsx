@@ -24,6 +24,7 @@ import Authorizations from './pages/Authorizations';
 import Reports from './pages/Reports';
 import GameRevivalStudio from './pages/GameRevivalStudio';
 import LegacyStudio from './pages/LegacyStudio';
+import BinaryDiff from './pages/BinaryDiff';
 
 export default function App() {
   return <Routes><Route element={<Layout/>}>
@@ -47,6 +48,7 @@ export default function App() {
     <Route path="revival" element={<Revival/>}/>
     <Route path="game-studio" element={<GameRevivalStudio/>}/>
     <Route path="legacy-studio" element={<LegacyStudio/>}/>
+    <Route path="binary-diff" element={<BinaryDiff/>}/>
     <Route path="revival/:taskId" element={<Revival/>}/>
     <Route path="security" element={<Security/>}/>
     <Route path="validation" element={<Validation/>}/>

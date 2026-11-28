@@ -198,6 +198,10 @@ export function createMcpServer(localFileRead = false): McpServer {
   register('get_task', 'Get stages evidence findings logs and artifacts', { taskId: z.string() }, args => api(`/api/tasks/${String(args.taskId)}`));
   register('task_action', 'Pause resume cancel or retry', { taskId: z.string(), action: z.enum(['pause', 'resume', 'cancel', 'retry']) }, args => api(`/api/tasks/${String(args.taskId)}/${String(args.action)}`, { method: 'POST' }));
   register('get_report', 'Get task detail including generated Markdown report', { taskId: z.string() }, args => api(`/api/tasks/${String(args.taskId)}`));
+  register('binary_diff', 'Compare two completed tasks using their verified Program IR artifacts. Returns evidence-bound function matches, additions, removals and structural changes; never executes either binary.', {
+    beforeTaskId: z.string(), afterTaskId: z.string(), beforeArtifact: z.string().optional(), afterArtifact: z.string().optional(),
+    maxFunctions: z.number().int().min(1).max(5000).optional(), minSimilarity: z.number().min(0).max(1).optional(), maxChanges: z.number().int().min(1).max(500).optional(),
+  }, args => api('/api/binary-diff', { method: 'POST', body: JSON.stringify(args) }));
   register('list_capabilities', 'List product version adapters and entrypoints', {}, () => api('/api/capabilities'));
   register('get_system_health', 'Get API worker and browser status', {}, () => api('/api/system/status'));
   register('get_resource_metrics', 'Get real API worker and desktop metrics', {}, () => api('/api/resources'));

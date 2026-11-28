@@ -15,20 +15,20 @@ function buildFixture() {
     const promptPath = `model/${stage}.prompt.txt`; const evidencePath = `model/${stage}.response.json`;
     const promptSha256 = hash(`prompt:${stage}`); add(promptPath, 'model-prompt', `prompt:${stage}`);
     const requestId = `req-${stage}`; const usage = { promptTokens: 10, completionTokens: 5, totalTokens: 15 };
-    const response = JSON.stringify({ stage, requestId, finishReason: 'stop', usageSource: 'provider', refusal: false, promptSha256, usage, realModelCalled: true, provider: 'local', model: 'real' });
+    const response = JSON.stringify({ stage, requestId, finishReason: 'stop', usageSource: 'provider', refusal: false, promptSha256, usage, realModelCalled: true, provider: 'local', model: 'real', response: `response:${stage}`, parsed: stage === 'final-delivery' ? { stage, status: 'PASSED' } : { stage } });
     const responseSha256 = hash(response); add(evidencePath, 'model-response', response);
     return { stage, requestId, finishReason: 'stop', usageSource: 'provider', refusal: false, promptSha256, responseSha256, promptPath, evidencePath, usage };
   });
   const blind = [1, 2, 3].map(id => {
-    const binaryPath = `blind/${id}/program.bin`; const implementationPath = `blind/${id}/implementation.tar`; const hiddenTestsPath = `blind/${id}/hidden-tests.json`;
-    const binary = Buffer.from(`binary-${id}`); const implementation = Buffer.from(`implementation-${id}`); const hidden = JSON.stringify({ passed: true, mismatchCount: 0, sourceExposedToAgent: false, testCount: 5 });
-    add(binaryPath, 'blind-binary', binary); add(implementationPath, 'blind-implementation', implementation); add(hiddenTestsPath, 'hidden-tests', hidden);
-    return { id: `blind-${id}`, sourceExposedToAgent: false, independentAnswerSeparated: true, binarySha256: hash(binary), buildPassed: true, hiddenTestsPassed: true, behaviorEquivalent: true, hiddenTestCount: 5, implementationSha256: hash(implementation), binaryPath, implementationPath, hiddenTestsPath };
+    const binaryPath = `blind/${id}/program.bin`; const implementationPath = `blind/${id}/implementation.tar`; const candidateExecutablePath = `blind/${id}/candidate.so`; const hiddenTestsPath = `blind/${id}/hidden-tests.json`;
+    const binary = Buffer.from(`binary-${id}`); const implementation = Buffer.from(`implementation-${id}`); const executable = Buffer.from([0x7f, 0x45, 0x4c, 0x46, 0x00]); const hidden = JSON.stringify({ passed: true, mismatchCount: 0, sourceExposedToAgent: false, testCount: 5, implementationSha256: hash(implementation), candidateExecutableSha256: hash(executable) });
+    add(binaryPath, 'blind-binary', binary); add(implementationPath, 'blind-implementation', implementation); add(candidateExecutablePath, 'executable', executable); add(hiddenTestsPath, 'hidden-tests', hidden);
+    return { id: `blind-${id}`, sourceExposedToAgent: false, independentAnswerSeparated: true, binarySha256: hash(binary), buildPassed: true, hiddenTestsPassed: true, behaviorEquivalent: true, hiddenTestCount: 5, implementationSha256: hash(implementation), candidateExecutableSha256: hash(executable), binaryPath, implementationPath, candidateExecutablePath, hiddenTestsPath };
   });
   const dynamicPath = 'dynamic/trace.json'; const symbolicPath = 'symbolic/solver.json'; const diffPath = 'diff/report.json'; const gamePath = 'game/original-client.json';
   add(dynamicPath, 'dynamic-trace', JSON.stringify({ status: 'PASSED', events: [{ type: 'syscall', name: 'openat' }], staticLinks: ['fn:0x1000'] }));
   add(symbolicPath, 'symbolic-result', JSON.stringify({ status: 'PASSED', solver: 'z3', pathsExplored: 2, results: [{ path: '0x1000->0x1010', satisfiable: true }] }));
-  add(diffPath, 'binary-diff', JSON.stringify({ status: 'PASSED', comparedBinaries: 2, matchedFunctions: 2, changes: [] }));
+  add(diffPath, 'binary-diff', JSON.stringify({ status: 'PASSED', comparedBinaries: 2, before: { inputSha256: '1'.repeat(64) }, after: { inputSha256: '2'.repeat(64) }, matchedFunctions: 2, summary: { matchedFunctions: 2 }, matches: [{ beforeId: 'fn:before', afterId: 'fn:after', beforeEvidenceIds: ['ev:before'], afterEvidenceIds: ['ev:after'] }, { beforeId: 'fn:before2', afterId: 'fn:after2', beforeEvidenceIds: ['ev:before2'], afterEvidenceIds: ['ev:after2'] }] }));
   add(gamePath, 'game-compat', JSON.stringify({ cases: [{ name: 'fixture', originalClient: true, passed: true }] }));
   const executablePaths = ['out/one', 'out/two', 'out/three'];
   for (const file of executablePaths) add(file, 'executable', Buffer.from([0x7f, 0x45, 0x4c, 0x46, 0x02, 0x01, 0x01, 0x00]));
@@ -54,13 +54,12 @@ function buildFixture() {
 
 function validReport() { return buildFixture().report; }
 
-async function materialize(report: ReturnType<typeof validReport>) {
+async function materialize(report: ReturnType<typeof validReport>, contents = buildFixture().contents) {
   const dir = await mkdtemp(path.join(os.tmpdir(), 'v009-gate-'));
-  const fixture = buildFixture();
   for (const item of report.evidenceManifest) {
     const file = path.join(dir, item.path);
     await mkdir(path.dirname(file), { recursive: true });
-    await writeFile(file, fixture.contents.get(item.path)!.data);
+    await writeFile(file, contents.get(item.path)!.data);
   }
   return dir;
 }
@@ -94,6 +93,30 @@ describe('v0.0.9 core release gate', () => {
     expect(validateV009CoreGate(partial).join(' ')).toContain('final-delivery');
   });
 
+  it('requires raw and parsed model output in response evidence', async () => {
+    const report = validReport();
+    const item = report.evidenceManifest.find(entry => entry.kind === 'model-response')!;
+    const fixture = buildFixture();
+    const value = JSON.parse(String(fixture.contents.get(item.path)!.data)); delete value.parsed;
+    const changed = Buffer.from(JSON.stringify(value)); fixture.contents.set(item.path, { data: changed, kind: 'model-response' }); item.sha256 = hash(changed);
+    report.realModel.requests.find(request => request.evidencePath === item.path)!.responseSha256 = hash(changed);
+    const dir = await materialize(report, fixture.contents);
+    try { expect((await verifyV009CoreGateEvidence(report, dir)).join(' ')).toMatch(/raw model response|parsed structured output/); }
+    finally { await rm(dir, { recursive: true, force: true }); }
+  });
+
+  it('blocks final-delivery evidence that explicitly reports BLOCKED', async () => {
+    const report = validReport();
+    const item = report.evidenceManifest.find(entry => entry.kind === 'model-response' && entry.path.includes('final-delivery'))!;
+    const fixture = buildFixture();
+    const value = JSON.parse(String(fixture.contents.get(item.path)!.data)); value.parsed = { status: 'BLOCKED' };
+    const changed = Buffer.from(JSON.stringify(value)); fixture.contents.set(item.path, { data: changed, kind: 'model-response' }); item.sha256 = hash(changed);
+    report.realModel.requests.find(request => request.evidencePath === item.path)!.responseSha256 = hash(changed);
+    const dir = await materialize(report, fixture.contents);
+    try { expect((await verifyV009CoreGateEvidence(report, dir)).join(' ')).toMatch(/Final delivery/); }
+    finally { await rm(dir, { recursive: true, force: true }); }
+  });
+
   it('blocks source leaks, weak blind tests and commit identity mismatch', () => {
     const report = validReport(); report.blindTests[0]!.sourceExposedToAgent = true;
     expect(validateV009CoreGate(report).join(' ')).toContain('source isolation');
@@ -108,5 +131,19 @@ describe('v0.0.9 core release gate', () => {
     expect(validateV009CoreGate(report).join(' ')).toContain('dynamicAnalysis');
     const game = validReport(); game.gameOriginalClient.cases[0]!.originalClient = false;
     expect(validateV009CoreGate(game).join(' ')).toContain('Original-client');
+  });
+
+  it('rejects diff evidence without two distinct binaries and bound function evidence', async () => {
+    const report = validReport();
+    const item = report.evidenceManifest.find(entry => entry.kind === 'binary-diff')!;
+    const fixture = buildFixture();
+    const value = JSON.parse(String(fixture.contents.get(item.path)!.data));
+    value.after.inputSha256 = value.before.inputSha256;
+    const changed = Buffer.from(JSON.stringify(value));
+    fixture.contents.set(item.path, { data: changed, kind: 'binary-diff' });
+    item.sha256 = hash(changed);
+    const dir = await materialize(report, fixture.contents);
+    try { expect((await verifyV009CoreGateEvidence(report, dir)).join(' ')).toMatch(/two different input binary digests/); }
+    finally { await rm(dir, { recursive: true, force: true }); }
   });
 });
