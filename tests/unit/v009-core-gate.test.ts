@@ -105,6 +105,15 @@ describe('v0.0.9 core release gate', () => {
     finally { await rm(dir, { recursive: true, force: true }); }
   });
 
+  it('rejects final-delivery evidence path reuse from another stage', () => {
+    const report = validReport();
+    const first = report.realModel.requests[0]!;
+    const final = report.realModel.requests.find(request => request.stage === 'final-delivery')!;
+    final.evidencePath = first.evidencePath;
+    final.responseSha256 = first.responseSha256;
+    expect(validateV009CoreGate(report).join(' ')).toMatch(/Duplicate model evidence path/);
+  });
+
   it('blocks final-delivery evidence that explicitly reports BLOCKED', async () => {
     const report = validReport();
     const item = report.evidenceManifest.find(entry => entry.kind === 'model-response' && entry.path.includes('final-delivery'))!;
