@@ -2,16 +2,6 @@ name: dynamic-v009
 on:
   push:
     branches: [main]
-    paths:
-      - 'packages/dynamic-analysis/**'
-      - 'tests/fixtures/dynamic/**'
-      - 'tests/unit/dynamic-analysis.test.ts'
-      - 'scripts/verify-dynamic.mjs'
-      - 'scripts/pidfd_cleanup.py'
-      - '.github/workflows/dynamic-v009.yml'
-      - 'package.json'
-      - 'package-lock.json'
-      - 'tsconfig.json'
   pull_request:
     paths:
       - 'packages/dynamic-analysis/**'

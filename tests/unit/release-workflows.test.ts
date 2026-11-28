@@ -84,6 +84,30 @@ describe('release workflow identity gate', () => {
     }
   });
 
+  it('requires the v009 real capability gates and current release workflow', () => {
+    const v009Required = requiredReleaseWorkflows('Release v009');
+    expect(v009Required).toEqual([...REQUIRED_PUSH_WORKFLOWS, 'Release v009']);
+    expect(v009Required).toEqual(expect.arrayContaining(['dynamic-v009', 'Symbolic V009 Real Verification', 'Binary Diff V009 Real Verification']));
+    expect(verifyReleaseWorkflowRuns(v009Required.map(name => run(name)), { commit, currentWorkflow: 'Release v009' })).toEqual([]);
+  });
+
+  it('keeps v009 frozen version, Windows upgrade and core-gate publish parameters', async () => {
+    const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
+    const workflow = await readFile(path.join(root, '.github/workflows/release-v009.yml'), 'utf8');
+    expect(workflow).toContain('name: Release v009');
+    expect(workflow).toContain('group: release-v009-${{ github.repository }}');
+    expect(workflow).toContain('test "$VERSION" = "0.0.9"');
+    expect(workflow).toContain("if ($version -ne '0.0.9')");
+    expect(workflow).toContain("gh release download v0.0.8");
+    expect(workflow).toContain("previousVersion = '0.0.8'");
+    expect(workflow).toContain('dist/evidence/v009-real-model/real-model-report.json');
+    expect(workflow).toContain('node scripts/assemble-v009-acceptance.mjs');
+    expect(workflow).toContain('--core-gate-report dist/v009-core-evidence/V009-CORE-ACCEPTANCE.json');
+    expect(workflow).toContain('--core-gate-evidence-dir dist/v009-core-evidence');
+    expect(workflow).not.toContain('v008-model-validation');
+    expect(workflow).not.toContain('real-model-passed-or-blocked');
+  });
+
   it('uses native Windows paths for NSIS install and portable destinations', async () => {
     const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
     const workflow = await readFile(path.join(root, '.github/workflows/release-v004.yml'), 'utf8');

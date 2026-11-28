@@ -4,6 +4,7 @@ import { pathToFileURL } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 const launcher = 'scripts/ghidra-analyze-headless.mjs';
+const version = (await readFile('VERSION', 'utf8')).trim();
 
 function adapterLauncher(adapter: string) {
   return new URL('../../../../' + launcher, pathToFileURL(adapter));
@@ -31,22 +32,24 @@ describe('Ghidra release package layout', () => {
     expect(source).toContain("'packages/autopilot'");
     expect(source).toContain("'packages/program-ir'");
     expect(source).toContain("'packages/program-semantics'");
+    expect(source).toContain("'packages/binary-diff'");
     expect(source).toContain("'packages/dynamic-analysis'");
     expect(source).toContain("'packages/symbolic-execution'");
     expect(source).toContain("scripts/symbolic_execute.py");
     for (const file of apiSources.filter(file => String(file).endsWith('.ts'))) {
       const text = await readFile(path.join('apps/api/src', String(file)), 'utf8');
       for (const match of text.matchAll(/from '(@reverse\/[^']+)'/g)) {
-        expect(apiPackage.dependencies[match[1]], `${file} imports ${match[1]}`).toBe('0.0.8');
+        expect(apiPackage.dependencies[match[1]], `${file} imports ${match[1]}`).toBe(version);
       }
     }
   });
 
   it('declares and resolves Program IR as a core production dependency', async () => {
     const corePackage = JSON.parse(await readFile('packages/core/package.json', 'utf8')) as { dependencies: Record<string, string> };
-    expect(corePackage.dependencies['@reverse/program-ir']).toBe('0.0.8');
+    expect(corePackage.dependencies['@reverse/program-ir']).toBe(version);
     const source = await readFile('scripts/package-runtime.mjs', 'utf8');
     expect(source).toContain("'packages/program-ir'");
+    expect(source).toContain("'packages/binary-diff'");
     expect(source).toContain("'packages/dynamic-analysis'");
     expect(source).toContain("'packages/symbolic-execution'");
     expect(source).toContain("scripts/symbolic_execute.py");

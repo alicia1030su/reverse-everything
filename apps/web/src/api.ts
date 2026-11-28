@@ -1,6 +1,7 @@
 import type { AiSettings, CreateProjectInput, Stats, TaskDetail, Task, Project, Upload, AdapterName, Evidence, Finding, Artifact, CapabilityInfo, Page, ProductInfo, BackupInfo, BackupPreview, ResourceSnapshot, GameProfile, GameRebuildRecord } from '@reverse/contracts';
 import type { ConsoleDevice, ConsoleProfile, ConsoleSupportEntry, ConsoleUsbDiagnosis, OfficialDevelopmentEnvironment, UsbEnumerationSummary, ConsoleEvidence, ConsoleLevel, ActualAccess, ConsoleEvidenceKind } from '@reverse/console';
 import type { AnalysisPlan, AnalyzerCapability, AnalyzerId, AuthorizationScope, PlanBudget, TargetKind } from '@reverse/planner';
+import type { ProgramBinaryDiffReport } from '@reverse/binary-diff';
 export type EvidenceSearchItem=Evidence&{projectId:string;projectName:string;adapter:AdapterName};
 export type EvidenceSearchResult=Page<EvidenceSearchItem>;
 export interface BackupVerification {backup:BackupInfo;valid:boolean;issues:string[]}
@@ -112,6 +113,7 @@ export const api={
   demos:()=>request<DemosResponse>('/demos'),
   runDemo:(name:string)=>request<DemoRunResponse>(`/demos/${encodeURIComponent(name)}/run`,{method:'POST'}),
   taskReportPlain:(id:string,format:'markdown'|'json'|'html'='markdown')=>request<PlainReport>(`/tasks/${encodeURIComponent(id)}/report/plain?format=${format}`),
+  binaryDiff:(body:{beforeTaskId:string;afterTaskId:string;beforeArtifact?:string;afterArtifact?:string})=>request<ProgramBinaryDiffReport>('/binary-diff',{method:'POST',body:JSON.stringify(body)}),
   resources:()=>request<ResourcesResponse>('/resources'),
   gameProfiles:()=>request<{items:GameProfile[]}>('/game/profiles'),
   saveGameProfile:(id:string,value:Record<string,unknown>)=>request<{profile:GameProfile}>(`/projects/${encodeURIComponent(id)}/game-profile`,{method:'PUT',body:JSON.stringify(value)}),

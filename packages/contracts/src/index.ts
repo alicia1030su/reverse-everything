@@ -1,4 +1,4 @@
-export const VERSION = '0.0.8' as const;
+export const VERSION = '0.0.9' as const;
 export const SCHEMA_VERSION = 7 as const;
 export type GameRevivalLevel = 'L0' | 'L1' | 'L2' | 'L3' | 'L4' | 'L5' | 'L6' | 'L7';
 export type GameEvidenceStatus = 'OBSERVED' | 'INFERRED' | 'VERIFIED' | 'UNKNOWN' | 'INACCESSIBLE' | 'NOT_IMPLEMENTED';

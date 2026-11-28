@@ -1,15 +1,21 @@
 # 逆向万物 · Reverse Everything
 
-**Autopilot 自然语言驱动的本地逆向与兼容重建工作台 · v0.0.8**
+**Autopilot 自然语言驱动的本地逆向与兼容重建工作台 · v0.0.9**
 
 当前稳定版：**v0.0.8**，已于 2026-11-27 正式发布。
 
 [![CI](https://github.com/alicia1030su/reverse-everything/actions/workflows/ci.yml/badge.svg)](https://github.com/alicia1030su/reverse-everything/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
-[![Release](https://img.shields.io/badge/release-v0.0.8-blue.svg)](https://github.com/alicia1030su/reverse-everything/releases/tag/v0.0.8)
+[![Release](https://img.shields.io/badge/release-v0.0.9-blue.svg)](https://github.com/alicia1030su/reverse-everything/actions/workflows/release-v009.yml)
 [English](README.en.md)
 
 ![逆向万物横幅](docs/assets/banner.svg)
+
+## v0.0.9：Program IR、动态/符号执行与 Binary Diff
+
+v0.0.9 深化授权二进制的程序理解：Ghidra 结构化 Program IR、GDB/MI 动态时间线、angr/Z3 符号执行、Autopilot 函数级证据查询，以及跨版本函数匹配/增删改/CFG/调用关系分析。Web、REST、CLI、MCP 与 Skill 均可使用 Binary Diff。
+
+真实模型八阶段与三例源码隔离盲测已建立强制验收链；未配置真实提供方时保持 `BLOCKED / MISSING_API_KEY`，不会用 Mock 或规则结果冒充。当前稳定版仍为 v0.0.8，v0.0.9 仅在全部硬门禁通过后发布。
 
 ## v0.0.8：把目标交给 Autopilot
 
@@ -195,7 +201,7 @@ reverse-everything mcp http --port 4174
 
 - API：`http://127.0.0.1:4173/api/v1`；兼容 `/api`。
 - OpenAPI：运行时 `GET /api/openapi.json`。
-- MCP：stdio 与 Streamable HTTP 共用 API。v0.0.7 基线共 **44 个工具**；v0.0.8 新增 10 个 `autopilot_*` 工具，总计 54 个。`create_task` 的 adapter 包含 `legacy`，游戏工具仍为 `list_game_profiles`、`save_game_profile`、`scan_game_directory`、`create_game_server_spec`、`list_game_rebuilds`、`create_game_rebuild`、`get_game_rebuild`。
+- MCP：stdio 与 Streamable HTTP 共用 API。v0.0.7 基线共 **44 个工具**；v0.0.8 新增 10 个 `autopilot_*` 工具，v0.0.9 新增 `binary_diff`，总计 55 个。`create_task` 的 adapter 包含 `legacy`，游戏工具仍为 `list_game_profiles`、`save_game_profile`、`scan_game_directory`、`create_game_server_spec`、`list_game_rebuilds`、`create_game_rebuild`、`get_game_rebuild`。
 - Skill：`skills/reverse-everything`，优先使用 MCP，否则使用 CLI/API。
 
 所有入口共用后端授权、Schema、预算和结构化错误。清理、设备打开、实时捕获、刷写、驱动安装和任意宿主任意命令执行不暴露给 MCP。

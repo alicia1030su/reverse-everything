@@ -87,6 +87,15 @@
 - 最终 CI：Ubuntu 993 passed / 7 skipped，Windows 983 passed / 17 skipped；真实 Ghidra、真实 GDB、全量 CI Run `46085497244` 全部通过，独立安全复审 P0=0/P1=0。
 - 真实模型八阶段、Binary Diff 与三个源码隔离盲测仍未验收。
 
+## Wave 4 当前状态（2026-11-28，开发完成，发布阻塞）
+
+- 新增 `@reverse/binary-diff`：原始字节差异、函数指纹/唯一符号名/结构相似度匹配、增删改、调用顺序、CFG、P-Code、指令字节与证据绑定；partial IR 缺少完整指令细节时禁止精确指纹声称。
+- Binary Diff 已接入 Web、REST、CLI、MCP 与 Skill；API 仅比较已完成任务的已验证 Program IR 工件，拒绝相同任务与相同输入 SHA-256。
+- 建立三个源码隔离 ELF 盲测样本与独立候选子进程协议；编译和运行均进入 bubblewrap 沙箱，环境变量白名单化，stdout 伪造无法通过隐藏比对器。
+- 建立真实模型八阶段证据脚本、模型响应文件摘要契约、最终交付 `PASSED` 强制校验、核心验收报告组装器和 v0.0.9 原子发布工作流。
+- 本地验证：build/typecheck/lint 通过；1013 passed / 18 skipped；E2E 33/33；秘密扫描、许可证与 `npm audit --omit=dev` 通过；Server/Desktop 打包包含 Binary Diff。
+- 真实 Binary Diff 与盲测负例由 CI 验证；真实模型八阶段与三例盲测重建需要真实 API Key，当前保持 `BLOCKED / MISSING_API_KEY`，未创建正式 Tag 或 Release。
+
 ## 当前外部阻塞
 
 - 本机未发现 `OPENAI_API_KEY`、`ANTHROPIC_API_KEY` 或 Ollama；真实模型验收保持 BLOCKED，直到配置真实提供方或本地模型。

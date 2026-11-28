@@ -1,6 +1,6 @@
 {
   "name": "@reverse/legacy-revival",
-  "version": "0.0.8",
+  "version": "0.0.9",
   "private": true,
   "type": "module",
   "exports": {
@@ -14,7 +14,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@reverse/security": "0.0.8"
+    "@reverse/security": "0.0.9"
   },
   "devDependencies": {
     "typescript": "5.9.3",

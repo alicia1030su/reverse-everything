@@ -247,7 +247,7 @@ async function main() {
       version,
       runId: argument('run-id'),
       tag: argument('tag') ?? 'v' + version,
-      acceptance: { accepted: true, commit, version, runId: argument('acceptance-run-id') ?? argument('run-id'), checks: argumentValues('check') },
+      acceptance: { accepted: true, status: 'PASSED', commit, version, runId: argument('acceptance-run-id') ?? argument('run-id'), checks: argumentValues('check') },
     });
     console.log('Generated provenance for ' + result.manifest.tag + ' at ' + result.manifest.commit);
     return;

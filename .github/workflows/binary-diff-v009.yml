@@ -1,0 +1,78 @@
+name: Binary Diff V009 Real Verification
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    paths:
+      - 'packages/binary-diff/**'
+      - 'packages/program-ir/**'
+      - 'packages/core/src/adapters/ghidra.ts'
+      - 'apps/api/src/binary-diff-routes.ts'
+      - 'scripts/verify-binary-diff.mjs'
+      - 'tests/fixtures/binary-diff/**'
+      - 'tests/unit/binary-diff.test.ts'
+      - 'tests/integration/binary-diff-api.test.ts'
+      - '.github/workflows/binary-diff-v009.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 25
+      - name: Download and verify official Ghidra
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive=ghidra_12.2_PUBLIC_20261016.zip
+          curl -fL --retry 3 --connect-timeout 30 --max-time 1800 \
+            "https://github.com/NationalSecurityAgency/ghidra/releases/download/Ghidra_12.2_build/$archive" \
+            -o "$archive"
+          echo "2c2cd776db3c1f6a097ba418922378ac3649cadd5e844a6f5f088ae628a7be67  $archive" | sha256sum -c -
+          mkdir -p .ghidra
+          unzip -q "$archive" -d .ghidra
+          install="$(find .ghidra -maxdepth 1 -type d -name 'ghidra_12.2_PUBLIC*' -print -quit)"
+          test -n "$install"
+          echo "RE_GHIDRA_INSTALL_DIR=$GITHUB_WORKSPACE/$install" >> "$GITHUB_ENV"
+      - name: Install isolated blind-test runtime
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends bubblewrap gcc
+      - run: npm ci --no-audit --no-fund
+      - run: npm run build
+      - name: Reject stdout-spoofing blind candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          if node scripts/validate-blind-implementation.mjs \
+            --case alpha \
+            --implementation tests/fixtures/blind/cheating_candidate.c \
+            --confirm-isolated \
+            --output artifacts/blind-negative/result.json; then
+            echo "stdout-spoofing candidate unexpectedly passed" >&2
+            exit 1
+          fi
+          node -e "const r=require('./artifacts/blind-negative/result.json');if(r.status!=='FAILED'||r.passed!==false||r.mismatchCount<1)process.exit(1)"
+      - name: Verify real two-version Binary Diff
+        run: node scripts/verify-binary-diff.mjs
+        env:
+          BINARY_DIFF_OUTPUT_DIR: ${{ github.workspace }}/artifacts/binary-diff-v009
+      - name: Upload real Binary Diff evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: binary-diff-v009
+          path: artifacts/binary-diff-v009
+          if-no-files-found: warn
+          retention-days: 14

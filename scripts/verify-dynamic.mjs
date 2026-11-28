@@ -34,11 +34,25 @@ const breakpointIndex = result.timeline.findIndex((entry) => entry.type === 'bre
 const stackIndex = result.timeline.findIndex((entry) => entry.type === 'stack');
 if (breakpointIndex < 0 || stackIndex < 0 || breakpointIndex >= stackIndex) failures.push('invalid breakpoint/stack timeline order');
 if (result.provenance.binarySha256 !== createHash('sha256').update(binaryBytes).digest('hex')) failures.push('binary SHA256 mismatch');
+const staticLinks = result.events.flatMap((event) => {
+  const data = event.data && typeof event.data === 'object' ? event.data : {};
+  if (event.type === 'breakpoint') {
+    const value = data.function ?? data.address;
+    return value ? [String(value)] : [];
+  }
+  if (event.type === 'stack' && Array.isArray(data.frames)) {
+    return data.frames.flatMap(frame => frame && frame.function ? [String(frame.function)] : []);
+  }
+  return [];
+});
 const evidence = {
   schemaVersion: 1,
   version: '0.0.9',
   wave: 2,
   verification: 'real-gdb-mi',
+  status: failures.length ? 'FAILED' : 'PASSED',
+  events: result.events,
+  staticLinks: [...new Set(staticLinks)],
   gdbVersion,
   compilerVersion: execFileSync('gcc', ['--version'], { encoding: 'utf8' }).split(/\r?\n/)[0],
   sample: { source: 'tests/fixtures/dynamic/sample.c', sha256: createHash('sha256').update(await readFile(path.join(root, 'tests', 'fixtures', 'dynamic', 'sample.c'))).digest('hex'), binarySha256: result.provenance.binarySha256 },
