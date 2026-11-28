@@ -167,9 +167,10 @@ jobs:
           if (report.status !== 'PASSED' || report.realModel?.realModelCalled !== true || report.realModel.requests.length !== 8) throw new Error('Eight-stage real model evidence is required');
           NODE
       - uses: actions/upload-artifact@v7
+        if: always()
         with:
           name: real-model-validation
-          if-no-files-found: error
+          if-no-files-found: warn
           path: artifacts/v009-real-model
       - name: Require three isolated blind reconstructions
         shell: bash
