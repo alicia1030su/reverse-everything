@@ -118,7 +118,21 @@ try {
   await save('PASSED');
 } catch (error) {
   const message = error instanceof Error ? error.message : String(error);
-  const safeMessage = apiKey ? message.split(apiKey).join('[REDACTED]') : message;
+  let diagnostic = '';
+  if (/no access|HTTP 403/i.test(message)) {
+    try {
+      const response = await fetch(`${baseUrl.replace(/\/+$/, '')}/models`, { headers: { authorization: `Bearer ${apiKey}` }, signal: AbortSignal.timeout(15000) });
+      if (!response.ok) diagnostic = ` Model list endpoint returned HTTP ${response.status}.`;
+      else {
+        const payload = await response.json();
+        const ids = (payload.data ?? payload.models ?? []).map(item => item.id ?? item.name).filter(value => typeof value === 'string').slice(0, 100);
+        diagnostic = ids.length ? ` Accessible models: ${ids.join(', ')}` : ' Model list endpoint returned no model identifiers.';
+      }
+    } catch (listError) {
+      diagnostic = ` Model list diagnostic failed: ${listError instanceof Error ? listError.message : String(listError)}`;
+    }
+  }
+  const safeMessage = `${apiKey ? message.split(apiKey).join('[REDACTED]') : message}${apiKey && diagnostic ? diagnostic.split(apiKey).join('[REDACTED]') : diagnostic}`;
   await save('FAILED', { code: error?.code ?? 'VALIDATION_ERROR', message: safeMessage });
   console.error(`Real model validation failed: ${error?.code ?? 'VALIDATION_ERROR'}: ${safeMessage}`);
   process.exitCode = 1;
