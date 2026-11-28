@@ -64,6 +64,15 @@ jobs:
             exit 1
           fi
           node -e "const r=require('./artifacts/blind-negative/result.json');if(r.status!=='FAILED'||r.passed!==false||r.mismatchCount<1)process.exit(1)"
+          if node scripts/validate-blind-implementation.mjs \
+            --case alpha \
+            --implementation tests/fixtures/blind/resource_candidate.c \
+            --confirm-isolated \
+            --output artifacts/blind-resource-negative/result.json; then
+            echo "resource-exhausting candidate unexpectedly passed" >&2
+            exit 1
+          fi
+          node -e "const r=require('./artifacts/blind-resource-negative/result.json');if(r.status!=='FAILED'||r.passed!==false)process.exit(1)"
       - name: Verify real two-version Binary Diff
         run: node scripts/verify-binary-diff.mjs
         env:

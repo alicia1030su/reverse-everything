@@ -70,8 +70,10 @@ export function validateV009CoreGate(report) {
     if (test.buildPassed !== true || test.hiddenTestsPassed !== true || test.behaviorEquivalent !== true) errors.push(`Blind test ${test.id ?? 'unknown'} did not pass build/hidden/behavior acceptance`);
     if (!Number.isSafeInteger(test.hiddenTestCount) || test.hiddenTestCount < 1) errors.push(`Blind test ${test.id ?? 'unknown'} has no hidden tests`);
     if (!isSha(test.implementationSha256)) errors.push(`Blind test ${test.id ?? 'unknown'} is missing its implementation digest`);
+    if (!isSha(test.candidateExecutableSha256)) errors.push(`Blind test ${test.id ?? 'unknown'} is missing its candidate executable digest`);
     requireEvidence(test.binaryPath, `Blind test ${test.id ?? 'unknown'} binary`, test.binarySha256);
     requireEvidence(test.implementationPath, `Blind test ${test.id ?? 'unknown'} implementation`, test.implementationSha256);
+    requireEvidence(test.candidateExecutablePath, `Blind test ${test.id ?? 'unknown'} candidate executable`, test.candidateExecutableSha256);
     requireEvidence(test.hiddenTestsPath, `Blind test ${test.id ?? 'unknown'} hidden tests`);
   }
 
@@ -121,6 +123,8 @@ function validateEvidenceContent(report, item, data, errors) {
     const value = parseJsonEvidence(data, label, errors);
     if (!value) return;
     if (!test || value.passed !== true || value.mismatchCount !== 0 || value.sourceExposedToAgent !== false || !Number.isSafeInteger(value.testCount) || value.testCount < test.hiddenTestCount) errors.push(`${label} hidden-test evidence is incomplete or failed`);
+    if (!isSha(value.implementationSha256) || value.implementationSha256.toLowerCase() !== test.implementationSha256.toLowerCase()) errors.push(`${label} hidden tests are not bound to the candidate source digest`);
+    if (!isSha(value.candidateExecutableSha256) || value.candidateExecutableSha256.toLowerCase() !== test.candidateExecutableSha256.toLowerCase()) errors.push(`${label} hidden tests are not bound to the candidate executable digest`);
   } else if (item.kind === 'dynamic-trace') {
     const value = parseJsonEvidence(data, label, errors);
     if (!value) return;

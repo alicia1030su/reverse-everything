@@ -20,10 +20,10 @@ function buildFixture() {
     return { stage, requestId, finishReason: 'stop', usageSource: 'provider', refusal: false, promptSha256, responseSha256, promptPath, evidencePath, usage };
   });
   const blind = [1, 2, 3].map(id => {
-    const binaryPath = `blind/${id}/program.bin`; const implementationPath = `blind/${id}/implementation.tar`; const hiddenTestsPath = `blind/${id}/hidden-tests.json`;
-    const binary = Buffer.from(`binary-${id}`); const implementation = Buffer.from(`implementation-${id}`); const hidden = JSON.stringify({ passed: true, mismatchCount: 0, sourceExposedToAgent: false, testCount: 5 });
-    add(binaryPath, 'blind-binary', binary); add(implementationPath, 'blind-implementation', implementation); add(hiddenTestsPath, 'hidden-tests', hidden);
-    return { id: `blind-${id}`, sourceExposedToAgent: false, independentAnswerSeparated: true, binarySha256: hash(binary), buildPassed: true, hiddenTestsPassed: true, behaviorEquivalent: true, hiddenTestCount: 5, implementationSha256: hash(implementation), binaryPath, implementationPath, hiddenTestsPath };
+    const binaryPath = `blind/${id}/program.bin`; const implementationPath = `blind/${id}/implementation.tar`; const candidateExecutablePath = `blind/${id}/candidate.so`; const hiddenTestsPath = `blind/${id}/hidden-tests.json`;
+    const binary = Buffer.from(`binary-${id}`); const implementation = Buffer.from(`implementation-${id}`); const executable = Buffer.from([0x7f, 0x45, 0x4c, 0x46, 0x00]); const hidden = JSON.stringify({ passed: true, mismatchCount: 0, sourceExposedToAgent: false, testCount: 5, implementationSha256: hash(implementation), candidateExecutableSha256: hash(executable) });
+    add(binaryPath, 'blind-binary', binary); add(implementationPath, 'blind-implementation', implementation); add(candidateExecutablePath, 'executable', executable); add(hiddenTestsPath, 'hidden-tests', hidden);
+    return { id: `blind-${id}`, sourceExposedToAgent: false, independentAnswerSeparated: true, binarySha256: hash(binary), buildPassed: true, hiddenTestsPassed: true, behaviorEquivalent: true, hiddenTestCount: 5, implementationSha256: hash(implementation), candidateExecutableSha256: hash(executable), binaryPath, implementationPath, candidateExecutablePath, hiddenTestsPath };
   });
   const dynamicPath = 'dynamic/trace.json'; const symbolicPath = 'symbolic/solver.json'; const diffPath = 'diff/report.json'; const gamePath = 'game/original-client.json';
   add(dynamicPath, 'dynamic-trace', JSON.stringify({ status: 'PASSED', events: [{ type: 'syscall', name: 'openat' }], staticLinks: ['fn:0x1000'] }));

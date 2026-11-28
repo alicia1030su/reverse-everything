@@ -63,13 +63,18 @@ for (const id of ['alpha', 'beta', 'gamma']) {
   const blind = await readJson(`${base}/blind-report.json`);
   const hidden = await readJson(`${base}/hidden-tests.json`);
   if (blind.status !== 'PASSED' || hidden.passed !== true || hidden.mismatchCount !== 0 || hidden.sourceExposedToAgent !== false || hidden.testCount < hidden.hiddenTestCount) throw new Error(`Blind case ${id} did not pass isolated hidden tests`);
+  const candidateSource = await readFile(path.join(evidenceDir, base, 'candidate.c'));
+  const candidateExecutable = await readFile(path.join(evidenceDir, base, 'candidate.so'));
+  if (sha(candidateSource) !== blind.implementationSha256 || sha(candidateSource) !== hidden.implementationSha256) throw new Error(`Blind case ${id} hidden tests are not bound to candidate.c`);
+  if (sha(candidateExecutable) !== hidden.candidateExecutableSha256) throw new Error(`Blind case ${id} hidden tests are not bound to candidate.so`);
   if (blind.modelRequest) requests.push({ ...blind.modelRequest, promptPath: `${base}/${blind.modelRequest.promptPath}`, evidencePath: `${base}/${blind.modelRequest.evidencePath}` });
   blindTests.push({
     id, sourceExposedToAgent: false, independentAnswerSeparated: true,
     binarySha256: blind.binarySha256, buildPassed: hidden.buildPassed === true, hiddenTestsPassed: hidden.passed === true,
     behaviorEquivalent: hidden.behaviorEquivalent === true, hiddenTestCount: hidden.hiddenTestCount,
     implementationSha256: blind.implementationSha256,
-    binaryPath: `${base}/binary.so`, implementationPath: `${base}/candidate.c`, hiddenTestsPath: `${base}/hidden-tests.json`,
+    candidateExecutableSha256: hidden.candidateExecutableSha256,
+    binaryPath: `${base}/binary.so`, implementationPath: `${base}/candidate.c`, candidateExecutablePath: `${base}/candidate.so`, hiddenTestsPath: `${base}/hidden-tests.json`,
   });
   behaviorTests += hidden.testCount;
   if (hidden.passed) blindPassed++;

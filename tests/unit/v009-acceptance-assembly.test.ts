@@ -31,7 +31,7 @@ describe('v0.0.9 acceptance assembly', () => {
       for (const id of ['alpha', 'beta', 'gamma']) {
         const binary = Buffer.from([0x7f, 0x45, 0x4c, 0x46, 0x00]); const candidate = Buffer.from('int re_run(void){return 0;}'); const executable = Buffer.from([0x7f, 0x45, 0x4c, 0x46, 0x00]);
         await put(root, `blind-${id}/binary.so`, binary); await put(root, `blind-${id}/candidate.c`, candidate); await put(root, `blind-${id}/candidate.so`, executable);
-        await put(root, `blind-${id}/hidden-tests.json`, JSON.stringify({ passed: true, mismatchCount: 0, sourceExposedToAgent: false, testCount: 80, hiddenTestCount: 80, buildPassed: true, behaviorEquivalent: true, durationMs: 10, peakMemoryMB: 10 }));
+        await put(root, `blind-${id}/hidden-tests.json`, JSON.stringify({ passed: true, mismatchCount: 0, sourceExposedToAgent: false, testCount: 80, hiddenTestCount: 80, buildPassed: true, behaviorEquivalent: true, implementationSha256: hash(candidate), candidateExecutableSha256: hash(executable), durationMs: 10, peakMemoryMB: 10 }));
         await put(root, `blind-${id}/blind-report.json`, JSON.stringify({ status: 'PASSED', binarySha256: hash(binary), implementationSha256: hash(candidate) }));
       }
       await put(root, 'dynamic/evidence.json', JSON.stringify({ status: 'PASSED', events: [{ type: 'breakpoint' }], staticLinks: ['main'] }));
@@ -44,6 +44,8 @@ describe('v0.0.9 acceptance assembly', () => {
       execFileSync(process.execPath, ['scripts/assemble-v009-acceptance.mjs', '--evidence-dir', root, '--commit', commit, '--dynamic-report', 'dynamic/evidence.json', '--symbolic-report', 'symbolic/evidence.json'], { stdio: 'pipe' });
       const report = JSON.parse(await readFile(path.join(root, 'V009-CORE-ACCEPTANCE.json'), 'utf8'));
       expect(report.status).toBe('PASSED'); expect(report.blindTests).toHaveLength(3); expect(report.generatedExecutables).toHaveLength(3); expect(report.metrics.behaviorEquivalentTests).toBe(240);
+      await put(root, 'blind-alpha/candidate.c', 'int re_run(void){return 1;}');
+      expect(() => execFileSync(process.execPath, ['scripts/assemble-v009-acceptance.mjs', '--evidence-dir', root, '--commit', commit, '--dynamic-report', 'dynamic/evidence.json', '--symbolic-report', 'symbolic/evidence.json'], { stdio: 'pipe' })).toThrow(/not bound to candidate\.c/);
     } finally { await rm(root, { recursive: true, force: true }); }
   });
 });

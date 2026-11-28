@@ -60,7 +60,7 @@ try {
   await copyFile(path.resolve(implementation), candidateSource);
   const sandboxCheck = spawnSync('bwrap', ['--version'], { encoding: 'utf8', shell: false, windowsHide: true, timeout: 10_000, env: safeEnv });
   if (sandboxCheck.error || sandboxCheck.status !== 0) throw new Error('bubblewrap (bwrap) is required for isolated blind candidate compilation and execution');
-  run('bwrap', ['--unshare-all', '--die-with-parent', '--new-session', '--clearenv', '--ro-bind', '/usr', '/usr', '--ro-bind', '/lib', '/lib', '--ro-bind', '/lib64', '/lib64', '--proc', '/proc', '--dev', '/dev', '--tmpfs', '/tmp', '--bind', buildDir, '/work', '--chdir', '/work', '--setenv', 'PATH', '/usr/bin:/bin', '--setenv', 'HOME', '/tmp', '/usr/bin/cc', '-shared', '-fPIC', '-O2', '-Wl,--build-id=none', 'candidate.c', '-o', 'candidate.so']);
+  run('/usr/bin/prlimit', ['--as=1073741824', '--cpu=30', '--nproc=64', '--fsize=67108864', '--nofile=128', 'bwrap', '--unshare-all', '--die-with-parent', '--new-session', '--clearenv', '--ro-bind', '/usr', '/usr', '--ro-bind', '/lib', '/lib', '--ro-bind', '/lib64', '/lib64', '--proc', '/proc', '--dev', '/dev', '--tmpfs', '/tmp', '--bind', buildDir, '/work', '--chdir', '/work', '--setenv', 'PATH', '/usr/bin:/bin', '--setenv', 'HOME', '/tmp', '/usr/bin/cc', '-shared', '-fPIC', '-O2', '-Wl,--build-id=none', 'candidate.c', '-o', 'candidate.so']);
   await copyFile(candidate, path.join(path.dirname(output), 'candidate.so'));
   report.candidateExecutableSha256 = await sha256(path.join(path.dirname(output), 'candidate.so'));
   report.buildPassed = true;
@@ -68,7 +68,7 @@ try {
   run(process.env.CC ?? 'cc', ['-O2', '-Wall', '-Wextra', workerSource, '-ldl', '-o', worker]);
   const quote = value => `'${String(value).replace(/'/g, `'\\''`)}'`;
   const wrapper = path.join(work, 'sandbox-worker.sh');
-  await writeFile(wrapper, `#!/bin/sh\nexec bwrap --unshare-all --die-with-parent --new-session --clearenv --ro-bind /usr /usr --ro-bind /lib /lib --ro-bind /lib64 /lib64 --proc /proc --dev /dev --tmpfs /tmp --bind "$1" /candidate.so --ro-bind ${quote(worker)} /worker --chdir /tmp /worker /candidate.so\n`, { mode: 0o700 });
+  await writeFile(wrapper, `#!/bin/sh\nexec /usr/bin/prlimit --as=268435456 --cpu=5 --nproc=32 --fsize=8388608 --nofile=64 bwrap --unshare-all --die-with-parent --new-session --clearenv --ro-bind /usr /usr --ro-bind /lib /lib --ro-bind /lib64 /lib64 --proc /proc --dev /dev --tmpfs /tmp --bind "$1" /candidate.so --ro-bind ${quote(worker)} /worker --chdir /tmp /worker /candidate.so\n`, { mode: 0o700 });
   const result = run(runner, [binary, candidate, wrapper]);
   const match = result.stdout.trim().match(/^PASS (\d+)$/);
   if (!match) throw new Error(`Hidden runner did not report PASS: ${result.stdout.trim()} ${result.stderr.trim()}`);
